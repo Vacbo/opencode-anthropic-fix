@@ -153,10 +153,11 @@ It also injects optional env-driven headers:
 
 ### 5.1 Beta composition rule in the plugin
 
-Function: `buildAnthropicBetaHeader(incomingBeta, signatureEnabled, model, provider)`
+Function: `buildAnthropicBetaHeader(incomingBeta, signatureEnabled, model, provider, strategy)`
 
 - starts with `oauth-2025-04-20`
 - preserves incoming betas (`incomingBeta`) and deduplicates on merge
+- accepts `strategy` (`"sticky"`, `"round-robin"`, `"hybrid"`) to conditionally exclude stateful betas
 
 When `signatureEnabled=false`:
 
@@ -165,7 +166,7 @@ When `signatureEnabled=false`:
 When `signatureEnabled=true`, current implementation may add dynamically:
 
 - `claude-code-20250219` (not added for Haiku models)
-- `code-execution-2025-08-25` (not added for Haiku models)
+- `code-execution-2025-08-25` (not added for Haiku models; **skipped in round-robin** — sandbox state is per-account)
 - `files-api-2025-04-14` (always; enables `/v1/files` endpoint and `file_id` references)
 - `interleaved-thinking-2025-05-14` (if model supports it and not disabled by `DISABLE_INTERLEAVED_THINKING`)
 - `context-1m-2025-08-07` (if model indicates 1M context)
@@ -173,9 +174,16 @@ When `signatureEnabled=true`, current implementation may add dynamically:
 - `structured-outputs-2025-12-15` (model supports it + `TENGU_TOOL_PEAR`)
 - `tool-examples-2025-10-29` (non-interactive mode + `TENGU_SCARF_COFFEE`)
 - `web-search-2025-03-05` (provider `vertex`/`foundry` + supported model)
-- `prompt-caching-scope-2026-01-05` (non-interactive mode)
+- `prompt-caching-scope-2026-01-05` (non-interactive mode; **skipped in round-robin** — cache is per-workspace)
 - additional betas from `ANTHROPIC_BETAS` (except Haiku)
 - `fine-grained-tool-streaming-2025-05-14` (see note in 5.4)
+
+Strategy filter:
+
+- if `strategy` is `"round-robin"`, the following betas are excluded to avoid per-account state conflicts:
+  - `code-execution-2025-08-25` (sandbox state is per-account)
+  - `prompt-caching-scope-2026-01-05` (cache is per-workspace)
+- the `OPENCODE_ANTHROPIC_INITIAL_ACCOUNT` env var overrides the strategy to `sticky` for the session, re-enabling all betas
 
 Provider filter:
 

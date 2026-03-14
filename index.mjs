@@ -662,9 +662,10 @@ function buildSystemPromptBlocks(system, signature, messages) {
  * @param {string} model
  * @param {"anthropic" | "bedrock" | "vertex" | "foundry"} provider
  * @param {string[]} [customBetas]
+ * @param {import('./lib/config.mjs').AccountSelectionStrategy} [strategy]
  * @returns {string}
  */
-function buildAnthropicBetaHeader(incomingBeta, signatureEnabled, model, provider, customBetas) {
+function buildAnthropicBetaHeader(incomingBeta, signatureEnabled, model, provider, customBetas, strategy) {
   const incomingBetasList = incomingBeta
     .split(",")
     .map((b) => b.trim())
@@ -679,13 +680,19 @@ function buildAnthropicBetaHeader(incomingBeta, signatureEnabled, model, provide
 
   const nonInteractive = isNonInteractiveMode();
   const haiku = isHaikuModel(model);
+  const isRoundRobin = strategy === "round-robin";
 
   if (!haiku) {
     betas.push(CLAUDE_CODE_BETA_FLAG);
-    betas.push("code-execution-2025-08-25");
+    // Code execution sandbox state is per-account; skip in round-robin to avoid
+    // losing sandbox state mid-workflow when requests rotate between accounts.
+    if (!isRoundRobin) {
+      betas.push("code-execution-2025-08-25");
+    }
   }
 
   // Files API is model-independent; enables /v1/files endpoint and file_id references.
+  // Safe in round-robin because file-ID account pinning routes requests to the correct account.
   betas.push("files-api-2025-04-14");
 
   if (isOpus46Model(model)) {
@@ -723,7 +730,9 @@ function buildAnthropicBetaHeader(incomingBeta, signatureEnabled, model, provide
     betas.push("web-search-2025-03-05");
   }
 
-  if (nonInteractive) {
+  // Prompt caching is per-workspace (since Feb 2026); round-robin across accounts
+  // means zero cache hits and doubled token costs. Skip in round-robin.
+  if (nonInteractive && !isRoundRobin) {
     betas.push("prompt-caching-scope-2026-01-05");
   }
 
@@ -864,7 +873,7 @@ async function fetchLatestClaudeCodeVersion(timeoutMs = 1200) {
  * @param {string} accessToken
  * @param {string | undefined} requestBody
  * @param {URL | null} requestUrl
- * @param {{enabled: boolean, claudeCliVersion: string}} signature
+ * @param {{enabled: boolean, claudeCliVersion: string, strategy?: import('./lib/config.mjs').AccountSelectionStrategy}} signature
  * @returns {Headers}
  */
 function buildRequestHeaders(input, requestInit, accessToken, requestBody, requestUrl, signature) {
@@ -898,7 +907,14 @@ function buildRequestHeaders(input, requestInit, accessToken, requestBody, reque
   const incomingBeta = requestHeaders.get("anthropic-beta") || "";
   const { model, tools, messages } = parseRequestBodyMetadata(requestBody);
   const provider = detectProvider(requestUrl);
-  const mergedBetas = buildAnthropicBetaHeader(incomingBeta, signature.enabled, model, provider, signature.customBetas);
+  const mergedBetas = buildAnthropicBetaHeader(
+    incomingBeta,
+    signature.enabled,
+    model,
+    provider,
+    signature.customBetas,
+    signature.strategy,
+  );
 
   const authTokenOverride = process.env.ANTHROPIC_AUTH_TOKEN?.trim();
   const bearerToken = authTokenOverride || accessToken;
@@ -1567,6 +1583,30 @@ function parseCommandArgs(raw) {
 }
 
 /**
+ * Extract all file_id values from a parsed Messages API request body.
+ * Walks messages and system arrays looking for file content blocks.
+ * @param {any} body - Parsed JSON body
+ * @returns {string[]}
+ */
+function extractFileIds(body) {
+  const ids = [];
+  if (!body || typeof body !== "object") return ids;
+  function walk(obj) {
+    if (Array.isArray(obj)) {
+      for (const item of obj) walk(item);
+    } else if (obj && typeof obj === "object") {
+      if (obj.source?.file_id) ids.push(obj.source.file_id);
+      for (const val of Object.values(obj)) {
+        if (val && typeof val === "object") walk(val);
+      }
+    }
+  }
+  walk(body.messages);
+  walk(body.system);
+  return ids;
+}
+
+/**
  * @type {import('@opencode-ai/plugin').Plugin}
  */
 export async function AnthropicAuthPlugin({ client }) {
@@ -1597,10 +1637,25 @@ export async function AnthropicAuthPlugin({ client }) {
   const IDLE_REFRESH_MIN_INTERVAL_MS = config.idle_refresh.min_interval_minutes * 60 * 1000;
 
   /**
+   * Whether OPENCODE_ANTHROPIC_INITIAL_ACCOUNT env var pinned this session to a
+   * specific account. When true, syncActiveIndexFromDisk is skipped and strategy
+   * is forced to sticky.
+   */
+  let initialAccountPinned = false;
+
+  /**
    * Pending slash-command OAuth flows keyed by session ID.
    * @type {Map<string, { mode: "login" | "reauth", verifier: string, targetIndex?: number, createdAt: number }>}
    */
   const pendingSlashOAuth = new Map();
+
+  /**
+   * In-memory mapping of file_id → account index for file-ID account pinning.
+   * Populated by /anthropic files commands, consumed by the fetch interceptor
+   * to route Messages API requests referencing file_ids to the correct account.
+   * @type {Map<string, number>}
+   */
+  const fileAccountMap = new Map();
 
   /**
    * Send an informational message into the current session.
@@ -1978,6 +2033,7 @@ export async function AnthropicAuthPlugin({ client }) {
 
       if (!action || action === "list") {
         const fresh = loadConfigFresh();
+        const strategy = fresh.account_selection_strategy || config.account_selection_strategy;
         const lines = [
           "▣ Anthropic Betas",
           "",
@@ -1985,15 +2041,16 @@ export async function AnthropicAuthPlugin({ client }) {
           "  oauth-2025-04-20, claude-code-20250219,",
           "  interleaved-thinking-2025-05-14 OR adaptive-thinking-2026-01-28,",
           "  fine-grained-tool-streaming-2025-05-14,",
-          "  code-execution-2025-08-25 (non-Haiku),",
-          "  files-api-2025-04-14",
+          `  code-execution-2025-08-25 (non-Haiku${strategy === "round-robin" ? ", skipped in round-robin" : ""}),`,
+          "  files-api-2025-04-14,",
+          `  prompt-caching-scope-2026-01-05 (non-interactive${strategy === "round-robin" ? ", skipped in round-robin" : ""})`,
           "",
+          `Strategy: ${strategy}${initialAccountPinned ? " (pinned via OPENCODE_ANTHROPIC_INITIAL_ACCOUNT)" : ""}`,
           `Custom betas: ${fresh.custom_betas.length ? fresh.custom_betas.join(", ") : "(none)"}`,
           "",
           "Toggleable presets:",
           "  /anthropic betas add structured-outputs-2025-12-15",
           "  /anthropic betas add context-management-2025-06-27",
-          "  /anthropic betas add prompt-caching-scope-2026-01-05",
           "  /anthropic betas add tool-examples-2025-10-29",
           "  /anthropic betas add web-search-2025-03-05",
           "  /anthropic betas add compact-2026-01-12",
@@ -2046,12 +2103,23 @@ export async function AnthropicAuthPlugin({ client }) {
     }
 
     // /anthropic files [list|upload|get|delete|download] — Files API management
+    // Supports --account <email|index> to target a specific account.
+    // Without --account, list aggregates from ALL accounts; other actions use the current account.
     if (primary === "files") {
-      const action = (args[1] || "").toLowerCase();
+      // Parse --account flag from args
+      let targetAccountId = null;
+      const filteredArgs = [];
+      for (let i = 0; i < args.length; i++) {
+        if (args[i] === "--account" && i + 1 < args.length) {
+          targetAccountId = args[i + 1];
+          i++;
+        } else {
+          filteredArgs.push(args[i]);
+        }
+      }
+      const action = (filteredArgs[1] || "").toLowerCase();
 
-      // Get current account and ensure valid token
-      const account = accountManager?.getCurrentAccount();
-      if (!account) {
+      if (!accountManager || accountManager.getAccountCount() === 0) {
         await sendCommandMessage(
           input.sessionID,
           "▣ Anthropic Files (error)\n\nNo accounts configured. Use /anthropic login first.",
@@ -2059,54 +2127,152 @@ export async function AnthropicAuthPlugin({ client }) {
         return;
       }
 
-      let token = account.access;
-      if (!token || !account.expires || account.expires < Date.now()) {
-        try {
-          token = await refreshAccountTokenSingleFlight(account);
-        } catch (err) {
-          await sendCommandMessage(
-            input.sessionID,
-            `▣ Anthropic Files (error)\n\nToken refresh failed: ${err.message}`,
-          );
-          return;
+      /**
+       * Resolve a single account by email or 1-based index.
+       * If identifier is null, falls back to the current account.
+       * @param {string | null} identifier
+       * @returns {{ account: import('./lib/accounts.mjs').ManagedAccount, label: string } | null}
+       */
+      function resolveTargetAccount(identifier) {
+        const accounts = accountManager.getEnabledAccounts();
+        if (identifier) {
+          // Try by email
+          const byEmail = accounts.find((a) => a.email === identifier);
+          if (byEmail) return { account: byEmail, label: byEmail.email || `Account ${byEmail.index + 1}` };
+          // Try by 1-based index
+          const idx = parseInt(identifier, 10);
+          if (!isNaN(idx) && idx >= 1) {
+            const byIdx = accounts.find((a) => a.index === idx - 1);
+            if (byIdx) return { account: byIdx, label: byIdx.email || `Account ${byIdx.index + 1}` };
+          }
+          return null;
         }
+        // Default to current
+        const current = accountManager.getCurrentAccount();
+        if (!current) return null;
+        return { account: current, label: current.email || `Account ${current.index + 1}` };
+      }
+
+      /**
+       * Get authenticated headers for a specific account, refreshing token if needed.
+       * @param {import('./lib/accounts.mjs').ManagedAccount} acct
+       */
+      async function getFilesAuth(acct) {
+        let tok = acct.access;
+        if (!tok || !acct.expires || acct.expires < Date.now()) {
+          tok = await refreshAccountTokenSingleFlight(acct);
+        }
+        return {
+          authorization: `Bearer ${tok}`,
+          "anthropic-beta": "files-api-2025-04-14",
+        };
       }
 
       const apiBase = "https://api.anthropic.com";
-      const authHeaders = {
-        authorization: `Bearer ${token}`,
-        "anthropic-beta": "files-api-2025-04-14",
-      };
 
       try {
-        // /anthropic files list — list all uploaded files
+        // /anthropic files list — list uploaded files
         if (!action || action === "list") {
-          const res = await fetch(`${apiBase}/v1/files`, { headers: authHeaders });
-          if (!res.ok) {
-            const errBody = await res.text();
-            await sendCommandMessage(input.sessionID, `▣ Anthropic Files (error)\n\nHTTP ${res.status}: ${errBody}`);
+          if (targetAccountId) {
+            // List for a specific account
+            const resolved = resolveTargetAccount(targetAccountId);
+            if (!resolved) {
+              await sendCommandMessage(
+                input.sessionID,
+                `▣ Anthropic Files (error)\n\nAccount not found: ${targetAccountId}`,
+              );
+              return;
+            }
+            const { account, label } = resolved;
+            const headers = await getFilesAuth(account);
+            const res = await fetch(`${apiBase}/v1/files`, { headers });
+            if (!res.ok) {
+              const errBody = await res.text();
+              await sendCommandMessage(
+                input.sessionID,
+                `▣ Anthropic Files (error) [${label}]\n\nHTTP ${res.status}: ${errBody}`,
+              );
+              return;
+            }
+            const data = await res.json();
+            const files = data.data || [];
+            for (const f of files) fileAccountMap.set(f.id, account.index);
+            if (files.length === 0) {
+              await sendCommandMessage(input.sessionID, `▣ Anthropic Files [${label}]\n\nNo files uploaded.`);
+              return;
+            }
+            const lines = [`▣ Anthropic Files [${label}]`, "", `${files.length} file(s):`, ""];
+            for (const f of files) {
+              const sizeKB = (f.size / 1024).toFixed(1);
+              lines.push(`  ${f.id}  ${f.filename}  (${sizeKB} KB, ${f.purpose})`);
+            }
+            await sendCommandMessage(input.sessionID, lines.join("\n"));
             return;
           }
-          const data = await res.json();
-          const files = data.data || [];
-          if (files.length === 0) {
-            await sendCommandMessage(input.sessionID, "▣ Anthropic Files\n\nNo files uploaded.");
-            return;
+
+          // List files from ALL enabled accounts
+          const accounts = accountManager.getEnabledAccounts();
+          const allLines = ["▣ Anthropic Files (all accounts)", ""];
+          let totalFiles = 0;
+          for (const acct of accounts) {
+            const label = acct.email || `Account ${acct.index + 1}`;
+            try {
+              const headers = await getFilesAuth(acct);
+              const res = await fetch(`${apiBase}/v1/files`, { headers });
+              if (!res.ok) {
+                allLines.push(`[${label}] Error: HTTP ${res.status}`);
+                allLines.push("");
+                continue;
+              }
+              const data = await res.json();
+              const files = data.data || [];
+              for (const f of files) fileAccountMap.set(f.id, acct.index);
+              totalFiles += files.length;
+              if (files.length === 0) {
+                allLines.push(`[${label}] No files`);
+              } else {
+                allLines.push(`[${label}] ${files.length} file(s):`);
+                for (const f of files) {
+                  const sizeKB = (f.size / 1024).toFixed(1);
+                  allLines.push(`  ${f.id}  ${f.filename}  (${sizeKB} KB, ${f.purpose})`);
+                }
+              }
+              allLines.push("");
+            } catch (err) {
+              allLines.push(`[${label}] Error: ${err.message}`);
+              allLines.push("");
+            }
           }
-          const lines = ["▣ Anthropic Files", "", `${files.length} file(s):`, ""];
-          for (const f of files) {
-            const sizeKB = (f.size / 1024).toFixed(1);
-            lines.push(`  ${f.id}  ${f.filename}  (${sizeKB} KB, ${f.purpose})`);
+          if (totalFiles === 0 && accounts.length > 0) {
+            allLines.push(`Total: No files across ${accounts.length} account(s).`);
+          } else {
+            allLines.push(`Total: ${totalFiles} file(s) across ${accounts.length} account(s).`);
           }
-          await sendCommandMessage(input.sessionID, lines.join("\n"));
+          if (accounts.length > 1) {
+            allLines.push("", "Tip: Use --account <email> to target a specific account.");
+          }
+          await sendCommandMessage(input.sessionID, allLines.join("\n"));
           return;
         }
 
+        // For all non-list actions, resolve to a single account
+        const resolved = resolveTargetAccount(targetAccountId);
+        if (!resolved) {
+          const errMsg = targetAccountId ? `Account not found: ${targetAccountId}` : "No accounts available.";
+          await sendCommandMessage(input.sessionID, `▣ Anthropic Files (error)\n\n${errMsg}`);
+          return;
+        }
+        const { account, label } = resolved;
+        const authHeaders = await getFilesAuth(account);
+
         // /anthropic files upload <path> — upload a file
         if (action === "upload") {
-          const filePath = args.slice(2).join(" ").trim();
+          const filePath = filteredArgs.slice(2).join(" ").trim();
           if (!filePath) {
-            await sendCommandMessage(input.sessionID, "▣ Anthropic Files\n\nUsage: /anthropic files upload <path>");
+            await sendCommandMessage(
+              input.sessionID,
+              "▣ Anthropic Files\n\nUsage: /anthropic files upload <path> [--account <email>]",
+            );
             return;
           }
           const resolvedPath = resolve(filePath);
@@ -2124,7 +2290,7 @@ export async function AnthropicAuthPlugin({ client }) {
           const res = await fetch(`${apiBase}/v1/files`, {
             method: "POST",
             headers: {
-              authorization: `Bearer ${token}`,
+              authorization: authHeaders.authorization,
               "anthropic-beta": "files-api-2025-04-14",
             },
             body: form,
@@ -2133,35 +2299,44 @@ export async function AnthropicAuthPlugin({ client }) {
             const errBody = await res.text();
             await sendCommandMessage(
               input.sessionID,
-              `▣ Anthropic Files (error)\n\nUpload failed (HTTP ${res.status}): ${errBody}`,
+              `▣ Anthropic Files (error) [${label}]\n\nUpload failed (HTTP ${res.status}): ${errBody}`,
             );
             return;
           }
           const file = await res.json();
           const sizeKB = ((file.size || 0) / 1024).toFixed(1);
+          // Cache file_id → account mapping for auto-pinning
+          fileAccountMap.set(file.id, account.index);
           await sendCommandMessage(
             input.sessionID,
-            `▣ Anthropic Files\n\nUploaded: ${file.id}\n  Filename: ${file.filename}\n  Size: ${sizeKB} KB`,
+            `▣ Anthropic Files [${label}]\n\nUploaded: ${file.id}\n  Filename: ${file.filename}\n  Size: ${sizeKB} KB`,
           );
           return;
         }
 
         // /anthropic files get <file_id> — get file metadata
         if (action === "get" || action === "info") {
-          const fileId = args[2]?.trim();
+          const fileId = filteredArgs[2]?.trim();
           if (!fileId) {
-            await sendCommandMessage(input.sessionID, "▣ Anthropic Files\n\nUsage: /anthropic files get <file_id>");
+            await sendCommandMessage(
+              input.sessionID,
+              "▣ Anthropic Files\n\nUsage: /anthropic files get <file_id> [--account <email>]",
+            );
             return;
           }
           const res = await fetch(`${apiBase}/v1/files/${encodeURIComponent(fileId)}`, { headers: authHeaders });
           if (!res.ok) {
             const errBody = await res.text();
-            await sendCommandMessage(input.sessionID, `▣ Anthropic Files (error)\n\nHTTP ${res.status}: ${errBody}`);
+            await sendCommandMessage(
+              input.sessionID,
+              `▣ Anthropic Files (error) [${label}]\n\nHTTP ${res.status}: ${errBody}`,
+            );
             return;
           }
           const file = await res.json();
+          fileAccountMap.set(file.id, account.index);
           const lines = [
-            "▣ Anthropic Files",
+            `▣ Anthropic Files [${label}]`,
             "",
             `  ID:       ${file.id}`,
             `  Filename: ${file.filename}`,
@@ -2176,9 +2351,12 @@ export async function AnthropicAuthPlugin({ client }) {
 
         // /anthropic files delete <file_id> — delete a file
         if (action === "delete" || action === "rm") {
-          const fileId = args[2]?.trim();
+          const fileId = filteredArgs[2]?.trim();
           if (!fileId) {
-            await sendCommandMessage(input.sessionID, "▣ Anthropic Files\n\nUsage: /anthropic files delete <file_id>");
+            await sendCommandMessage(
+              input.sessionID,
+              "▣ Anthropic Files\n\nUsage: /anthropic files delete <file_id> [--account <email>]",
+            );
             return;
           }
           const res = await fetch(`${apiBase}/v1/files/${encodeURIComponent(fileId)}`, {
@@ -2187,24 +2365,28 @@ export async function AnthropicAuthPlugin({ client }) {
           });
           if (!res.ok) {
             const errBody = await res.text();
-            await sendCommandMessage(input.sessionID, `▣ Anthropic Files (error)\n\nHTTP ${res.status}: ${errBody}`);
+            await sendCommandMessage(
+              input.sessionID,
+              `▣ Anthropic Files (error) [${label}]\n\nHTTP ${res.status}: ${errBody}`,
+            );
             return;
           }
-          await sendCommandMessage(input.sessionID, `▣ Anthropic Files\n\nDeleted: ${fileId}`);
+          fileAccountMap.delete(fileId);
+          await sendCommandMessage(input.sessionID, `▣ Anthropic Files [${label}]\n\nDeleted: ${fileId}`);
           return;
         }
 
         // /anthropic files download <file_id> [output_path] — download file content
         if (action === "download" || action === "dl") {
-          const fileId = args[2]?.trim();
+          const fileId = filteredArgs[2]?.trim();
           if (!fileId) {
             await sendCommandMessage(
               input.sessionID,
-              "▣ Anthropic Files\n\nUsage: /anthropic files download <file_id> [output_path]",
+              "▣ Anthropic Files\n\nUsage: /anthropic files download <file_id> [output_path] [--account <email>]",
             );
             return;
           }
-          const outputPath = args.slice(3).join(" ").trim();
+          const outputPath = filteredArgs.slice(3).join(" ").trim();
 
           // Get file metadata first for the filename
           const metaRes = await fetch(`${apiBase}/v1/files/${encodeURIComponent(fileId)}`, {
@@ -2214,7 +2396,7 @@ export async function AnthropicAuthPlugin({ client }) {
             const errBody = await metaRes.text();
             await sendCommandMessage(
               input.sessionID,
-              `▣ Anthropic Files (error)\n\nHTTP ${metaRes.status}: ${errBody}`,
+              `▣ Anthropic Files (error) [${label}]\n\nHTTP ${metaRes.status}: ${errBody}`,
             );
             return;
           }
@@ -2229,7 +2411,7 @@ export async function AnthropicAuthPlugin({ client }) {
             const errBody = await res.text();
             await sendCommandMessage(
               input.sessionID,
-              `▣ Anthropic Files (error)\n\nDownload failed (HTTP ${res.status}): ${errBody}`,
+              `▣ Anthropic Files (error) [${label}]\n\nDownload failed (HTTP ${res.status}): ${errBody}`,
             );
             return;
           }
@@ -2238,7 +2420,7 @@ export async function AnthropicAuthPlugin({ client }) {
           const sizeKB = (buffer.length / 1024).toFixed(1);
           await sendCommandMessage(
             input.sessionID,
-            `▣ Anthropic Files\n\nDownloaded: ${meta.filename}\n  Saved to: ${savePath}\n  Size: ${sizeKB} KB`,
+            `▣ Anthropic Files [${label}]\n\nDownloaded: ${meta.filename}\n  Saved to: ${savePath}\n  Size: ${sizeKB} KB`,
           );
           return;
         }
@@ -2247,17 +2429,23 @@ export async function AnthropicAuthPlugin({ client }) {
         const helpLines = [
           "▣ Anthropic Files",
           "",
-          "Usage: /anthropic files <action>",
+          "Usage: /anthropic files <action> [--account <email|index>]",
           "",
           "Actions:",
-          "  list                          List uploaded files",
+          "  list                          List uploaded files (all accounts if no --account)",
           "  upload <path>                 Upload a file (max 350MB)",
           "  get <file_id>                 Get file metadata",
           "  delete <file_id>              Delete a file",
           "  download <file_id> [path]     Download file content",
           "",
+          "Options:",
+          "  --account <email|index>       Target a specific account (1-based index)",
+          "",
           "Supported formats: PDF, DOCX, TXT, CSV, Excel, Markdown, images",
           "Files can be referenced by file_id in Messages API requests.",
+          "",
+          "When using round-robin, file_ids are automatically pinned to the",
+          "account that owns them for Messages API requests.",
         ];
         await sendCommandMessage(input.sessionID, helpLines.join("\n"));
         return;
@@ -2584,6 +2772,39 @@ export async function AnthropicAuthPlugin({ client }) {
             await accountManager.saveToDisk();
           }
 
+          // OPENCODE_ANTHROPIC_INITIAL_ACCOUNT: pin this session to a specific account.
+          // Accepts 1-based index or email. Overrides strategy to sticky and disables
+          // syncActiveIndexFromDisk so other sessions can't override this one.
+          // Use case: terminal 1 with INITIAL_ACCOUNT=1, terminal 2 with =2.
+          const initialAccountEnv = process.env.OPENCODE_ANTHROPIC_INITIAL_ACCOUNT?.trim();
+          if (initialAccountEnv && accountManager.getAccountCount() > 1) {
+            const accounts = accountManager.getEnabledAccounts();
+            let target = null;
+
+            // Try as 1-based index
+            const asIndex = parseInt(initialAccountEnv, 10);
+            if (!isNaN(asIndex) && asIndex >= 1 && asIndex <= accounts.length) {
+              target = accounts[asIndex - 1];
+            }
+
+            // Try as email
+            if (!target) {
+              target = accounts.find((a) => a.email && a.email.toLowerCase() === initialAccountEnv.toLowerCase());
+            }
+
+            if (target && accountManager.forceCurrentIndex(target.index)) {
+              config.account_selection_strategy = "sticky";
+              initialAccountPinned = true;
+              debugLog("OPENCODE_ANTHROPIC_INITIAL_ACCOUNT: pinned to account", {
+                index: target.index + 1,
+                email: target.email,
+                strategy: "sticky (overridden)",
+              });
+            } else {
+              debugLog("OPENCODE_ANTHROPIC_INITIAL_ACCOUNT: could not resolve account", initialAccountEnv);
+            }
+          }
+
           return {
             apiKey: "",
             /**
@@ -2612,7 +2833,9 @@ export async function AnthropicAuthPlugin({ client }) {
               const transientRefreshSkips = new Set();
 
               // Sync with CLI changes at request start.
-              if (accountManager) {
+              // Skip when OPENCODE_ANTHROPIC_INITIAL_ACCOUNT pinned this session —
+              // other sessions' CLI changes must not override the pinned account.
+              if (accountManager && !initialAccountPinned) {
                 await accountManager.syncActiveIndexFromDisk();
               }
 
@@ -2620,9 +2843,42 @@ export async function AnthropicAuthPlugin({ client }) {
               // switch to the next account. If it's service-wide, return immediately.
               const maxAttempts = accountManager.getTotalAccountCount();
 
+              // File-ID account pinning: if the request body references file_ids
+              // that we've mapped to a specific account (via /anthropic files),
+              // pin the first attempt to that account so files are accessible.
+              // Without this, round-robin could route to an account that doesn't
+              // have the referenced files, causing file_not_found errors.
+              let pinnedAccount = null;
+              if (typeof requestInit.body === "string" && fileAccountMap.size > 0) {
+                try {
+                  const bodyObj = JSON.parse(requestInit.body);
+                  const fileIds = extractFileIds(bodyObj);
+                  for (const fid of fileIds) {
+                    const pinnedIndex = fileAccountMap.get(fid);
+                    if (pinnedIndex !== undefined) {
+                      const candidates = accountManager.getEnabledAccounts();
+                      pinnedAccount = candidates.find((a) => a.index === pinnedIndex) ?? null;
+                      if (pinnedAccount) {
+                        debugLog("file-id pinning: routing to account", {
+                          fileId: fid,
+                          accountIndex: pinnedIndex,
+                          email: pinnedAccount.email,
+                        });
+                        break;
+                      }
+                    }
+                  }
+                } catch {
+                  // Non-JSON body or parse error — skip pinning
+                }
+              }
+
               for (let attempt = 0; attempt < maxAttempts; attempt++) {
-                // Select account
-                const account = accountManager.getCurrentAccount(transientRefreshSkips);
+                // Select account — use pinned account on first attempt if available
+                const account =
+                  attempt === 0 && pinnedAccount && !transientRefreshSkips.has(pinnedAccount.index)
+                    ? pinnedAccount
+                    : accountManager.getCurrentAccount(transientRefreshSkips);
 
                 // Toast account usage on first use and whenever the account changes
                 if (showUsageToast && account && accountManager) {
@@ -2756,6 +3012,7 @@ export async function AnthropicAuthPlugin({ client }) {
                   enabled: signatureEmulationEnabled,
                   claudeCliVersion,
                   customBetas: config.custom_betas,
+                  strategy: config.account_selection_strategy,
                 });
                 // Execute the request
                 let response;

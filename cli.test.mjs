@@ -572,7 +572,7 @@ describe("cmdList", () => {
     loadAccounts.mockResolvedValue(makeStorage());
     const code = await cmdList();
     expect(code).toBe(0);
-    expect(output.text()).toContain("round-robin");
+    expect(output.text()).toContain("sticky");
   });
 
   it("shows live usage quotas for enabled accounts", async () => {
@@ -683,7 +683,7 @@ describe("cmdStatus", () => {
     expect(text).toContain("anthropic:");
     expect(text).toContain("3 accounts");
     expect(text).toContain("2 active");
-    expect(text).toContain("strategy: round-robin");
+    expect(text).toContain("strategy: sticky");
     expect(text).toContain("next: #1");
   });
 
@@ -1256,7 +1256,7 @@ describe("cmdConfig", () => {
 
     const text = output.text();
     expect(text).toContain("Anthropic Auth Configuration");
-    expect(text).toContain("round-robin");
+    expect(text).toContain("sticky");
     expect(text).toContain("3600s");
     expect(text).toContain("off"); // debug
   });

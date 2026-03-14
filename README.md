@@ -298,7 +298,7 @@ Example workflow:
 Upload, list, download, and delete files via the Anthropic Files API. The `files-api-2025-04-14` beta is auto-included in every request.
 
 ```text
-/anthropic files                       # list uploaded files
+/anthropic files                       # list files across ALL accounts
 /anthropic files upload ./report.pdf   # upload a file
 /anthropic files get file_abc123       # get file metadata
 /anthropic files download file_abc123  # download to current directory
@@ -307,6 +307,16 @@ Upload, list, download, and delete files via the Anthropic Files API. The `files
 ```
 
 Supported formats: PDF, DOCX, TXT, CSV, Excel, Markdown, images (max 350 MB per file). Uploaded files can be referenced by `file_id` in Messages API requests.
+
+**Multi-account behavior:** Files on Anthropic are per-account. With multiple accounts:
+
+- `/anthropic files list` (no `--account`) queries **all** enabled accounts, labeling each file with its owner email
+- Use `--account <email|index>` to target a specific account for any action:
+  ```text
+  /anthropic files list --account alice@example.com
+  /anthropic files upload ./data.csv --account 2
+  ```
+- **Auto-pinning:** When you upload or list files, the plugin remembers which account owns each `file_id`. If a subsequent Messages API request references that `file_id`, the plugin automatically routes it to the correct account — even with round-robin or hybrid strategies.
 
 ### OAuth flows from slash command
 
@@ -333,11 +343,11 @@ Pending slash OAuth flows expire after 10 minutes. If completion fails with an e
 
 Control how the plugin picks which account to use for each request.
 
-| Strategy                    | Behavior                                                                                  | Best For                                              |
-| --------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| **`round-robin`** (default) | Rotate through accounts on every request                                                  | Spreading load evenly across accounts                 |
-| **`sticky`**                | Stay on one account until it fails or is rate-limited                                     | Single account, or when you want predictable behavior |
-| **`hybrid`**                | Score-based selection with stickiness bias. Considers health, token budget, and freshness | Multiple accounts with varying rate limits            |
+| Strategy               | Behavior                                                                                  | Best For                                                                            |
+| ---------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| **`sticky`** (default) | Stay on one account until it fails or is rate-limited                                     | Single account, predictable behavior, full feature compatibility                    |
+| **`round-robin`**      | Rotate through accounts on every request                                                  | Spreading load evenly across accounts (see [limitations](#round-robin-limitations)) |
+| **`hybrid`**           | Score-based selection with stickiness bias. Considers health, token budget, and freshness | Multiple accounts with varying rate limits                                          |
 
 ### Change Strategy
 
@@ -352,14 +362,37 @@ export OPENCODE_ANTHROPIC_STRATEGY=hybrid
 # Edit ~/.config/opencode/anthropic-auth.json
 ```
 
+### Round-Robin Limitations
+
+Some Anthropic API features maintain server-side per-account state that breaks when requests alternate between accounts:
+
+| Feature                                                | Impact                                                                                                           | Plugin Mitigation                                                                                        |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| **Files API** (`files-api-2025-04-14`)                 | `file_id` is per-account; referencing Account A's file from Account B = `file_not_found`                         | **Auto-pinning**: the plugin tracks which account owns each `file_id` and routes the request accordingly |
+| **Prompt Caching** (`prompt-caching-scope-2026-01-05`) | Cache is per-workspace; alternating accounts means zero cache hits, doubling token costs                         | **Auto-skipped** in round-robin: the `prompt-caching-scope` beta is excluded from the header             |
+| **Code Execution** (`code-execution-2025-08-25`)       | Sandbox state is ephemeral per-request; multi-step workflows lose files/state when routed to a different account | **Auto-skipped** in round-robin: the `code-execution` beta is excluded from the header                   |
+| **Message Batches** (`message-batches-2024-09-24`)     | `batch_id` is per-account; polling from wrong account = 404                                                      | No automatic mitigation (not auto-included)                                                              |
+
+**Recommendation for round-robin users:** If you need prompt caching or code execution, pin each OpenCode session to a single account:
+
+```bash
+# Terminal 1 — uses account 1
+OPENCODE_ANTHROPIC_INITIAL_ACCOUNT=1 opencode
+
+# Terminal 2 — uses account 2
+OPENCODE_ANTHROPIC_INITIAL_ACCOUNT=2 opencode
+```
+
+This automatically overrides the strategy to `sticky` for that session, re-enabling all betas. Other sessions are unaffected.
+
 ## Configuration
 
 Configuration is stored at `~/.config/opencode/anthropic-auth.json`. All settings are optional &mdash; defaults work well for most users.
 
 ```jsonc
 {
-  // Account selection strategy: "round-robin" | "sticky" | "hybrid"
-  "account_selection_strategy": "round-robin",
+  // Account selection strategy: "sticky" | "round-robin" | "hybrid"
+  "account_selection_strategy": "sticky",
 
   // Seconds before consecutive failure count resets (60-7200)
   "failure_ttl_seconds": 3600,
@@ -427,16 +460,17 @@ Configuration is stored at `~/.config/opencode/anthropic-auth.json`. All setting
 
 ### Environment Variables
 
-| Variable                                           | Description                                                                                                 |
-| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `OPENCODE_ANTHROPIC_STRATEGY`                      | Override the account selection strategy at runtime.                                                         |
-| `OPENCODE_ANTHROPIC_DEBUG`                         | Set to `1` to enable debug logging.                                                                         |
-| `OPENCODE_ANTHROPIC_QUIET`                         | Set to `1` to suppress non-error toasts (account status, switching).                                        |
-| `OPENCODE_ANTHROPIC_EMULATE_CLAUDE_CODE_SIGNATURE` | Set to `0` to disable Claude signature emulation (legacy mode).                                             |
-| `OPENCODE_ANTHROPIC_FETCH_CLAUDE_CODE_VERSION`     | Set to `0` to skip npm version lookup at startup.                                                           |
-| `OPENCODE_ANTHROPIC_PROMPT_COMPACTION`             | Set to `off` to disable default minimal system prompt compaction.                                           |
-| `OPENCODE_ANTHROPIC_DEBUG_SYSTEM_PROMPT`           | Set to `1` to log the final transformed `system` prompt to stderr (title-generator requests are skipped).   |
-| `OPENCODE_ANTHROPIC_OVERRIDE_MODEL_LIMITS`         | Set to `0` to disable context limit overrides for 1M-window models (e.g. when models.dev has been updated). |
+| Variable                                           | Description                                                                                                                                               |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OPENCODE_ANTHROPIC_STRATEGY`                      | Override the account selection strategy at runtime.                                                                                                       |
+| `OPENCODE_ANTHROPIC_DEBUG`                         | Set to `1` to enable debug logging.                                                                                                                       |
+| `OPENCODE_ANTHROPIC_QUIET`                         | Set to `1` to suppress non-error toasts (account status, switching).                                                                                      |
+| `OPENCODE_ANTHROPIC_EMULATE_CLAUDE_CODE_SIGNATURE` | Set to `0` to disable Claude signature emulation (legacy mode).                                                                                           |
+| `OPENCODE_ANTHROPIC_FETCH_CLAUDE_CODE_VERSION`     | Set to `0` to skip npm version lookup at startup.                                                                                                         |
+| `OPENCODE_ANTHROPIC_PROMPT_COMPACTION`             | Set to `off` to disable default minimal system prompt compaction.                                                                                         |
+| `OPENCODE_ANTHROPIC_DEBUG_SYSTEM_PROMPT`           | Set to `1` to log the final transformed `system` prompt to stderr (title-generator requests are skipped).                                                 |
+| `OPENCODE_ANTHROPIC_OVERRIDE_MODEL_LIMITS`         | Set to `0` to disable context limit overrides for 1M-window models (e.g. when models.dev has been updated).                                               |
+| `OPENCODE_ANTHROPIC_INITIAL_ACCOUNT`               | Pin this session to a specific account (1-based index or email). Overrides strategy to `sticky`. See [Round-Robin Limitations](#round-robin-limitations). |
 
 ### OAuth-only behavior
 

@@ -7,7 +7,7 @@
  * We mock external dependencies (fetch, PKCE, readline, storage fs) but exercise
  * the real plugin code paths.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Mocks — must be set up before importing the module under test
@@ -102,6 +102,7 @@ beforeEach(() => {
   delete process.env.CLAUDE_CODE_USER_EMAIL;
   delete process.env.CLAUDE_CODE_ORGANIZATION_UUID;
   delete process.env.CLAUDE_CODE_DISABLE_1M_CONTEXT;
+  delete process.env.OPENCODE_ANTHROPIC_INITIAL_ACCOUNT;
   process.env.OPENCODE_ANTHROPIC_SIGNATURE_USER_ID = "test-signature-user";
 });
 
@@ -1048,6 +1049,241 @@ describe("fetch interceptor", () => {
     expect(response.status).toBe(200);
     // 3 calls: first API (429), token refresh for account 2, retry API (200)
     expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// File-ID account pinning
+// ---------------------------------------------------------------------------
+
+describe("file-id account pinning", () => {
+  it("pins messages request to the account that owns the file_id", async () => {
+    vi.resetAllMocks();
+    const client = makeClient();
+
+    // Two accounts with valid tokens
+    const data = makeAccountsData([
+      {
+        refreshToken: "refresh-1",
+        email: "a@test.com",
+        access: "access-1",
+        expires: Date.now() + 3600_000,
+      },
+      {
+        refreshToken: "refresh-2",
+        email: "b@test.com",
+        access: "access-2",
+        expires: Date.now() + 3600_000,
+      },
+    ]);
+    loadAccounts.mockResolvedValue(data);
+    saveAccounts.mockResolvedValue(undefined);
+
+    const plugin = await AnthropicAuthPlugin({ client });
+
+    const getAuth = vi.fn().mockResolvedValue({
+      type: "oauth",
+      refresh: "refresh-1",
+      access: "access-1",
+      expires: Date.now() + 3600_000,
+    });
+    const result = await plugin.auth.loader(getAuth, makeProvider());
+    const fetchFn = result.fetch;
+
+    // Populate fileAccountMap via /anthropic files list (lists from ALL accounts)
+    // Account 1 (index 0) → file-abc, Account 2 (index 1) → file-xyz
+    mockFetch
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ data: [{ id: "file-abc", filename: "a.txt", size: 100, purpose: "assistants" }] }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ data: [{ id: "file-xyz", filename: "b.txt", size: 200, purpose: "assistants" }] }),
+          { status: 200 },
+        ),
+      );
+
+    await expect(
+      plugin["command.execute.before"]({
+        command: "anthropic",
+        arguments: "files list",
+        sessionID: "s1",
+      }),
+    ).rejects.toThrow("__ANTHROPIC_COMMAND_HANDLED__");
+
+    // Verify files list fetched from both accounts
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+
+    // Now test pinning: request with file-xyz (owned by account 2)
+    // Without pinning, sticky strategy would always use account 1
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
+
+    await fetchFn("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      body: JSON.stringify({
+        messages: [
+          {
+            role: "user",
+            content: [{ type: "file", source: { type: "file", file_id: "file-xyz" } }],
+          },
+        ],
+      }),
+    });
+
+    // Should have used account 2's token due to pinning
+    const apiCall = mockFetch.mock.calls[0];
+    const headers = apiCall[1].headers;
+    expect(headers.get("authorization")).toBe("Bearer access-2");
+  });
+
+  it("uses default account selection when no file_ids are referenced", async () => {
+    vi.resetAllMocks();
+    const client = makeClient();
+
+    const data = makeAccountsData([
+      {
+        refreshToken: "refresh-1",
+        email: "a@test.com",
+        access: "access-1",
+        expires: Date.now() + 3600_000,
+      },
+      {
+        refreshToken: "refresh-2",
+        email: "b@test.com",
+        access: "access-2",
+        expires: Date.now() + 3600_000,
+      },
+    ]);
+    loadAccounts.mockResolvedValue(data);
+    saveAccounts.mockResolvedValue(undefined);
+
+    const plugin = await AnthropicAuthPlugin({ client });
+    const getAuth = vi.fn().mockResolvedValue({
+      type: "oauth",
+      refresh: "refresh-1",
+      access: "access-1",
+      expires: Date.now() + 3600_000,
+    });
+    const result = await plugin.auth.loader(getAuth, makeProvider());
+    const fetchFn = result.fetch;
+
+    // Populate fileAccountMap via /anthropic files list
+    mockFetch
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ data: [{ id: "file-abc", filename: "a.txt", size: 100, purpose: "assistants" }] }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [] }), { status: 200 }));
+
+    await expect(
+      plugin["command.execute.before"]({
+        command: "anthropic",
+        arguments: "files list",
+        sessionID: "s1",
+      }),
+    ).rejects.toThrow("__ANTHROPIC_COMMAND_HANDLED__");
+
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
+
+    // Request WITHOUT file_ids — should use default (sticky → account 1)
+    await fetchFn("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      body: JSON.stringify({ messages: [{ role: "user", content: "Hello" }] }),
+    });
+
+    const apiCall = mockFetch.mock.calls[0];
+    const headers = apiCall[1].headers;
+    expect(headers.get("authorization")).toBe("Bearer access-1");
+  });
+
+  it("removes file_id mapping after /anthropic files delete", async () => {
+    vi.resetAllMocks();
+    const client = makeClient();
+
+    const data = makeAccountsData([
+      {
+        refreshToken: "refresh-1",
+        email: "a@test.com",
+        access: "access-1",
+        expires: Date.now() + 3600_000,
+      },
+      {
+        refreshToken: "refresh-2",
+        email: "b@test.com",
+        access: "access-2",
+        expires: Date.now() + 3600_000,
+      },
+    ]);
+    loadAccounts.mockResolvedValue(data);
+    saveAccounts.mockResolvedValue(undefined);
+
+    const plugin = await AnthropicAuthPlugin({ client });
+    const getAuth = vi.fn().mockResolvedValue({
+      type: "oauth",
+      refresh: "refresh-1",
+      access: "access-1",
+      expires: Date.now() + 3600_000,
+    });
+    const result = await plugin.auth.loader(getAuth, makeProvider());
+    const fetchFn = result.fetch;
+
+    // Populate: account 2 owns file-xyz
+    mockFetch
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [] }), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ data: [{ id: "file-xyz", filename: "b.txt", size: 200, purpose: "assistants" }] }),
+          { status: 200 },
+        ),
+      );
+
+    await expect(
+      plugin["command.execute.before"]({
+        command: "anthropic",
+        arguments: "files list",
+        sessionID: "s1",
+      }),
+    ).rejects.toThrow("__ANTHROPIC_COMMAND_HANDLED__");
+
+    // Delete file-xyz (uses current account = account 1 by sticky)
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValueOnce(new Response("{}", { status: 200 }));
+
+    await expect(
+      plugin["command.execute.before"]({
+        command: "anthropic",
+        arguments: "files delete file-xyz",
+        sessionID: "s1",
+      }),
+    ).rejects.toThrow("__ANTHROPIC_COMMAND_HANDLED__");
+
+    // Now request with file-xyz — should NOT pin (mapping deleted)
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
+
+    await fetchFn("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      body: JSON.stringify({
+        messages: [
+          {
+            role: "user",
+            content: [{ type: "file", source: { type: "file", file_id: "file-xyz" } }],
+          },
+        ],
+      }),
+    });
+
+    // Without pinning, sticky selects account 1
+    const apiCall = mockFetch.mock.calls[0];
+    const headers = apiCall[1].headers;
+    expect(headers.get("authorization")).toBe("Bearer access-1");
   });
 });
 
@@ -2633,6 +2869,66 @@ describe("header handling", () => {
     expect(betaHeader).toContain("files-api-2025-04-14");
   });
 
+  it("excludes code-execution and prompt-caching-scope betas in round-robin strategy", async () => {
+    // Override config with round-robin strategy for a fresh plugin
+    loadConfig.mockReturnValueOnce({
+      ...loadConfig(),
+      account_selection_strategy: "round-robin",
+    });
+
+    const rrClient = makeClient();
+    loadAccounts.mockResolvedValue(null);
+
+    const plugin = await AnthropicAuthPlugin({ client: rrClient });
+    const result = await plugin.auth.loader(
+      vi.fn().mockResolvedValue({
+        type: "oauth",
+        refresh: "test-refresh",
+        access: "test-access",
+        expires: Date.now() + 3600_000,
+      }),
+      makeProvider(),
+    );
+
+    mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
+    await result.fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: "claude-sonnet-4", messages: [] }),
+    });
+
+    const [, init] = mockFetch.mock.calls[0];
+    const betaHeader = init.headers.get("anthropic-beta");
+
+    // Code execution excluded in round-robin (sandbox state is per-account)
+    expect(betaHeader).not.toContain("code-execution-2025-08-25");
+    // Prompt caching excluded in round-robin (cache is per-workspace)
+    expect(betaHeader).not.toContain("prompt-caching-scope-2026-01-05");
+    // Files API still included (auto-pinning handles cross-account file_ids)
+    expect(betaHeader).toContain("files-api-2025-04-14");
+    // Core betas still present
+    expect(betaHeader).toContain("oauth-2025-04-20");
+    expect(betaHeader).toContain("claude-code-20250219");
+  });
+
+  it("includes code-execution and prompt-caching-scope betas in sticky strategy", async () => {
+    // Default fetchFn uses sticky strategy
+    mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
+
+    await fetchFn("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: "claude-sonnet-4", messages: [] }),
+    });
+
+    const [, init] = mockFetch.mock.calls[0];
+    const betaHeader = init.headers.get("anthropic-beta");
+
+    expect(betaHeader).toContain("code-execution-2025-08-25");
+    expect(betaHeader).toContain("prompt-caching-scope-2026-01-05");
+    expect(betaHeader).toContain("files-api-2025-04-14");
+  });
+
   it("computes x-stainless-helper from tools and message content", async () => {
     mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
 
@@ -2939,6 +3235,194 @@ describe("header handling", () => {
     const url = input instanceof URL ? input : new URL(input.toString());
     expect(url.searchParams.has("beta")).toBe(false);
     expect(url.pathname).toBe("/v1/complete");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// OPENCODE_ANTHROPIC_INITIAL_ACCOUNT pinning
+// ---------------------------------------------------------------------------
+
+describe("OPENCODE_ANTHROPIC_INITIAL_ACCOUNT", () => {
+  afterEach(() => {
+    delete process.env.OPENCODE_ANTHROPIC_INITIAL_ACCOUNT;
+  });
+
+  it("pins session to specific account by 1-based index and overrides strategy to sticky", async () => {
+    vi.resetAllMocks();
+    process.env.OPENCODE_ANTHROPIC_INITIAL_ACCOUNT = "2";
+    process.env.OPENCODE_ANTHROPIC_SIGNATURE_USER_ID = "test-signature-user";
+
+    const client = makeClient();
+    const data = makeAccountsData([
+      {
+        refreshToken: "refresh-1",
+        email: "a@test.com",
+        access: "access-1",
+        expires: Date.now() + 3600_000,
+      },
+      {
+        refreshToken: "refresh-2",
+        email: "b@test.com",
+        access: "access-2",
+        expires: Date.now() + 3600_000,
+      },
+    ]);
+    loadAccounts.mockResolvedValue(data);
+    saveAccounts.mockResolvedValue(undefined);
+
+    const plugin = await AnthropicAuthPlugin({ client });
+    const getAuth = vi.fn().mockResolvedValue({
+      type: "oauth",
+      refresh: "refresh-1",
+      access: "access-1",
+      expires: Date.now() + 3600_000,
+    });
+    const result = await plugin.auth.loader(getAuth, makeProvider());
+
+    // Make API request — should use account 2 (pinned) not account 1
+    mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
+    await result.fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      body: JSON.stringify({ messages: [{ role: "user", content: "hello" }] }),
+    });
+
+    const [, init] = mockFetch.mock.calls[0];
+    expect(init.headers.get("authorization")).toBe("Bearer access-2");
+  });
+
+  it("pins session to specific account by email", async () => {
+    vi.resetAllMocks();
+    process.env.OPENCODE_ANTHROPIC_INITIAL_ACCOUNT = "b@test.com";
+    process.env.OPENCODE_ANTHROPIC_SIGNATURE_USER_ID = "test-signature-user";
+
+    const client = makeClient();
+    const data = makeAccountsData([
+      {
+        refreshToken: "refresh-1",
+        email: "a@test.com",
+        access: "access-1",
+        expires: Date.now() + 3600_000,
+      },
+      {
+        refreshToken: "refresh-2",
+        email: "b@test.com",
+        access: "access-2",
+        expires: Date.now() + 3600_000,
+      },
+    ]);
+    loadAccounts.mockResolvedValue(data);
+    saveAccounts.mockResolvedValue(undefined);
+
+    const plugin = await AnthropicAuthPlugin({ client });
+    const getAuth = vi.fn().mockResolvedValue({
+      type: "oauth",
+      refresh: "refresh-1",
+      access: "access-1",
+      expires: Date.now() + 3600_000,
+    });
+    const result = await plugin.auth.loader(getAuth, makeProvider());
+
+    mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
+    await result.fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      body: JSON.stringify({ messages: [{ role: "user", content: "hello" }] }),
+    });
+
+    const [, init] = mockFetch.mock.calls[0];
+    expect(init.headers.get("authorization")).toBe("Bearer access-2");
+  });
+
+  it("includes code-execution beta when round-robin config is overridden to sticky by pinning", async () => {
+    vi.resetAllMocks();
+    process.env.OPENCODE_ANTHROPIC_INITIAL_ACCOUNT = "1";
+    process.env.OPENCODE_ANTHROPIC_SIGNATURE_USER_ID = "test-signature-user";
+
+    // Config says round-robin, but pinning should override to sticky
+    loadConfig.mockReturnValueOnce({
+      ...loadConfig(),
+      account_selection_strategy: "round-robin",
+    });
+
+    const client = makeClient();
+    const data = makeAccountsData([
+      {
+        refreshToken: "refresh-1",
+        email: "a@test.com",
+        access: "access-1",
+        expires: Date.now() + 3600_000,
+      },
+      {
+        refreshToken: "refresh-2",
+        email: "b@test.com",
+        access: "access-2",
+        expires: Date.now() + 3600_000,
+      },
+    ]);
+    loadAccounts.mockResolvedValue(data);
+    saveAccounts.mockResolvedValue(undefined);
+
+    const plugin = await AnthropicAuthPlugin({ client });
+    const getAuth = vi.fn().mockResolvedValue({
+      type: "oauth",
+      refresh: "refresh-1",
+      access: "access-1",
+      expires: Date.now() + 3600_000,
+    });
+    const result = await plugin.auth.loader(getAuth, makeProvider());
+
+    mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
+    await result.fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: "claude-sonnet-4", messages: [] }),
+    });
+
+    const [, init] = mockFetch.mock.calls[0];
+    const betaHeader = init.headers.get("anthropic-beta");
+
+    // Pinning overrides round-robin to sticky — code-execution should be included
+    expect(betaHeader).toContain("code-execution-2025-08-25");
+    expect(betaHeader).toContain("files-api-2025-04-14");
+    // Should use account 1 (pinned)
+    expect(init.headers.get("authorization")).toBe("Bearer access-1");
+  });
+
+  it("ignores env var when only one account exists", async () => {
+    vi.resetAllMocks();
+    process.env.OPENCODE_ANTHROPIC_INITIAL_ACCOUNT = "2";
+    process.env.OPENCODE_ANTHROPIC_SIGNATURE_USER_ID = "test-signature-user";
+
+    const client = makeClient();
+    // Only one account
+    const data = makeAccountsData([
+      {
+        refreshToken: "refresh-1",
+        email: "a@test.com",
+        access: "access-1",
+        expires: Date.now() + 3600_000,
+      },
+    ]);
+    loadAccounts.mockResolvedValue(data);
+    saveAccounts.mockResolvedValue(undefined);
+
+    const plugin = await AnthropicAuthPlugin({ client });
+    const getAuth = vi.fn().mockResolvedValue({
+      type: "oauth",
+      refresh: "refresh-1",
+      access: "access-1",
+      expires: Date.now() + 3600_000,
+    });
+    const result = await plugin.auth.loader(getAuth, makeProvider());
+
+    mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
+    await result.fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      body: JSON.stringify({ messages: [{ role: "user", content: "hello" }] }),
+    });
+
+    // Should use account 1 (only account — pinning skipped because count <= 1)
+    const [, init] = mockFetch.mock.calls[0];
+    expect(init.headers.get("authorization")).toBe("Bearer access-1");
   });
 });
 
