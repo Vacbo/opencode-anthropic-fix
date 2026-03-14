@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { AccountManager } from "./lib/accounts.mjs";
 import { authorize, exchange, refreshToken } from "./lib/oauth.mjs";
-import { loadConfig, CLIENT_ID, getConfigDir } from "./lib/config.mjs";
+import { loadConfig, loadConfigFresh, saveConfig, CLIENT_ID, getConfigDir } from "./lib/config.mjs";
 import { loadAccounts, saveAccounts, clearAccounts, createDefaultStats } from "./lib/storage.mjs";
 import { applyOAuthCredentials, resetAccountTracking } from "./lib/account-state.mjs";
 import { acquireRefreshLock, releaseRefreshLock } from "./lib/refresh-lock.mjs";
@@ -659,9 +659,10 @@ function buildSystemPromptBlocks(system, signature, messages) {
  * @param {boolean} signatureEnabled
  * @param {string} model
  * @param {"anthropic" | "bedrock" | "vertex" | "foundry"} provider
+ * @param {string[]} [customBetas]
  * @returns {string}
  */
-function buildAnthropicBetaHeader(incomingBeta, signatureEnabled, model, provider) {
+function buildAnthropicBetaHeader(incomingBeta, signatureEnabled, model, provider, customBetas) {
   const incomingBetasList = incomingBeta
     .split(",")
     .map((b) => b.trim())
@@ -728,6 +729,10 @@ function buildAnthropicBetaHeader(incomingBeta, signatureEnabled, model, provide
   }
 
   betas.push("fine-grained-tool-streaming-2025-05-14");
+
+  if (Array.isArray(customBetas)) {
+    betas.push(...customBetas.filter(Boolean));
+  }
 
   const mergedBetas = [...new Set([...betas, ...incomingBetasList])];
   if (provider === "bedrock") {
@@ -887,7 +892,7 @@ function buildRequestHeaders(input, requestInit, accessToken, requestBody, reque
   const incomingBeta = requestHeaders.get("anthropic-beta") || "";
   const { model, tools, messages } = parseRequestBodyMetadata(requestBody);
   const provider = detectProvider(requestUrl);
-  const mergedBetas = buildAnthropicBetaHeader(incomingBeta, signature.enabled, model, provider);
+  const mergedBetas = buildAnthropicBetaHeader(incomingBeta, signature.enabled, model, provider, signature.customBetas);
 
   const authTokenOverride = process.env.ANTHROPIC_AUTH_TOKEN?.trim();
   const bearerToken = authTokenOverride || accessToken;
@@ -1900,6 +1905,140 @@ export async function AnthropicAuthPlugin({ client }) {
       return;
     }
 
+    // /anthropic config — show effective config
+    if (primary === "config") {
+      const fresh = loadConfigFresh();
+      const lines = [
+        "▣ Anthropic Config",
+        "",
+        `strategy: ${fresh.account_selection_strategy}`,
+        `emulation: ${fresh.signature_emulation.enabled ? "on" : "off"}`,
+        `compaction: ${fresh.signature_emulation.prompt_compaction}`,
+        `1m-context: ${fresh.override_model_limits.enabled ? "on" : "off"}`,
+        `idle-refresh: ${fresh.idle_refresh.enabled ? "on" : "off"}`,
+        `debug: ${fresh.debug ? "on" : "off"}`,
+        `quiet: ${fresh.toasts.quiet ? "on" : "off"}`,
+        `custom_betas: ${fresh.custom_betas.length ? fresh.custom_betas.join(", ") : "(none)"}`,
+      ];
+      await sendCommandMessage(input.sessionID, lines.join("\n"));
+      return;
+    }
+
+    // /anthropic set <key> <value> — toggle features at runtime
+    if (primary === "set") {
+      const key = (args[1] || "").toLowerCase();
+      const value = (args[2] || "").toLowerCase();
+      /** @type {Record<string, () => void>} */
+      const setters = {
+        emulation: () =>
+          saveConfig({ signature_emulation: { enabled: value === "on" || value === "1" || value === "true" } }),
+        compaction: () =>
+          saveConfig({ signature_emulation: { prompt_compaction: value === "off" ? "off" : "minimal" } }),
+        "1m-context": () =>
+          saveConfig({ override_model_limits: { enabled: value === "on" || value === "1" || value === "true" } }),
+        "idle-refresh": () =>
+          saveConfig({ idle_refresh: { enabled: value === "on" || value === "1" || value === "true" } }),
+        debug: () => saveConfig({ debug: value === "on" || value === "1" || value === "true" }),
+        quiet: () => saveConfig({ toasts: { quiet: value === "on" || value === "1" || value === "true" } }),
+        strategy: () => {
+          const valid = ["sticky", "round-robin", "hybrid"];
+          if (valid.includes(value)) saveConfig({ account_selection_strategy: value });
+          else throw new Error(`Invalid strategy. Valid: ${valid.join(", ")}`);
+        },
+      };
+
+      if (!key || !setters[key]) {
+        const keys = Object.keys(setters).join(", ");
+        await sendCommandMessage(
+          input.sessionID,
+          `▣ Anthropic Set\n\nUsage: /anthropic set <key> <value>\nKeys: ${keys}\nValues: on/off (or specific values for strategy/compaction)`,
+        );
+        return;
+      }
+      if (!value) {
+        await sendCommandMessage(input.sessionID, `▣ Anthropic Set\n\nMissing value for "${key}".`);
+        return;
+      }
+      setters[key]();
+      // Reload config into runtime
+      Object.assign(config, loadConfigFresh());
+      await sendCommandMessage(input.sessionID, `▣ Anthropic Set\n\n${key} = ${value}`);
+      return;
+    }
+
+    // /anthropic betas [add|remove <beta>] — show/manage custom betas
+    if (primary === "betas") {
+      const action = (args[1] || "").toLowerCase();
+
+      if (!action || action === "list") {
+        const fresh = loadConfigFresh();
+        const lines = [
+          "▣ Anthropic Betas",
+          "",
+          "Preset betas (auto-computed per model/provider):",
+          "  oauth-2025-04-20, claude-code-20250219,",
+          "  interleaved-thinking-2025-05-14 OR adaptive-thinking-2026-01-28,",
+          "  fine-grained-tool-streaming-2025-05-14",
+          "",
+          `Custom betas: ${fresh.custom_betas.length ? fresh.custom_betas.join(", ") : "(none)"}`,
+          "",
+          "Toggleable presets:",
+          "  /anthropic betas add structured-outputs-2025-12-15",
+          "  /anthropic betas add context-management-2025-06-27",
+          "  /anthropic betas add prompt-caching-scope-2026-01-05",
+          "  /anthropic betas add tool-examples-2025-10-29",
+          "  /anthropic betas add web-search-2025-03-05",
+          "  /anthropic betas add code-execution-2025-08-25",
+          "  /anthropic betas add compact-2026-01-12",
+          "  /anthropic betas add mcp-servers-2025-12-04",
+          "  /anthropic betas add files-api-2025-04-14",
+          "",
+          "Remove: /anthropic betas remove <beta>",
+        ];
+        await sendCommandMessage(input.sessionID, lines.join("\n"));
+        return;
+      }
+
+      if (action === "add") {
+        const beta = args[2]?.trim();
+        if (!beta) {
+          await sendCommandMessage(input.sessionID, "▣ Anthropic Betas\n\nUsage: /anthropic betas add <beta-name>");
+          return;
+        }
+        const fresh = loadConfigFresh();
+        const current = fresh.custom_betas || [];
+        if (current.includes(beta)) {
+          await sendCommandMessage(input.sessionID, `▣ Anthropic Betas\n\n"${beta}" already added.`);
+          return;
+        }
+        saveConfig({ custom_betas: [...current, beta] });
+        Object.assign(config, loadConfigFresh());
+        await sendCommandMessage(input.sessionID, `▣ Anthropic Betas\n\nAdded: ${beta}`);
+        return;
+      }
+
+      if (action === "remove" || action === "rm") {
+        const beta = args[2]?.trim();
+        if (!beta) {
+          await sendCommandMessage(input.sessionID, "▣ Anthropic Betas\n\nUsage: /anthropic betas remove <beta-name>");
+          return;
+        }
+        const fresh = loadConfigFresh();
+        const current = fresh.custom_betas || [];
+        if (!current.includes(beta)) {
+          await sendCommandMessage(input.sessionID, `▣ Anthropic Betas\n\n"${beta}" not in custom betas.`);
+          return;
+        }
+        saveConfig({ custom_betas: current.filter((b) => b !== beta) });
+        Object.assign(config, loadConfigFresh());
+        await sendCommandMessage(input.sessionID, `▣ Anthropic Betas\n\nRemoved: ${beta}`);
+        return;
+      }
+
+      await sendCommandMessage(input.sessionID, "▣ Anthropic Betas\n\nUsage: /anthropic betas [add|remove <beta>]");
+      return;
+    }
+
     // Interactive CLI command is not compatible with slash flow.
     if (primary === "manage" || primary === "mg") {
       await sendCommandMessage(
@@ -2160,7 +2299,7 @@ export async function AnthropicAuthPlugin({ client }) {
       input.command ??= {};
       input.command["anthropic"] = {
         template: "/anthropic",
-        description: "Manage Anthropic multi-account auth (status, usage, switch, login, reauth, logout)",
+        description: "Manage Anthropic auth, config, and betas (usage, login, config, set, betas, switch)",
       };
     },
     "command.execute.before": async (input) => {
@@ -2388,6 +2527,7 @@ export async function AnthropicAuthPlugin({ client }) {
                 const requestHeaders = buildRequestHeaders(input, requestInit, accessToken, body, requestUrl, {
                   enabled: signatureEmulationEnabled,
                   claudeCliVersion,
+                  customBetas: config.custom_betas,
                 });
                 // Execute the request
                 let response;

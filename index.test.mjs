@@ -44,6 +44,7 @@ vi.mock("./lib/config.mjs", async (importOriginal) => {
     ...original,
     loadConfig: vi.fn(() => ({
       ...original.DEFAULT_CONFIG,
+      account_selection_strategy: "sticky",
       signature_emulation: {
         ...original.DEFAULT_CONFIG.signature_emulation,
         fetch_claude_code_version_on_startup: false,
@@ -51,8 +52,23 @@ vi.mock("./lib/config.mjs", async (importOriginal) => {
       override_model_limits: {
         ...original.DEFAULT_CONFIG.override_model_limits,
       },
+      custom_betas: [...(original.DEFAULT_CONFIG.custom_betas || [])],
       idle_refresh: { ...original.DEFAULT_CONFIG.idle_refresh, enabled: false },
     })),
+    loadConfigFresh: vi.fn(() => ({
+      ...original.DEFAULT_CONFIG,
+      account_selection_strategy: "sticky",
+      signature_emulation: {
+        ...original.DEFAULT_CONFIG.signature_emulation,
+        fetch_claude_code_version_on_startup: false,
+      },
+      override_model_limits: {
+        ...original.DEFAULT_CONFIG.override_model_limits,
+      },
+      custom_betas: [...(original.DEFAULT_CONFIG.custom_betas || [])],
+      idle_refresh: { ...original.DEFAULT_CONFIG.idle_refresh, enabled: false },
+    })),
+    saveConfig: vi.fn(),
   };
 });
 
@@ -3337,7 +3353,7 @@ describe("override_model_limits", () => {
     delete process.env.OPENCODE_ANTHROPIC_OVERRIDE_MODEL_LIMITS;
   });
 
-  it("overrides context limit to 1M for 1M-window models by default (OAuth)", async () => {
+  it("does not override context limit by default (1m-context off)", async () => {
     const provider = makeProvider();
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -3348,14 +3364,39 @@ describe("override_model_limits", () => {
     });
     await plugin.auth.loader(getAuth, provider);
 
+    expect(provider.models["claude-opus-4-6"].limit.context).toBe(200_000);
+    expect(provider.models["claude-sonnet-4-1m"].limit.context).toBe(200_000);
+    expect(provider.models["claude-sonnet"].limit.context).toBe(200_000);
+  });
+
+  it("overrides context limit to 1M when override_model_limits.enabled is true", async () => {
+    const configModule = await import("./lib/config.mjs");
+    configModule.loadConfig.mockReturnValueOnce({
+      ...configModule.loadConfig(),
+      override_model_limits: { enabled: true, context: 1_000_000, output: 0 },
+    });
+    const provider = makeProvider();
+    const pluginEnabled = await AnthropicAuthPlugin({ client });
+    const getAuth = vi.fn().mockResolvedValue({
+      type: "oauth",
+      refresh: "refresh-1",
+      access: "access-1",
+      expires: Date.now() + 3_600_000,
+    });
+    await pluginEnabled.auth.loader(getAuth, provider);
+
     expect(provider.models["claude-opus-4-6"].limit.context).toBe(1_000_000);
     expect(provider.models["claude-sonnet-4-1m"].limit.context).toBe(1_000_000);
-    // non-1M model untouched
     expect(provider.models["claude-sonnet"].limit.context).toBe(200_000);
   });
 
   it("does not override 1M context when CLAUDE_CODE_DISABLE_1M_CONTEXT is set", async () => {
     process.env.CLAUDE_CODE_DISABLE_1M_CONTEXT = "1";
+    const configModule = await import("./lib/config.mjs");
+    configModule.loadConfig.mockReturnValueOnce({
+      ...configModule.loadConfig(),
+      override_model_limits: { enabled: true, context: 1_000_000, output: 0 },
+    });
     const provider = makeProvider();
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -3398,8 +3439,8 @@ describe("override_model_limits", () => {
 
   it("does not override limits when override_model_limits.enabled is false in config", async () => {
     const configModule = await import("./lib/config.mjs");
-    loadConfig.mockReturnValueOnce({
-      ...loadConfig(),
+    configModule.loadConfig.mockReturnValueOnce({
+      ...configModule.loadConfig(),
       override_model_limits: { enabled: false, context: 1_000_000, output: 0 },
     });
     const provider = makeProvider();
