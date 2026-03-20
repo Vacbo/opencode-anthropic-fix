@@ -79,7 +79,7 @@ vi.stubGlobal("fetch", mockFetch);
 import { AnthropicAuthPlugin } from "./index.mjs";
 import { saveAccounts, loadAccounts, clearAccounts } from "./lib/storage.mjs";
 import { acquireRefreshLock, releaseRefreshLock } from "./lib/refresh-lock.mjs";
-import { loadConfig, DEFAULT_CONFIG } from "./lib/config.mjs";
+import { loadConfig, loadConfigFresh, saveConfig as saveRuntimeConfig, DEFAULT_CONFIG } from "./lib/config.mjs";
 
 beforeEach(() => {
   delete process.env.DISABLE_INTERLEAVED_THINKING;
@@ -450,6 +450,32 @@ describe("slash commands", () => {
     const text = await runAnthropic("switch 2");
     expect(text).toContain("Switched");
     expect(saveAccounts).toHaveBeenCalledWith(expect.objectContaining({ activeIndex: 1 }));
+  });
+
+  it("supports 1m beta shortcut in slash command", async () => {
+    const text = await runAnthropic("betas add 1m");
+
+    expect(text).toContain("Added: context-1m-2025-08-07");
+    expect(saveRuntimeConfig).toHaveBeenLastCalledWith({ custom_betas: ["context-1m-2025-08-07"] });
+  });
+
+  it("supports fast beta shortcut in slash command", async () => {
+    const text = await runAnthropic("betas add fast");
+
+    expect(text).toContain("Added: fast-mode-2026-02-01");
+    expect(saveRuntimeConfig).toHaveBeenLastCalledWith({ custom_betas: ["fast-mode-2026-02-01"] });
+  });
+
+  it("supports beta shortcut in remove flow", async () => {
+    loadConfigFresh.mockReturnValueOnce({
+      ...DEFAULT_CONFIG,
+      custom_betas: ["fast-mode-2026-02-01"],
+    });
+
+    const text = await runAnthropic("betas remove fast");
+
+    expect(text).toContain("Removed: fast-mode-2026-02-01");
+    expect(saveRuntimeConfig).toHaveBeenLastCalledWith({ custom_betas: [] });
   });
 
   it("starts and completes login OAuth flow", async () => {

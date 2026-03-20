@@ -142,6 +142,14 @@ const EXPERIMENTAL_BETA_FLAGS = new Set([
   "tool-search-tool-2025-10-19",
   "web-search-2025-03-05",
 ]);
+const BETA_SHORTCUTS = new Map([
+  ["1m", "context-1m-2025-08-07"],
+  ["1m-context", "context-1m-2025-08-07"],
+  ["context-1m", "context-1m-2025-08-07"],
+  ["fast", "fast-mode-2026-02-01"],
+  ["fast-mode", "fast-mode-2026-02-01"],
+  ["opus-fast", "fast-mode-2026-02-01"],
+]);
 const STAINLESS_HELPER_KEYS = [
   "x_stainless_helper",
   "x-stainless-helper",
@@ -180,6 +188,17 @@ function isFalsyEnv(value) {
   if (!value) return false;
   const normalized = value.trim().toLowerCase();
   return normalized === "0" || normalized === "false" || normalized === "no";
+}
+
+/**
+ * @param {string | undefined} value
+ * @returns {string}
+ */
+function resolveBetaShortcut(value) {
+  if (!value) return "";
+  const trimmed = value.trim();
+  const mapped = BETA_SHORTCUTS.get(trimmed.toLowerCase());
+  return mapped || trimmed;
 }
 
 /**
@@ -2106,6 +2125,8 @@ export async function AnthropicAuthPlugin({ client }) {
           "  /anthropic betas add web-search-2025-03-05",
           "  /anthropic betas add compact-2026-01-12",
           "  /anthropic betas add mcp-servers-2025-12-04",
+          "  /anthropic betas add 1m   (shortcut for context-1m-2025-08-07)",
+          "  /anthropic betas add fast (shortcut for fast-mode-2026-02-01)",
           "",
           "Remove: /anthropic betas remove <beta>",
         ];
@@ -2114,11 +2135,12 @@ export async function AnthropicAuthPlugin({ client }) {
       }
 
       if (action === "add") {
-        const beta = args[2]?.trim();
-        if (!beta) {
+        const betaInput = args[2]?.trim();
+        if (!betaInput) {
           await sendCommandMessage(input.sessionID, "▣ Anthropic Betas\n\nUsage: /anthropic betas add <beta-name>");
           return;
         }
+        const beta = resolveBetaShortcut(betaInput);
         const fresh = loadConfigFresh();
         const current = fresh.custom_betas || [];
         if (current.includes(beta)) {
@@ -2127,16 +2149,21 @@ export async function AnthropicAuthPlugin({ client }) {
         }
         saveConfig({ custom_betas: [...current, beta] });
         Object.assign(config, loadConfigFresh());
-        await sendCommandMessage(input.sessionID, `▣ Anthropic Betas\n\nAdded: ${beta}`);
+        const fromShortcut = beta !== betaInput;
+        await sendCommandMessage(
+          input.sessionID,
+          `▣ Anthropic Betas\n\nAdded: ${beta}${fromShortcut ? ` (from shortcut: ${betaInput})` : ""}`,
+        );
         return;
       }
 
       if (action === "remove" || action === "rm") {
-        const beta = args[2]?.trim();
-        if (!beta) {
+        const betaInput = args[2]?.trim();
+        if (!betaInput) {
           await sendCommandMessage(input.sessionID, "▣ Anthropic Betas\n\nUsage: /anthropic betas remove <beta-name>");
           return;
         }
+        const beta = resolveBetaShortcut(betaInput);
         const fresh = loadConfigFresh();
         const current = fresh.custom_betas || [];
         if (!current.includes(beta)) {

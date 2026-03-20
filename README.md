@@ -271,6 +271,8 @@ Add or remove beta flags that get included in every `anthropic-beta` header. Per
 /anthropic betas                   # show active betas (auto + custom) with presets
 /anthropic betas add <beta-name>   # add a custom beta
 /anthropic betas remove <beta-name> # remove a custom beta
+/anthropic betas add 1m            # shortcut => context-1m-2025-08-07
+/anthropic betas add fast          # shortcut => fast-mode-2026-02-01
 ```
 
 **Available preset betas** (shown by `/anthropic betas`):
@@ -284,6 +286,8 @@ Add or remove beta flags that get included in every `anthropic-beta` header. Per
 | `compact-2026-01-12`              | Conversation compaction endpoint                  |
 | `mcp-servers-2025-12-04`          | MCP servers in API request payload                |
 | `web-search-2025-03-05`           | Web search (Vertex/Foundry only)                  |
+| `context-1m-2025-08-07`           | 1M context beta (provider/model dependent)        |
+| `fast-mode-2026-02-01`            | Faster Opus mode (experimental)                   |
 
 Example workflow:
 
