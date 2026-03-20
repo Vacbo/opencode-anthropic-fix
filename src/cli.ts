@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 /**
  * CLI for managing Anthropic multi-account OAuth configuration.
  *
@@ -1627,7 +1628,10 @@ ${c.dim("Files:")}
 // ---------------------------------------------------------------------------
 
 /** @type {AsyncLocalStorage<{ log?: (...args: any[]) => void, error?: (...args: any[]) => void }>} */
-type IoStore = { log?: (...args: any[]) => void; error?: (...args: any[]) => void };
+type IoStore = {
+  log?: (...args: any[]) => void;
+  error?: (...args: any[]) => void;
+};
 const ioContext = new AsyncLocalStorage<IoStore>();
 
 const nativeConsoleLog = console.log.bind(console);
@@ -1758,7 +1762,9 @@ async function dispatch(argv: string[]) {
  */
 export async function main(
   argv: string[],
-  options: { io?: { log?: (...args: any[]) => void; error?: (...args: any[]) => void } } = {},
+  options: {
+    io?: { log?: (...args: any[]) => void; error?: (...args: any[]) => void };
+  } = {},
 ) {
   if (options.io) {
     return runWithIoContext(options.io, () => dispatch(argv));

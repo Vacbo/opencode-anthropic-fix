@@ -1,14 +1,23 @@
 {
-  "name": "opencode-anthropic-fix",
+  "name": "@vacbo/opencode-anthropic-fix",
   "version": "0.0.25",
-  "main": "./src/index.ts",
+  "main": "./dist/opencode-anthropic-auth-plugin.js",
+  "bin": {
+    "opencode-anthropic-auth": "./dist/opencode-anthropic-auth-cli.mjs"
+  },
   "files": [
+    "dist/**",
     "src/**/*.ts",
     "README.md",
     "LICENSE"
   ],
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "build": "bun scripts/build.ts",
+    "prepublishOnly": "npm run build && npm test",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",

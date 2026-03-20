@@ -4,13 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       bump:
-        description: "Version bump type"
+        description: "Version bump type (patch, minor, major)"
         required: false
         default: "patch"
 
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 jobs:
   publish:
@@ -23,9 +23,30 @@ jobs:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
 
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - run: npm install
 
-      - run: npm publish --access public
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - name: Version bump
+        if: ${{ github.event.inputs.bump != '' }}
+        env:
+          BUMP_TYPE: ${{ github.event.inputs.bump }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          npm version "$BUMP_TYPE" -m "chore(release): v%s"
+          git push --follow-tags
+
+      - name: Publish
+        run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: false
