@@ -1,0 +1,119 @@
+// ---------------------------------------------------------------------------
+// Environment variable helpers extracted from index.mjs
+// ---------------------------------------------------------------------------
+
+import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { getConfigDir } from "./config.js";
+import { BETA_SHORTCUTS, DEBUG_SYSTEM_PROMPT_ENV, USER_ID_STORAGE_FILE } from "./constants.ts";
+
+export function isTruthyEnv(value: string | undefined): boolean {
+  if (!value) return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes";
+}
+
+export function isFalsyEnv(value: string | undefined): boolean {
+  if (!value) return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "0" || normalized === "false" || normalized === "no";
+}
+
+export function isNonInteractiveMode(): boolean {
+  if (isTruthyEnv(process.env.CI)) return true;
+  return !process.stdout.isTTY;
+}
+
+export function getClaudeEntrypoint(): string {
+  return process.env.CLAUDE_CODE_ENTRYPOINT || "cli";
+}
+
+export function resolveBetaShortcut(value: string | undefined): string {
+  if (!value) return "";
+  const trimmed = value.trim();
+  const mapped = BETA_SHORTCUTS.get(trimmed.toLowerCase());
+  return mapped || trimmed;
+}
+
+export function parseAnthropicCustomHeaders(): Record<string, string> {
+  const raw = process.env.ANTHROPIC_CUSTOM_HEADERS;
+  if (!raw) return {};
+
+  const headers: Record<string, string> = {};
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const sep = trimmed.indexOf(":");
+    if (sep <= 0) continue;
+    const key = trimmed.slice(0, sep).trim();
+    const value = trimmed.slice(sep + 1).trim();
+    if (!key || !value) continue;
+    headers[key] = value;
+  }
+
+  return headers;
+}
+
+export function getOrCreateSignatureUserId(): string {
+  const envUserId = process.env.OPENCODE_ANTHROPIC_SIGNATURE_USER_ID?.trim();
+  if (envUserId) return envUserId;
+
+  const configDir = getConfigDir();
+  const userIdPath = join(configDir, USER_ID_STORAGE_FILE);
+
+  try {
+    if (existsSync(userIdPath)) {
+      const existing = readFileSync(userIdPath, "utf-8").trim();
+      if (existing) return existing;
+    }
+  } catch {
+    // fall through and generate a new id
+  }
+
+  const generated = randomUUID();
+  try {
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(userIdPath, `${generated}\n`, {
+      encoding: "utf-8",
+      mode: 0o600,
+    });
+  } catch {
+    // Ignore filesystem errors; caller still gets generated ID for this runtime.
+  }
+  return generated;
+}
+
+export function shouldDebugSystemPrompt(): boolean {
+  return isTruthyEnv(process.env[DEBUG_SYSTEM_PROMPT_ENV]);
+}
+
+export function logTransformedSystemPrompt(body: string | undefined): void {
+  if (!shouldDebugSystemPrompt()) return;
+  if (!body || typeof body !== "string") return;
+
+  try {
+    const parsed = JSON.parse(body);
+    if (!Object.hasOwn(parsed, "system")) return;
+    // Avoid circular import: inline the title-check here
+    const system = parsed.system;
+    if (
+      Array.isArray(system) &&
+      system.some(
+        (item: { type?: string; text?: string }) =>
+          item.type === "text" &&
+          typeof item.text === "string" &&
+          (item.text.trim().toLowerCase().includes("you are a title generator") ||
+            item.text.trim().toLowerCase().includes("generate a brief title")),
+      )
+    ) {
+      return;
+    }
+    console.error(
+      "[opencode-anthropic-auth][system-debug] transformed system:",
+      JSON.stringify(parsed.system, null, 2),
+    );
+  } catch {
+    // Ignore parse errors in debug logging path.
+  }
+}

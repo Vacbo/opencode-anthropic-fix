@@ -1,0 +1,307 @@
+import { existsSync, readFileSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_CONFIG, getConfigDir, getConfigPath, loadConfig } from "./config.js";
+
+// Mock fs module
+vi.mock("node:fs", () => ({
+  existsSync: vi.fn(),
+  readFileSync: vi.fn(),
+}));
+
+describe("DEFAULT_CONFIG", () => {
+  it("has expected default strategy", () => {
+    expect(DEFAULT_CONFIG.account_selection_strategy).toBe("sticky");
+  });
+
+  it("has expected health score defaults", () => {
+    expect(DEFAULT_CONFIG.health_score.initial).toBe(70);
+    expect(DEFAULT_CONFIG.health_score.success_reward).toBe(1);
+    expect(DEFAULT_CONFIG.health_score.rate_limit_penalty).toBe(-10);
+    expect(DEFAULT_CONFIG.health_score.failure_penalty).toBe(-20);
+    expect(DEFAULT_CONFIG.health_score.min_usable).toBe(50);
+    expect(DEFAULT_CONFIG.health_score.max_score).toBe(100);
+  });
+
+  it("has expected token bucket defaults", () => {
+    expect(DEFAULT_CONFIG.token_bucket.max_tokens).toBe(50);
+    expect(DEFAULT_CONFIG.token_bucket.regeneration_rate_per_minute).toBe(6);
+    expect(DEFAULT_CONFIG.token_bucket.initial_tokens).toBe(50);
+  });
+
+  it("has debug disabled by default", () => {
+    expect(DEFAULT_CONFIG.debug).toBe(false);
+  });
+
+  it("enables signature emulation defaults", () => {
+    expect(DEFAULT_CONFIG.signature_emulation.enabled).toBe(true);
+    expect(DEFAULT_CONFIG.signature_emulation.fetch_claude_code_version_on_startup).toBe(true);
+    expect(DEFAULT_CONFIG.signature_emulation.prompt_compaction).toBe("minimal");
+  });
+
+  it("has toast defaults", () => {
+    expect(DEFAULT_CONFIG.toasts.quiet).toBe(false);
+    expect(DEFAULT_CONFIG.toasts.debounce_seconds).toBe(30);
+  });
+});
+
+describe("getConfigDir", () => {
+  it("returns a path ending with opencode", () => {
+    const dir = getConfigDir();
+    expect(dir.endsWith("opencode")).toBe(true);
+  });
+});
+
+describe("getConfigPath", () => {
+  it("returns a path ending with anthropic-auth.json", () => {
+    const path = getConfigPath();
+    expect(path.endsWith("anthropic-auth.json")).toBe(true);
+  });
+});
+
+describe("loadConfig", () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    // Clean env overrides
+    delete process.env.OPENCODE_ANTHROPIC_STRATEGY;
+    delete process.env.OPENCODE_ANTHROPIC_DEBUG;
+    delete process.env.OPENCODE_ANTHROPIC_QUIET;
+    delete process.env.OPENCODE_ANTHROPIC_EMULATE_CLAUDE_CODE_SIGNATURE;
+    delete process.env.OPENCODE_ANTHROPIC_FETCH_CLAUDE_CODE_VERSION;
+    delete process.env.OPENCODE_ANTHROPIC_PROMPT_COMPACTION;
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("returns defaults when config file does not exist", () => {
+    vi.mocked(existsSync).mockReturnValue(false);
+    const config = loadConfig();
+    expect(config).toEqual(DEFAULT_CONFIG);
+  });
+
+  it("returns defaults when config file is invalid JSON", () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue("not json {{{");
+    const config = loadConfig();
+    expect(config).toEqual(DEFAULT_CONFIG);
+  });
+
+  it("returns defaults when config file is an array", () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue("[]");
+    const config = loadConfig();
+    expect(config).toEqual(DEFAULT_CONFIG);
+  });
+
+  it("returns defaults when config file is null", () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue("null");
+    const config = loadConfig();
+    expect(config).toEqual(DEFAULT_CONFIG);
+  });
+
+  it("merges valid strategy from config file", () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ account_selection_strategy: "sticky" }));
+    const config = loadConfig();
+    expect(config.account_selection_strategy).toBe("sticky");
+  });
+
+  it("ignores invalid strategy", () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ account_selection_strategy: "invalid" }));
+    const config = loadConfig();
+    expect(config.account_selection_strategy).toBe("sticky");
+  });
+
+  it("accepts boolean debug", () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ debug: true }));
+    const config = loadConfig();
+    expect(config.debug).toBe(true);
+  });
+
+  it("merges signature emulation sub-config", () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(
+      JSON.stringify({
+        signature_emulation: {
+          enabled: false,
+          fetch_claude_code_version_on_startup: false,
+          prompt_compaction: "off",
+        },
+      }),
+    );
+    const config = loadConfig();
+    expect(config.signature_emulation.enabled).toBe(false);
+    expect(config.signature_emulation.fetch_claude_code_version_on_startup).toBe(false);
+    expect(config.signature_emulation.prompt_compaction).toBe("off");
+  });
+
+  it("merges health_score sub-config", () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(
+      JSON.stringify({
+        health_score: {
+          initial: 80,
+          success_reward: 5,
+        },
+      }),
+    );
+    const config = loadConfig();
+    expect(config.health_score.initial).toBe(80);
+    expect(config.health_score.success_reward).toBe(5);
+    // Other fields should be defaults
+    expect(config.health_score.rate_limit_penalty).toBe(-10);
+  });
+
+  it("clamps health_score values to valid ranges", () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(
+      JSON.stringify({
+        health_score: {
+          initial: 200, // max 100
+          rate_limit_penalty: -999, // min -50
+        },
+      }),
+    );
+    const config = loadConfig();
+    expect(config.health_score.initial).toBe(100);
+    expect(config.health_score.rate_limit_penalty).toBe(-50);
+  });
+
+  it("merges token_bucket sub-config", () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(
+      JSON.stringify({
+        token_bucket: {
+          max_tokens: 100,
+        },
+      }),
+    );
+    const config = loadConfig();
+    expect(config.token_bucket.max_tokens).toBe(100);
+    expect(config.token_bucket.regeneration_rate_per_minute).toBe(6);
+  });
+
+  // Environment variable overrides
+  it("overrides strategy from OPENCODE_ANTHROPIC_STRATEGY", () => {
+    vi.mocked(existsSync).mockReturnValue(false);
+    process.env.OPENCODE_ANTHROPIC_STRATEGY = "round-robin";
+    const config = loadConfig();
+    expect(config.account_selection_strategy).toBe("round-robin");
+  });
+
+  it("ignores invalid OPENCODE_ANTHROPIC_STRATEGY", () => {
+    vi.mocked(existsSync).mockReturnValue(false);
+    process.env.OPENCODE_ANTHROPIC_STRATEGY = "invalid";
+    const config = loadConfig();
+    expect(config.account_selection_strategy).toBe("sticky");
+  });
+
+  it("enables debug from OPENCODE_ANTHROPIC_DEBUG=1", () => {
+    vi.mocked(existsSync).mockReturnValue(false);
+    process.env.OPENCODE_ANTHROPIC_DEBUG = "1";
+    const config = loadConfig();
+    expect(config.debug).toBe(true);
+  });
+
+  it("enables debug from OPENCODE_ANTHROPIC_DEBUG=true", () => {
+    vi.mocked(existsSync).mockReturnValue(false);
+    process.env.OPENCODE_ANTHROPIC_DEBUG = "true";
+    const config = loadConfig();
+    expect(config.debug).toBe(true);
+  });
+
+  it("disables debug from OPENCODE_ANTHROPIC_DEBUG=0", () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ debug: true }));
+    process.env.OPENCODE_ANTHROPIC_DEBUG = "0";
+    const config = loadConfig();
+    expect(config.debug).toBe(false);
+  });
+
+  it("disables signature emulation from OPENCODE_ANTHROPIC_EMULATE_CLAUDE_CODE_SIGNATURE=0", () => {
+    vi.mocked(existsSync).mockReturnValue(false);
+    process.env.OPENCODE_ANTHROPIC_EMULATE_CLAUDE_CODE_SIGNATURE = "0";
+    const config = loadConfig();
+    expect(config.signature_emulation.enabled).toBe(false);
+  });
+
+  it("disables version fetch from OPENCODE_ANTHROPIC_FETCH_CLAUDE_CODE_VERSION=0", () => {
+    vi.mocked(existsSync).mockReturnValue(false);
+    process.env.OPENCODE_ANTHROPIC_FETCH_CLAUDE_CODE_VERSION = "0";
+    const config = loadConfig();
+    expect(config.signature_emulation.fetch_claude_code_version_on_startup).toBe(false);
+  });
+
+  it("disables prompt compaction from OPENCODE_ANTHROPIC_PROMPT_COMPACTION=off", () => {
+    vi.mocked(existsSync).mockReturnValue(false);
+    process.env.OPENCODE_ANTHROPIC_PROMPT_COMPACTION = "off";
+    const config = loadConfig();
+    expect(config.signature_emulation.prompt_compaction).toBe("off");
+  });
+
+  it("env overrides take precedence over config file", () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ account_selection_strategy: "sticky" }));
+    process.env.OPENCODE_ANTHROPIC_STRATEGY = "round-robin";
+    const config = loadConfig();
+    expect(config.account_selection_strategy).toBe("round-robin");
+  });
+
+  // Toast config
+  it("has toast defaults", () => {
+    vi.mocked(existsSync).mockReturnValue(false);
+    const config = loadConfig();
+    expect(config.toasts.quiet).toBe(false);
+    expect(config.toasts.debounce_seconds).toBe(30);
+  });
+
+  it("merges toasts sub-config", () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ toasts: { quiet: true, debounce_seconds: 10 } }));
+    const config = loadConfig();
+    expect(config.toasts.quiet).toBe(true);
+    expect(config.toasts.debounce_seconds).toBe(10);
+  });
+
+  it("clamps debounce_seconds to valid range", () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ toasts: { debounce_seconds: 999 } }));
+    const config = loadConfig();
+    expect(config.toasts.debounce_seconds).toBe(300);
+  });
+
+  it("clamps negative debounce_seconds to 0", () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ toasts: { debounce_seconds: -5 } }));
+    const config = loadConfig();
+    expect(config.toasts.debounce_seconds).toBe(0);
+  });
+
+  it("ignores non-boolean quiet", () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ toasts: { quiet: "yes" } }));
+    const config = loadConfig();
+    expect(config.toasts.quiet).toBe(false);
+  });
+
+  it("enables quiet from OPENCODE_ANTHROPIC_QUIET=1", () => {
+    vi.mocked(existsSync).mockReturnValue(false);
+    process.env.OPENCODE_ANTHROPIC_QUIET = "1";
+    const config = loadConfig();
+    expect(config.toasts.quiet).toBe(true);
+  });
+
+  it("disables quiet from OPENCODE_ANTHROPIC_QUIET=0", () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ toasts: { quiet: true } }));
+    process.env.OPENCODE_ANTHROPIC_QUIET = "0";
+    const config = loadConfig();
+    expect(config.toasts.quiet).toBe(false);
+  });
+});

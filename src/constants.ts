@@ -1,0 +1,77 @@
+// ---------------------------------------------------------------------------
+// Shared constants extracted from index.mjs
+// ---------------------------------------------------------------------------
+
+export const FALLBACK_CLAUDE_CLI_VERSION = "2.1.80";
+export const CLAUDE_CODE_NPM_LATEST_URL = "https://registry.npmjs.org/@anthropic-ai/claude-code/latest";
+export const CLAUDE_CODE_BETA_FLAG = "claude-code-20250219";
+export const EFFORT_BETA_FLAG = "effort-2025-11-24";
+export const ADVANCED_TOOL_USE_BETA_FLAG = "advanced-tool-use-2025-11-20";
+export const FAST_MODE_BETA_FLAG = "fast-mode-2026-02-01";
+export const TOKEN_COUNTING_BETA_FLAG = "token-counting-2024-11-01";
+export const CLAUDE_CODE_IDENTITY_STRING = "You are Claude Code, Anthropic's official CLI for Claude.";
+
+export const KNOWN_IDENTITY_STRINGS = new Set([
+  CLAUDE_CODE_IDENTITY_STRING,
+  "You are Claude Code, Anthropic's official CLI for Claude, running within the Claude Agent SDK.",
+  "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
+]);
+
+export const BEDROCK_UNSUPPORTED_BETAS = new Set([
+  "interleaved-thinking-2025-05-14",
+  "context-1m-2025-08-07",
+  "tool-search-tool-2025-10-19",
+  "tool-examples-2025-10-29",
+]);
+
+export const EXPERIMENTAL_BETA_FLAGS = new Set([
+  "adaptive-thinking-2026-01-28",
+  "advanced-tool-use-2025-11-20",
+  "afk-mode-2026-01-31",
+  "code-execution-2025-08-25",
+  "context-1m-2025-08-07",
+  "context-management-2025-06-27",
+  "fast-mode-2026-02-01",
+  "files-api-2025-04-14",
+  "fine-grained-tool-streaming-2025-05-14",
+  "interleaved-thinking-2025-05-14",
+  "prompt-caching-scope-2026-01-05",
+  "redact-thinking-2026-02-12",
+  "structured-outputs-2025-12-15",
+  "tool-examples-2025-10-29",
+  "tool-search-tool-2025-10-19",
+  "web-search-2025-03-05",
+]);
+
+export const BETA_SHORTCUTS = new Map<string, string>([
+  ["1m", "context-1m-2025-08-07"],
+  ["1m-context", "context-1m-2025-08-07"],
+  ["context-1m", "context-1m-2025-08-07"],
+  ["fast", "fast-mode-2026-02-01"],
+  ["fast-mode", "fast-mode-2026-02-01"],
+  ["opus-fast", "fast-mode-2026-02-01"],
+]);
+
+export const STAINLESS_HELPER_KEYS = [
+  "x_stainless_helper",
+  "x-stainless-helper",
+  "stainless_helper",
+  "stainlessHelper",
+  "_stainless_helper",
+] as const;
+
+export const USER_ID_STORAGE_FILE = "anthropic-signature-user-id";
+export const DEBUG_SYSTEM_PROMPT_ENV = "OPENCODE_ANTHROPIC_DEBUG_SYSTEM_PROMPT";
+export const ANTHROPIC_COMMAND_HANDLED = "__ANTHROPIC_COMMAND_HANDLED__";
+export const PENDING_OAUTH_TTL_MS = 10 * 60 * 1000;
+
+export const COMPACT_TITLE_GENERATOR_SYSTEM_PROMPT = [
+  "You are a title generator. You output ONLY a thread title. Nothing else.",
+  "",
+  "Rules:",
+  "- Use the same language as the user message.",
+  "- Output exactly one line.",
+  "- Keep the title at or below 50 characters.",
+  "- No explanations, prefixes, or suffixes.",
+  "- Keep important technical terms, numbers, and filenames when present.",
+].join("\n");
