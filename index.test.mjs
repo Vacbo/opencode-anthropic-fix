@@ -7,7 +7,7 @@
  * We mock external dependencies (fetch, PKCE, readline, storage fs) but exercise
  * the real plugin code paths.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Mocks — must be set up before importing the module under test
@@ -77,9 +77,9 @@ const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
 import { AnthropicAuthPlugin } from "./index.mjs";
-import { saveAccounts, loadAccounts, clearAccounts } from "./lib/storage.mjs";
+import { DEFAULT_CONFIG, loadConfig, loadConfigFresh, saveConfig as saveRuntimeConfig } from "./lib/config.mjs";
 import { acquireRefreshLock, releaseRefreshLock } from "./lib/refresh-lock.mjs";
-import { loadConfig, loadConfigFresh, saveConfig as saveRuntimeConfig, DEFAULT_CONFIG } from "./lib/config.mjs";
+import { clearAccounts, loadAccounts, saveAccounts } from "./lib/storage.mjs";
 
 beforeEach(() => {
   delete process.env.DISABLE_INTERLEAVED_THINKING;
@@ -187,7 +187,11 @@ function makeAccountsData(accountOverrides = [{}], extra = {}) {
   return {
     version: 1,
     accounts: accountOverrides.map((o, i) =>
-      makeStoredAccount({ refreshToken: `refresh-${i + 1}`, addedAt: (i + 1) * 1000, ...o }),
+      makeStoredAccount({
+        refreshToken: `refresh-${i + 1}`,
+        addedAt: (i + 1) * 1000,
+        ...o,
+      }),
     ),
     activeIndex: 0,
     ...extra,
@@ -263,7 +267,8 @@ describe("plugin lifecycle", () => {
 
     // Step 2: callback() — user pastes the code
     // At this point, loader() has NOT been called yet, so accountManager is null.
-    const credentials = await authResult.callback("auth-code#state");
+    const authState = new URL(authResult.url).searchParams.get("state");
+    const credentials = await authResult.callback(`auth-code#${authState}`);
 
     expect(credentials.type).toBe("success");
     expect(credentials.refresh).toBe("refresh-from-oauth");
@@ -354,7 +359,8 @@ describe("plugin lifecycle", () => {
 
     const method = plugin.auth.methods[0];
     const authResult = await method.authorize();
-    const credentials = await authResult.callback("second-code#state");
+    const authState2 = new URL(authResult.url).searchParams.get("state");
+    const credentials = await authResult.callback(`second-code#${authState2}`);
 
     expect(credentials.type).toBe("success");
     expect(credentials.refresh).toBe("second-refresh");
@@ -456,14 +462,18 @@ describe("slash commands", () => {
     const text = await runAnthropic("betas add 1m");
 
     expect(text).toContain("Added: context-1m-2025-08-07");
-    expect(saveRuntimeConfig).toHaveBeenLastCalledWith({ custom_betas: ["context-1m-2025-08-07"] });
+    expect(saveRuntimeConfig).toHaveBeenLastCalledWith({
+      custom_betas: ["context-1m-2025-08-07"],
+    });
   });
 
   it("supports fast beta shortcut in slash command", async () => {
     const text = await runAnthropic("betas add fast");
 
     expect(text).toContain("Added: fast-mode-2026-02-01");
-    expect(saveRuntimeConfig).toHaveBeenLastCalledWith({ custom_betas: ["fast-mode-2026-02-01"] });
+    expect(saveRuntimeConfig).toHaveBeenLastCalledWith({
+      custom_betas: ["fast-mode-2026-02-01"],
+    });
   });
 
   it("supports beta shortcut in remove flow", async () => {
@@ -494,7 +504,8 @@ describe("slash commands", () => {
       }),
     });
 
-    text = await runAnthropic("login complete test-code#test-state");
+    const loginState = new URL(text.match(/https:\/\/[^\s]+/)[0]).searchParams.get("state");
+    text = await runAnthropic(`login complete test-code#${loginState}`);
     expect(text).toContain("Added account #1");
     expect(client.auth.set).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -521,15 +532,20 @@ describe("slash commands", () => {
   });
 
   it("surfaces token exchange error details in slash OAuth flow", async () => {
-    await runAnthropic("login");
+    const loginText = await runAnthropic("login");
+    const errState = new URL(loginText.match(/https:\/\/[^\s]+/)[0]).searchParams.get("state");
 
     mockFetch.mockResolvedValueOnce({
       ok: false,
       status: 400,
-      text: async () => JSON.stringify({ error: "invalid_grant", error_description: "state mismatch" }),
+      text: async () =>
+        JSON.stringify({
+          error: "invalid_grant",
+          error_description: "state mismatch",
+        }),
     });
 
-    const text = await runAnthropic("login complete bad-code#bad-state");
+    const text = await runAnthropic(`login complete bad-code#${errState}`);
     expect(text).toContain("Token exchange failed");
     expect(text).toContain("HTTP 400");
     expect(text).toContain("invalid_grant");
@@ -563,6 +579,7 @@ describe("slash commands", () => {
 
     let text = await runAnthropic("reauth 1");
     expect(text).toContain("Started reauth 1 flow");
+    const reauthState = new URL(text.match(/https:\/\/[^\s]+/)[0]).searchParams.get("state");
 
     mockFetch.mockResolvedValueOnce({
       ok: true,
@@ -574,7 +591,7 @@ describe("slash commands", () => {
       }),
     });
 
-    text = await runAnthropic("reauth complete another-code#state");
+    text = await runAnthropic(`reauth complete another-code#${reauthState}`);
     expect(text).toContain("Re-authenticated account #1");
     expect(client.auth.set).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -683,7 +700,7 @@ describe("fetch interceptor", () => {
     expect(headers.get("authorization")).toBe("Bearer test-access");
     expect(headers.get("anthropic-beta")).toContain("oauth-2025-04-20");
     expect(headers.get("anthropic-beta")).toContain("claude-code-20250219");
-    expect(headers.get("user-agent")).toContain("claude-cli/2.1.79");
+    expect(headers.get("user-agent")).toContain("claude-cli/2.1.80");
     expect(headers.get("x-app")).toBe("cli");
     expect(headers.get("x-stainless-lang")).toBe("js");
     expect(headers.has("x-api-key")).toBe(false);
@@ -739,7 +756,12 @@ describe("fetch interceptor", () => {
     await fetchFn("https://api.anthropic.com/v1/messages", {
       method: "POST",
       body: JSON.stringify({
-        system: [{ type: "text", text: "Working dir: /Users/rmk/projects/opencode-auth" }],
+        system: [
+          {
+            type: "text",
+            text: "Working dir: /Users/rmk/projects/opencode-auth",
+          },
+        ],
         messages: [],
       }),
     });
@@ -859,7 +881,12 @@ describe("fetch interceptor", () => {
       method: "POST",
       body: JSON.stringify({
         messages: [],
-        system: [{ type: "text", text: "Header\n<example>keep me</example>\nRule A\nRule A" }],
+        system: [
+          {
+            type: "text",
+            text: "Header\n<example>keep me</example>\nRule A\nRule A",
+          },
+        ],
       }),
     });
 
@@ -1088,10 +1115,15 @@ describe("fetch interceptor", () => {
 
     // First API request: 429 (account 1 has access token from auth fallback)
     mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ error: { type: "rate_limit_error", message: "Rate limit exceeded" } }), {
-        status: 429,
-        headers: { "retry-after": "0" },
-      }),
+      new Response(
+        JSON.stringify({
+          error: { type: "rate_limit_error", message: "Rate limit exceeded" },
+        }),
+        {
+          status: 429,
+          headers: { "retry-after": "0" },
+        },
+      ),
     );
     // Token refresh for account 2 (no access token yet)
     mockFetch.mockResolvedValueOnce(mockTokenRefresh("access-2", "refresh-2"));
@@ -1152,13 +1184,31 @@ describe("file-id account pinning", () => {
     mockFetch
       .mockResolvedValueOnce(
         new Response(
-          JSON.stringify({ data: [{ id: "file-abc", filename: "a.txt", size: 100, purpose: "assistants" }] }),
+          JSON.stringify({
+            data: [
+              {
+                id: "file-abc",
+                filename: "a.txt",
+                size: 100,
+                purpose: "assistants",
+              },
+            ],
+          }),
           { status: 200 },
         ),
       )
       .mockResolvedValueOnce(
         new Response(
-          JSON.stringify({ data: [{ id: "file-xyz", filename: "b.txt", size: 200, purpose: "assistants" }] }),
+          JSON.stringify({
+            data: [
+              {
+                id: "file-xyz",
+                filename: "b.txt",
+                size: 200,
+                purpose: "assistants",
+              },
+            ],
+          }),
           { status: 200 },
         ),
       );
@@ -1232,7 +1282,16 @@ describe("file-id account pinning", () => {
     mockFetch
       .mockResolvedValueOnce(
         new Response(
-          JSON.stringify({ data: [{ id: "file-abc", filename: "a.txt", size: 100, purpose: "assistants" }] }),
+          JSON.stringify({
+            data: [
+              {
+                id: "file-abc",
+                filename: "a.txt",
+                size: 100,
+                purpose: "assistants",
+              },
+            ],
+          }),
           { status: 200 },
         ),
       )
@@ -1292,14 +1351,21 @@ describe("file-id account pinning", () => {
     const fetchFn = result.fetch;
 
     // Populate: account 2 owns file-xyz
-    mockFetch
-      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [] }), { status: 200 }))
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({ data: [{ id: "file-xyz", filename: "b.txt", size: 200, purpose: "assistants" }] }),
-          { status: 200 },
-        ),
-      );
+    mockFetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: [] }), { status: 200 })).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: "file-xyz",
+              filename: "b.txt",
+              size: 200,
+              purpose: "assistants",
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
 
     await expect(
       plugin["command.execute.before"]({
@@ -1436,7 +1502,7 @@ describe("fetch interceptor — token refresh", () => {
     const [refreshUrl, refreshInit] = mockFetch.mock.calls[0];
     expect(refreshUrl).toBe("https://platform.claude.com/v1/oauth/token");
     expect(JSON.parse(refreshInit.body).grant_type).toBe("refresh_token");
-    expect(refreshInit.headers["User-Agent"]).toBe("claude-cli/2.1.79 (external, cli)");
+    expect(refreshInit.headers["User-Agent"]).toBe("axios/1.13.6");
 
     // Second call should use the fresh token
     const [, apiInit] = mockFetch.mock.calls[1];
@@ -1617,7 +1683,10 @@ describe("fetch interceptor — token refresh", () => {
   it("refreshes near-expiry idle account in background while serving active account", async () => {
     loadConfig.mockReturnValue({
       ...DEFAULT_CONFIG,
-      signature_emulation: { ...DEFAULT_CONFIG.signature_emulation, fetch_claude_code_version_on_startup: false },
+      signature_emulation: {
+        ...DEFAULT_CONFIG.signature_emulation,
+        fetch_claude_code_version_on_startup: false,
+      },
       override_model_limits: { ...DEFAULT_CONFIG.override_model_limits },
       idle_refresh: { ...DEFAULT_CONFIG.idle_refresh, enabled: true },
     });
@@ -1625,7 +1694,11 @@ describe("fetch interceptor — token refresh", () => {
     loadAccounts.mockResolvedValue(
       makeAccountsData([
         { access: "access-1", expires: Date.now() + 2 * 3600_000 },
-        { refreshToken: "refresh-2", access: "access-2", expires: Date.now() + 10 * 60_000 },
+        {
+          refreshToken: "refresh-2",
+          access: "access-2",
+          expires: Date.now() + 10 * 60_000,
+        },
       ]),
     );
     saveAccounts.mockResolvedValue(undefined);
@@ -1666,7 +1739,10 @@ describe("fetch interceptor — token refresh", () => {
   it("does not disable idle account on background refresh failure", async () => {
     loadConfig.mockReturnValue({
       ...DEFAULT_CONFIG,
-      signature_emulation: { ...DEFAULT_CONFIG.signature_emulation, fetch_claude_code_version_on_startup: false },
+      signature_emulation: {
+        ...DEFAULT_CONFIG.signature_emulation,
+        fetch_claude_code_version_on_startup: false,
+      },
       override_model_limits: { ...DEFAULT_CONFIG.override_model_limits },
       idle_refresh: { ...DEFAULT_CONFIG.idle_refresh, enabled: true },
     });
@@ -1674,7 +1750,11 @@ describe("fetch interceptor — token refresh", () => {
     loadAccounts.mockResolvedValue(
       makeAccountsData([
         { access: "access-1", expires: Date.now() + 2 * 3600_000 },
-        { refreshToken: "refresh-2", access: "access-2", expires: Date.now() + 10 * 60_000 },
+        {
+          refreshToken: "refresh-2",
+          access: "access-2",
+          expires: Date.now() + 10 * 60_000,
+        },
       ]),
     );
     saveAccounts.mockResolvedValue(undefined);
@@ -1726,7 +1806,10 @@ describe("fetch interceptor — token refresh", () => {
   it("foreground refresh does not inherit an in-flight idle refresh failure", async () => {
     loadConfig.mockReturnValue({
       ...DEFAULT_CONFIG,
-      signature_emulation: { ...DEFAULT_CONFIG.signature_emulation, fetch_claude_code_version_on_startup: false },
+      signature_emulation: {
+        ...DEFAULT_CONFIG.signature_emulation,
+        fetch_claude_code_version_on_startup: false,
+      },
       override_model_limits: { ...DEFAULT_CONFIG.override_model_limits },
       idle_refresh: { ...DEFAULT_CONFIG.idle_refresh, enabled: true },
     });
@@ -1734,7 +1817,11 @@ describe("fetch interceptor — token refresh", () => {
     loadAccounts.mockResolvedValue(
       makeAccountsData([
         { access: "access-1", expires: Date.now() + 2 * 3600_000 },
-        { refreshToken: "refresh-2", access: "stale-access-2", expires: Date.now() - 1000 },
+        {
+          refreshToken: "refresh-2",
+          access: "stale-access-2",
+          expires: Date.now() - 1000,
+        },
       ]),
     );
     saveAccounts.mockResolvedValue(undefined);
@@ -2202,10 +2289,15 @@ describe("fetch interceptor — account exhaustion", () => {
 
     // 429 — account-specific, but no other accounts to try
     mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ error: { type: "rate_limit_error", message: "Rate limit exceeded" } }), {
-        status: 429,
-        headers: { "retry-after": "30" },
-      }),
+      new Response(
+        JSON.stringify({
+          error: { type: "rate_limit_error", message: "Rate limit exceeded" },
+        }),
+        {
+          status: 429,
+          headers: { "retry-after": "30" },
+        },
+      ),
     );
 
     await expect(
@@ -2220,9 +2312,21 @@ describe("fetch interceptor — account exhaustion", () => {
   });
 
   it.each([
-    { status: 529, errorType: "overloaded_error", errorMsg: "Server is overloaded" },
-    { status: 503, errorType: "service_unavailable", errorMsg: "temporarily unavailable" },
-    { status: 500, errorType: "internal_error", errorMsg: "internal server error" },
+    {
+      status: 529,
+      errorType: "overloaded_error",
+      errorMsg: "Server is overloaded",
+    },
+    {
+      status: 503,
+      errorType: "service_unavailable",
+      errorMsg: "temporarily unavailable",
+    },
+    {
+      status: 500,
+      errorType: "internal_error",
+      errorMsg: "internal server error",
+    },
   ])("returns $status directly without switching accounts", async ({ status, errorType, errorMsg }) => {
     const fetchFn = await setupFetchFn(client, [{}, {}]);
 
@@ -2274,9 +2378,17 @@ describe("fetch interceptor — account exhaustion", () => {
 
     // 400 with generic error (not account-specific) — should NOT switch
     mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ error: { type: "invalid_request_error", message: "Invalid model specified" } }), {
-        status: 400,
-      }),
+      new Response(
+        JSON.stringify({
+          error: {
+            type: "invalid_request_error",
+            message: "Invalid model specified",
+          },
+        }),
+        {
+          status: 400,
+        },
+      ),
     );
 
     const response = await fetchFn("https://api.anthropic.com/v1/messages", {
@@ -2294,7 +2406,12 @@ describe("fetch interceptor — account exhaustion", () => {
 
     // Account 1 fails with structured permission error
     mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ error: { type: "permission_error", message: "Forbidden" } }), { status: 403 }),
+      new Response(
+        JSON.stringify({
+          error: { type: "permission_error", message: "Forbidden" },
+        }),
+        { status: 403 },
+      ),
     );
     // Refresh account 2 token
     mockFetch.mockResolvedValueOnce(mockTokenRefresh("access-2", "refresh-2"));
@@ -2337,9 +2454,14 @@ describe("fetch interceptor — account exhaustion", () => {
 
       // First API call fails with 401 (account-specific auth error)
       mockFetch.mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: { type: "authentication_error", message: "Unauthorized" } }), {
-          status: 401,
-        }),
+        new Response(
+          JSON.stringify({
+            error: { type: "authentication_error", message: "Unauthorized" },
+          }),
+          {
+            status: 401,
+          },
+        ),
       );
 
       await expect(
@@ -2424,13 +2546,23 @@ describe("fetch interceptor — account exhaustion", () => {
 
     // Account 1: 429 rate limit
     mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ error: { type: "rate_limit_error", message: "Rate limit exceeded" } }), {
-        status: 429,
-      }),
+      new Response(
+        JSON.stringify({
+          error: { type: "rate_limit_error", message: "Rate limit exceeded" },
+        }),
+        {
+          status: 429,
+        },
+      ),
     );
     // Account 2: 403 permission error
     mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ error: { type: "permission_error", message: "Forbidden" } }), { status: 403 }),
+      new Response(
+        JSON.stringify({
+          error: { type: "permission_error", message: "Forbidden" },
+        }),
+        { status: 403 },
+      ),
     );
     // Account 3: success
     mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
@@ -2467,14 +2599,24 @@ describe("fetch interceptor — account exhaustion", () => {
 
     // Two immediate account-specific failures trigger two switches in one request.
     mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ error: { type: "rate_limit_error", message: "Rate limit exceeded" } }), {
-        status: 429,
-      }),
+      new Response(
+        JSON.stringify({
+          error: { type: "rate_limit_error", message: "Rate limit exceeded" },
+        }),
+        {
+          status: 429,
+        },
+      ),
     );
     mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ error: { type: "rate_limit_error", message: "Rate limit exceeded" } }), {
-        status: 429,
-      }),
+      new Response(
+        JSON.stringify({
+          error: { type: "rate_limit_error", message: "Rate limit exceeded" },
+        }),
+        {
+          status: 429,
+        },
+      ),
     );
     mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
 
@@ -2518,11 +2660,13 @@ describe("OAuth exchange failure", () => {
     const method = plugin.auth.methods[0];
 
     const authResult = await method.authorize();
-    const credentials = await authResult.callback("bad-code#state");
+    const badState = new URL(authResult.url).searchParams.get("state");
+    const credentials = await authResult.callback(`bad-code#${badState}`);
 
     expect(credentials.type).toBe("failed");
+    // mockFetch.mock.calls[0] is the exchange call (authorize doesn't call fetch)
     const [, exchangeInit] = mockFetch.mock.calls[0];
-    expect(exchangeInit.headers["User-Agent"]).toBe("claude-cli/2.1.79 (external, cli)");
+    expect(exchangeInit.headers["User-Agent"]).toBe("axios/1.13.6");
     // saveAccounts should NOT have been called
     expect(saveAccounts).not.toHaveBeenCalled();
   });
@@ -2625,7 +2769,8 @@ describe("auth menu actions", () => {
       }),
     });
 
-    const credentials = await authResult.callback("fresh-code#state");
+    const freshState = new URL(authResult.url).searchParams.get("state");
+    const credentials = await authResult.callback(`fresh-code#${freshState}`);
     expect(credentials.type).toBe("success");
     expect(credentials.refresh).toBe("fresh-refresh");
   });
@@ -3156,7 +3301,10 @@ describe("header handling", () => {
     await fetchFn("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ messages: [{ role: "user", content: "hello world" }], system: [] }),
+      body: JSON.stringify({
+        messages: [{ role: "user", content: "hello world" }],
+        system: [],
+      }),
     });
 
     const [, init] = mockFetch.mock.calls[0];
@@ -3200,7 +3348,10 @@ describe("header handling", () => {
     await fetchFn("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ messages: [{ role: "user", content: "hello" }], system: [] }),
+      body: JSON.stringify({
+        messages: [{ role: "user", content: "hello" }],
+        system: [],
+      }),
     });
 
     const [, init] = mockFetch.mock.calls[0];
@@ -3930,7 +4081,9 @@ describe("markSuccess wiring", () => {
 
       const second = await result.fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        body: JSON.stringify({ messages: [{ role: "user", content: "Again" }] }),
+        body: JSON.stringify({
+          messages: [{ role: "user", content: "Again" }],
+        }),
       });
 
       expect(second.status).toBe(200);
@@ -3988,7 +4141,9 @@ describe("markSuccess wiring", () => {
       await expect(
         result.fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
-          body: JSON.stringify({ messages: [{ role: "user", content: "Again" }] }),
+          body: JSON.stringify({
+            messages: [{ role: "user", content: "Again" }],
+          }),
         }),
       ).rejects.toThrow(/No available Anthropic account|All accounts exhausted/);
 

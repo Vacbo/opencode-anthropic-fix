@@ -27,14 +27,14 @@
  *   help              Show this help message
  */
 
-import { loadAccounts, saveAccounts, getStoragePath, createDefaultStats } from "./lib/storage.mjs";
-import { loadConfig, saveConfig, getConfigPath, VALID_STRATEGIES, CLIENT_ID } from "./lib/config.mjs";
-import { authorize, exchange, revoke } from "./lib/oauth.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { pathToFileURL } from "node:url";
 import { exec } from "node:child_process";
-import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
+import { createInterface } from "node:readline/promises";
+import { pathToFileURL } from "node:url";
+import { CLIENT_ID, getConfigPath, loadConfig, saveConfig, VALID_STRATEGIES } from "./lib/config.mjs";
+import { authorize, exchange, revoke } from "./lib/oauth.mjs";
+import { createDefaultStats, getStoragePath, loadAccounts, saveAccounts } from "./lib/storage.mjs";
 
 // ---------------------------------------------------------------------------
 // Color helpers — zero dependencies, respects NO_COLOR / TTY
@@ -307,7 +307,7 @@ function openBrowser(url) {
  * @returns {Promise<{refresh: string, access: string, expires: number, email?: string} | null>}
  */
 async function runOAuthFlow() {
-  const { url, verifier } = await authorize("max");
+  const { url, verifier, state } = await authorize("max");
 
   console.log("");
   console.log(c.bold("Opening browser for Anthropic OAuth login..."));
@@ -324,6 +324,13 @@ async function runOAuthFlow() {
     const trimmed = code.trim();
     if (!trimmed) {
       console.error(c.red("Error: no authorization code provided."));
+      return null;
+    }
+
+    // Validate OAuth state to prevent CSRF
+    const parts = trimmed.split("#");
+    if (state && parts[1] && parts[1] !== state) {
+      console.error(c.red("Error: OAuth state mismatch — possible CSRF attack."));
       return null;
     }
 

@@ -1,15 +1,15 @@
-import { createInterface } from "node:readline/promises";
-import { stdin, stdout } from "node:process";
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve, basename } from "node:path";
-import { AccountManager } from "./lib/accounts.mjs";
-import { authorize, exchange, refreshToken } from "./lib/oauth.mjs";
-import { loadConfig, loadConfigFresh, saveConfig, CLIENT_ID, getConfigDir } from "./lib/config.mjs";
-import { loadAccounts, saveAccounts, clearAccounts, createDefaultStats } from "./lib/storage.mjs";
+import { basename, join, resolve } from "node:path";
+import { stdin, stdout } from "node:process";
+import { createInterface } from "node:readline/promises";
 import { applyOAuthCredentials, resetAccountTracking } from "./lib/account-state.mjs";
-import { acquireRefreshLock, releaseRefreshLock } from "./lib/refresh-lock.mjs";
+import { AccountManager } from "./lib/accounts.mjs";
 import { isAccountSpecificError, parseRateLimitReason, parseRetryAfterHeader } from "./lib/backoff.mjs";
+import { CLIENT_ID, getConfigDir, loadConfig, loadConfigFresh, saveConfig } from "./lib/config.mjs";
+import { authorize, exchange, refreshToken } from "./lib/oauth.mjs";
+import { acquireRefreshLock, releaseRefreshLock } from "./lib/refresh-lock.mjs";
+import { clearAccounts, createDefaultStats, loadAccounts, saveAccounts } from "./lib/storage.mjs";
 
 // ---------------------------------------------------------------------------
 // Account management CLI prompts
@@ -103,7 +103,7 @@ async function promptManageAccounts(accountManager) {
 // Request building helpers (extracted from original fetch interceptor)
 // ---------------------------------------------------------------------------
 
-const FALLBACK_CLAUDE_CLI_VERSION = "2.1.79";
+const FALLBACK_CLAUDE_CLI_VERSION = "2.1.80";
 const CLAUDE_CODE_NPM_LATEST_URL = "https://registry.npmjs.org/@anthropic-ai/claude-code/latest";
 const CLAUDE_CODE_BETA_FLAG = "claude-code-20250219";
 const EFFORT_BETA_FLAG = "effort-2025-11-24";
@@ -121,8 +121,6 @@ const BEDROCK_UNSUPPORTED_BETAS = new Set([
   "context-1m-2025-08-07",
   "tool-search-tool-2025-10-19",
   "tool-examples-2025-10-29",
-  "code-execution-2025-08-25",
-  "files-api-2025-04-14",
 ]);
 const EXPERIMENTAL_BETA_FLAGS = new Set([
   "adaptive-thinking-2026-01-28",
@@ -273,7 +271,10 @@ function getOrCreateSignatureUserId() {
   const generated = randomUUID();
   try {
     mkdirSync(configDir, { recursive: true });
-    writeFileSync(userIdPath, `${generated}\n`, { encoding: "utf-8", mode: 0o600 });
+    writeFileSync(userIdPath, `${generated}\n`, {
+      encoding: "utf-8",
+      mode: 0o600,
+    });
   } catch {
     // Ignore filesystem errors; caller still gets generated ID for this runtime.
   }
@@ -296,7 +297,7 @@ function logTransformedSystemPrompt(body) {
 
   try {
     const parsed = JSON.parse(body);
-    if (!Object.prototype.hasOwnProperty.call(parsed, "system")) return;
+    if (!Object.hasOwn(parsed, "system")) return;
     if (isTitleGeneratorSystemBlocks(normalizeSystemTextBlocks(parsed.system))) return;
     console.error(
       "[opencode-anthropic-auth][system-debug] transformed system:",
@@ -470,12 +471,29 @@ function buildRequestMetadata(input) {
  * @param {any[]} messages
  * @returns {string}
  */
-function buildAnthropicBillingHeader(claudeCliVersion) {
+function buildAnthropicBillingHeader(claudeCliVersion, messages) {
   if (isFalsyEnv(process.env.CLAUDE_CODE_ATTRIBUTION_HEADER)) return "";
 
-  const cch = randomBytes(3).toString("hex").slice(0, 5);
+  // CC derives a 3-char hash from the first user message content using SHA-256
+  // with salt "59cf53e54c78", extracting chars at positions [4,7,20] and appending
+  // the CLI version, then taking the first 3 hex chars of that combined string.
+  let versionSuffix = "";
+  if (Array.isArray(messages)) {
+    const firstUserMsg = messages.find((m) => m?.role === "user" && typeof m?.content === "string");
+    if (firstUserMsg) {
+      const text = firstUserMsg.content;
+      const salt = "59cf53e54c78";
+      const picked = [4, 7, 20].map((i) => (i < text.length ? text[i] : "")).join("");
+      const hash = createHash("sha256")
+        .update(salt + picked)
+        .digest("hex");
+      versionSuffix = `.${hash.slice(0, 3)}`;
+    }
+  }
+
   const entrypoint = process.env.CLAUDE_CODE_ENTRYPOINT || "cli";
-  return `x-anthropic-billing-header: cc_version=${claudeCliVersion}; cc_entrypoint=${entrypoint}; cch=${cch};`;
+  // CC uses a fixed cch value "379e5", not random
+  return `x-anthropic-billing-header: cc_version=${claudeCliVersion}${versionSuffix}; cc_entrypoint=${entrypoint}; cch=379e5;`;
 }
 
 /**
@@ -622,7 +640,7 @@ function normalizeSystemTextBlocks(system) {
  * @param {{enabled: boolean, claudeCliVersion: string, promptCompactionMode: 'minimal' | 'off'}} signature
  * @returns {Array<{type: string, text: string, cache_control?: {type: string}}>}
  */
-function buildSystemPromptBlocks(system, signature) {
+function buildSystemPromptBlocks(system, signature, messages) {
   const titleGeneratorRequest = isTitleGeneratorSystemBlocks(system);
 
   let sanitized = system.map((item) => ({
@@ -645,12 +663,16 @@ function buildSystemPromptBlocks(system, signature) {
   );
 
   const blocks = [];
-  const billingHeader = buildAnthropicBillingHeader(signature.claudeCliVersion);
+  const billingHeader = buildAnthropicBillingHeader(signature.claudeCliVersion, messages);
   if (billingHeader) {
     blocks.push({ type: "text", text: billingHeader });
   }
 
-  blocks.push({ type: "text", text: CLAUDE_CODE_IDENTITY_STRING, cache_control: { type: "ephemeral" } });
+  blocks.push({
+    type: "text",
+    text: CLAUDE_CODE_IDENTITY_STRING,
+    cache_control: { type: "ephemeral" },
+  });
   blocks.push(...filtered);
 
   return blocks;
@@ -969,10 +991,13 @@ function buildRequestHeaders(input, requestInit, accessToken, requestBody, reque
     requestHeaders.set("x-stainless-arch", getStainlessArch(process.arch));
     requestHeaders.set("x-stainless-lang", "js");
     requestHeaders.set("x-stainless-os", getStainlessOs(process.platform));
-    requestHeaders.set("x-stainless-package-version", signature.claudeCliVersion);
+    // CC's Stainless SDK reports its own package version (0.74.0), not the CLI version
+    requestHeaders.set("x-stainless-package-version", "0.74.0");
     requestHeaders.set("x-stainless-runtime", "node");
     requestHeaders.set("x-stainless-runtime-version", process.version);
     requestHeaders.set("x-stainless-helper-method", "stream");
+    // CC's SDK default timeout is 600s (600000ms)
+    requestHeaders.set("x-stainless-timeout", "600");
     const incomingRetryCount = requestHeaders.get("x-stainless-retry-count");
     requestHeaders.set(
       "x-stainless-retry-count",
@@ -1020,16 +1045,16 @@ function transformRequestBody(body, signature, runtime) {
 
   try {
     const parsed = JSON.parse(body);
-    if (Object.prototype.hasOwnProperty.call(parsed, "betas")) {
+    if (Object.hasOwn(parsed, "betas")) {
       delete parsed.betas;
     }
     // Normalize thinking block for adaptive (Opus 4.6) vs manual (older models).
-    if (Object.prototype.hasOwnProperty.call(parsed, "thinking")) {
+    if (Object.hasOwn(parsed, "thinking")) {
       parsed.thinking = normalizeThinkingBlock(parsed.thinking, parsed.model || "");
     }
 
     // Sanitize system prompt and optionally inject Claude Code identity/billing blocks.
-    parsed.system = buildSystemPromptBlocks(normalizeSystemTextBlocks(parsed.system), signature);
+    parsed.system = buildSystemPromptBlocks(normalizeSystemTextBlocks(parsed.system), signature, parsed.messages);
 
     if (signature.enabled) {
       const currentMetadata =
@@ -1288,7 +1313,12 @@ function transformResponse(response, onUsage, onAccountError) {
   const EMPTY_CHUNK = new Uint8Array();
 
   /** @type {UsageStats} */
-  const stats = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+  const stats = {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+  };
   let sseBuffer = "";
   let sseRewriteBuffer = "";
   let accountErrorHandled = false;
@@ -1524,7 +1554,9 @@ async function refreshAccountToken(account, client, source = "foreground", { onT
 
   if (!lock.acquired) {
     const diskAuth = await readDiskAccountAuth(account.id);
-    const adopted = applyDiskAuthIfFresher(account, diskAuth, { allowExpiredFallback: true });
+    const adopted = applyDiskAuthIfFresher(account, diskAuth, {
+      allowExpiredFallback: true,
+    });
     if (adopted && account.access && account.expires && account.expires > Date.now()) {
       return account.access;
     }
@@ -1538,7 +1570,9 @@ async function refreshAccountToken(account, client, source = "foreground", { onT
       return account.access;
     }
 
-    const json = await refreshToken(account.refreshToken, { signal: AbortSignal.timeout(10_000) });
+    const json = await refreshToken(account.refreshToken, {
+      signal: AbortSignal.timeout(10_000),
+    });
 
     account.access = json.access_token;
     account.expires = Date.now() + json.expires_in * 1000;
@@ -1785,10 +1819,11 @@ export async function AnthropicAuthPlugin({ client }) {
    */
   async function startSlashOAuth(sessionID, mode, targetIndex) {
     pruneExpiredPendingOAuth();
-    const { url, verifier } = await authorize("max");
+    const { url, verifier, state } = await authorize("max");
     pendingSlashOAuth.set(sessionID, {
       mode,
       verifier,
+      state,
       targetIndex,
       createdAt: Date.now(),
     });
@@ -1836,6 +1871,16 @@ export async function AnthropicAuthPlugin({ client }) {
       };
     }
 
+    // Validate state parameter to prevent CSRF attacks
+    const splits = code.split("#");
+    if (pending.state && splits[1] && splits[1] !== pending.state) {
+      pendingSlashOAuth.delete(sessionID);
+      return {
+        ok: false,
+        message: "OAuth state mismatch — possible CSRF attack. Please try again.",
+      };
+    }
+
     const credentials = await exchange(code, pending.verifier);
     if (credentials.type === "failed") {
       return {
@@ -1846,7 +1891,11 @@ export async function AnthropicAuthPlugin({ client }) {
       };
     }
 
-    const stored = (await loadAccounts()) || { version: 1, accounts: [], activeIndex: 0 };
+    const stored = (await loadAccounts()) || {
+      version: 1,
+      accounts: [],
+      activeIndex: 0,
+    };
 
     if (pending.mode === "login") {
       const existingIdx = stored.accounts.findIndex((acc) => acc.refreshToken === credentials.refresh);
@@ -1864,11 +1913,17 @@ export async function AnthropicAuthPlugin({ client }) {
         await reloadAccountManagerFromDisk();
         pendingSlashOAuth.delete(sessionID);
         const name = acc.email || `Account ${existingIdx + 1}`;
-        return { ok: true, message: `Updated existing account #${existingIdx + 1} (${name}).` };
+        return {
+          ok: true,
+          message: `Updated existing account #${existingIdx + 1} (${name}).`,
+        };
       }
 
       if (stored.accounts.length >= 10) {
-        return { ok: false, message: "Maximum of 10 accounts reached. Remove one first." };
+        return {
+          ok: false,
+          message: "Maximum of 10 accounts reached. Remove one first.",
+        };
       }
 
       const now = Date.now();
@@ -1893,14 +1948,20 @@ export async function AnthropicAuthPlugin({ client }) {
       await reloadAccountManagerFromDisk();
       pendingSlashOAuth.delete(sessionID);
       const label = credentials.email || `Account ${stored.accounts.length}`;
-      return { ok: true, message: `Added account #${stored.accounts.length} (${label}).` };
+      return {
+        ok: true,
+        message: `Added account #${stored.accounts.length} (${label}).`,
+      };
     }
 
     // reauth flow
     const idx = pending.targetIndex ?? -1;
     if (idx < 0 || idx >= stored.accounts.length) {
       pendingSlashOAuth.delete(sessionID);
-      return { ok: false, message: "Target account no longer exists. Start reauth again." };
+      return {
+        ok: false,
+        message: "Target account no longer exists. Start reauth again.",
+      };
     }
 
     const existing = stored.accounts[idx];
@@ -1918,7 +1979,10 @@ export async function AnthropicAuthPlugin({ client }) {
     await reloadAccountManagerFromDisk();
     pendingSlashOAuth.delete(sessionID);
     const name = existing.email || `Account ${idx + 1}`;
-    return { ok: true, message: `Re-authenticated account #${idx + 1} (${name}).` };
+    return {
+      ok: true,
+      message: `Re-authenticated account #${idx + 1} (${name}).`,
+    };
   }
 
   /**
@@ -2039,15 +2103,39 @@ export async function AnthropicAuthPlugin({ client }) {
       /** @type {Record<string, () => void>} */
       const setters = {
         emulation: () =>
-          saveConfig({ signature_emulation: { enabled: value === "on" || value === "1" || value === "true" } }),
+          saveConfig({
+            signature_emulation: {
+              enabled: value === "on" || value === "1" || value === "true",
+            },
+          }),
         compaction: () =>
-          saveConfig({ signature_emulation: { prompt_compaction: value === "off" ? "off" : "minimal" } }),
+          saveConfig({
+            signature_emulation: {
+              prompt_compaction: value === "off" ? "off" : "minimal",
+            },
+          }),
         "1m-context": () =>
-          saveConfig({ override_model_limits: { enabled: value === "on" || value === "1" || value === "true" } }),
+          saveConfig({
+            override_model_limits: {
+              enabled: value === "on" || value === "1" || value === "true",
+            },
+          }),
         "idle-refresh": () =>
-          saveConfig({ idle_refresh: { enabled: value === "on" || value === "1" || value === "true" } }),
-        debug: () => saveConfig({ debug: value === "on" || value === "1" || value === "true" }),
-        quiet: () => saveConfig({ toasts: { quiet: value === "on" || value === "1" || value === "true" } }),
+          saveConfig({
+            idle_refresh: {
+              enabled: value === "on" || value === "1" || value === "true",
+            },
+          }),
+        debug: () =>
+          saveConfig({
+            debug: value === "on" || value === "1" || value === "true",
+          }),
+        quiet: () =>
+          saveConfig({
+            toasts: {
+              quiet: value === "on" || value === "1" || value === "true",
+            },
+          }),
         strategy: () => {
           const valid = ["sticky", "round-robin", "hybrid"];
           if (valid.includes(value)) saveConfig({ account_selection_strategy: value });
@@ -2194,19 +2282,30 @@ export async function AnthropicAuthPlugin({ client }) {
         if (identifier) {
           // Try by email
           const byEmail = accounts.find((a) => a.email === identifier);
-          if (byEmail) return { account: byEmail, label: byEmail.email || `Account ${byEmail.index + 1}` };
+          if (byEmail)
+            return {
+              account: byEmail,
+              label: byEmail.email || `Account ${byEmail.index + 1}`,
+            };
           // Try by 1-based index
           const idx = parseInt(identifier, 10);
           if (!isNaN(idx) && idx >= 1) {
             const byIdx = accounts.find((a) => a.index === idx - 1);
-            if (byIdx) return { account: byIdx, label: byIdx.email || `Account ${byIdx.index + 1}` };
+            if (byIdx)
+              return {
+                account: byIdx,
+                label: byIdx.email || `Account ${byIdx.index + 1}`,
+              };
           }
           return null;
         }
         // Default to current
         const current = accountManager.getCurrentAccount();
         if (!current) return null;
-        return { account: current, label: current.email || `Account ${current.index + 1}` };
+        return {
+          account: current,
+          label: current.email || `Account ${current.index + 1}`,
+        };
       }
 
       /**
@@ -3224,12 +3323,16 @@ export async function AnthropicAuthPlugin({ client }) {
               // action === "add" or "fresh" — fall through to OAuth flow
             }
 
-            const { url, verifier } = await authorize("max");
+            const { url, verifier, state } = await authorize("max");
             return {
               url: url,
               instructions: "Paste the authorization code here: ",
               method: "code",
               callback: async (code) => {
+                const parts = code.split("#");
+                if (state && parts[1] && parts[1] !== state) {
+                  return { type: "failed", reason: "OAuth state mismatch" };
+                }
                 const credentials = await exchange(code, verifier);
                 if (credentials.type === "failed") return credentials;
 
@@ -3268,12 +3371,16 @@ export async function AnthropicAuthPlugin({ client }) {
           label: "Create an API Key",
           type: "oauth",
           authorize: async () => {
-            const { url, verifier } = await authorize("console");
+            const { url, verifier, state } = await authorize("console");
             return {
               url: url,
               instructions: "Paste the authorization code here: ",
               method: "code",
               callback: async (code) => {
+                const parts = code.split("#");
+                if (state && parts[1] && parts[1] !== state) {
+                  return { type: "failed", reason: "OAuth state mismatch" };
+                }
                 const credentials = await exchange(code, verifier);
                 if (credentials.type === "failed") return credentials;
                 const result = await fetch(`https://api.anthropic.com/api/oauth/claude_cli/create_api_key`, {

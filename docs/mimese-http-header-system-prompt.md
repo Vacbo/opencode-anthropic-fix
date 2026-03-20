@@ -5,11 +5,15 @@ This document explains, at implementation level, how the plugin mimics Claude Co
 - HTTP header composition
 - `system` composition in the request body
 - related auxiliary fields (`metadata`, `betas`, URL shaping, and toggles)
+- OAuth token endpoint fingerprinting
 
 Primary code references:
 
 - `index.mjs`
 - `lib/config.mjs`
+- `lib/oauth.mjs`
+
+**Validated against**: Claude Code 2.1.80 npm package (`cli.js`, 15,646 lines minified).
 
 ## 1) Control switch (on/off)
 
@@ -43,16 +47,17 @@ When `signature_emulation.enabled=false`, the plugin falls back to legacy system
 
 In `AnthropicAuthPlugin`:
 
-- initial fallback version: `2.1.2`
+- initial fallback version: `2.1.80`
 - if `fetch_claude_code_version_on_startup=true`, it performs GET on:
   - `https://registry.npmjs.org/@anthropic-ai/claude-code/latest`
 - short timeout (AbortController); failures are silent and fallback remains active
 
 This version is used by:
 
-- `user-agent`
-- `x-stainless-package-version`
+- `user-agent` (API requests)
 - `x-anthropic-billing-header` generation in `system`
+
+**Important**: `x-stainless-package-version` is set to the Anthropic SDK version (`0.74.0`), NOT the CC CLI version. See section 4.2.
 
 ## 3) Request flow where mimicry is applied
 
@@ -128,10 +133,11 @@ With `signature.enabled=true`, it adds:
 - `x-stainless-arch: <x64|arm64|...>`
 - `x-stainless-lang: js`
 - `x-stainless-os: <MacOS|Windows|Linux|...>`
-- `x-stainless-package-version: <claudeCliVersion>`
+- `x-stainless-package-version: 0.74.0` (Anthropic SDK version, NOT CLI version)
 - `x-stainless-runtime: node`
 - `x-stainless-runtime-version: <process.version>`
 - `x-stainless-helper-method: stream`
+- `x-stainless-timeout: 600` (CC's default 600-second SDK timeout)
 - `x-stainless-retry-count`
   - preserves incoming value when present and not explicitly falsy
   - otherwise sets `0`
@@ -149,18 +155,76 @@ It also injects optional env-driven headers:
 - `CLAUDE_AGENT_SDK_CLIENT_APP` => `x-client-app`
 - `CLAUDE_CODE_ADDITIONAL_PROTECTION=1/true/yes` => `x-anthropic-additional-protection: true`
 
-### 4.3 OAuth token-layer user-agent mimicry
+### 4.3 OAuth token-layer fingerprinting
 
-OAuth token calls now include Claude Code-style user-agent fingerprinting on:
+OAuth token operations use a **different** User-Agent than API requests. Claude Code uses Axios (v1.13.6) for these calls, which auto-sets its default UA. The plugin uses native `fetch` and explicitly sets this header to match.
 
-- `POST /v1/oauth/token`
+Applies to:
+
+- `POST /v1/oauth/token` (exchange and refresh)
 - `POST /v1/oauth/revoke`
 
 Header sent:
 
-- `User-Agent: claude-cli/2.1.79 (external, cli)`
+- `User-Agent: axios/1.13.6`
 
-Without this header, current Anthropic OAuth token endpoints may reject requests.
+### 4.4 OAuth scopes (CC 2.1.80)
+
+Claude Code defines two scope arrays merged for authorization:
+
+```javascript
+SCOPES_API_KEY = ["org:create_api_key", "user:profile"];
+SCOPES_AUTH = ["user:profile", "user:inference", "user:sessions:claude_code", "user:mcp_servers", "user:file_upload"];
+ALL_SCOPES = unique([...SCOPES_API_KEY, ...SCOPES_AUTH]); // 6 scopes
+```
+
+The plugin requests all 6 scopes in the authorization URL.
+
+### 4.5 OAuth security
+
+- **PKCE**: S256 challenge method, 32-byte random verifier, base64url encoded
+- **State parameter**: Independent random value (NOT the PKCE verifier) to prevent verifier leakage via browser history/referrer
+- **CSRF validation**: All OAuth callback paths validate the returned state against the stored expected value
+- **Exchange timeout**: 15 seconds (matches CC)
+
+### 4.6 CC User-Agent variants (reference)
+
+CC defines three distinct User-Agent functions:
+
+| Function | Format                                             | Used for           |
+| -------- | -------------------------------------------------- | ------------------ |
+| `$L()`   | `claude-cli/{VER} (external, {entry}[, suffixes])` | API requests       |
+| `Qa()`   | `claude-code/{VER}[ ({entry}[, suffixes])]`        | Secondary/internal |
+| `l$()`   | `claude-code/{VER}` (bare)                         | OAuth/client_data  |
+
+The plugin uses `$L()` format for API requests and `axios/1.13.6` (Axios default) for token operations.
+
+### 4.7 Stainless OS/Arch mapping (CC reference)
+
+**OS mapping** (`x-stainless-os`):
+
+| `process.platform` | Header value    |
+| ------------------ | --------------- |
+| `darwin`           | `MacOS`         |
+| `win32`            | `Windows`       |
+| `linux`            | `Linux`         |
+| `freebsd`          | `FreeBSD`       |
+| `openbsd`          | `OpenBSD`       |
+| includes `ios`     | `iOS`           |
+| `android`          | `Android`       |
+| other              | `Other:{value}` |
+| empty              | `Unknown`       |
+
+**Architecture mapping** (`x-stainless-arch`):
+
+| `process.arch`       | Header value    |
+| -------------------- | --------------- |
+| `x64` or `x86_64`    | `x64`           |
+| `arm64` or `aarch64` | `arm64`         |
+| `x32`                | `x32`           |
+| `arm`                | `arm`           |
+| other                | `other:{value}` |
+| empty                | `unknown`       |
 
 ## 5) Beta header catalog (Claude Code reference vs current plugin)
 
@@ -207,7 +271,11 @@ Strategy filter:
 
 Provider filter:
 
-- if detected provider is `bedrock`, remove betas listed in `BEDROCK_UNSUPPORTED_BETAS` (includes `code-execution-2025-08-25` and `files-api-2025-04-14`).
+- if detected provider is `bedrock`, remove betas listed in `BEDROCK_UNSUPPORTED_BETAS`:
+  - `interleaved-thinking-2025-05-14`
+  - `context-1m-2025-08-07`
+  - `tool-search-tool-2025-10-19`
+  - `tool-examples-2025-10-29`
 
 Provider detection is based on request URL hostname (`anthropic`, `bedrock`, `vertex`, `foundry`).
 
@@ -302,17 +370,20 @@ Canonical identity string:
 
 ### 6.4 Billing header generation
 
-`buildAnthropicBillingHeader(claudeCliVersion)`:
+`buildAnthropicBillingHeader(claudeCliVersion, messages)`:
 
 - can be disabled by `CLAUDE_CODE_ATTRIBUTION_HEADER=0/false/no`
-- generates a random 5-hex-char `cch` value per request (`randomBytes(3).toString("hex").slice(0, 5)`)
 - builds:
 
 ```text
-x-anthropic-billing-header: cc_version=<claudeCliVersion>; cc_entrypoint=<entrypoint>; cch=<5-hex>;
+x-anthropic-billing-header: cc_version=<version>.<hash>; cc_entrypoint=<entrypoint>; cch=379e5;
 ```
 
-Detail: `cc_entrypoint` uses `CLAUDE_CODE_ENTRYPOINT` or `cli` (matching upstream default). The `cch` is non-deterministic per request, matching upstream Claude Code behavior.
+Where:
+
+- `cc_version`: CLI version with a 3-char hash suffix derived from the first user message. The hash is computed as: SHA-256(salt + chars at positions [4,7,20] from first user message), taking the first 3 hex chars. Salt: `59cf53e54c78`.
+- `cc_entrypoint`: `CLAUDE_CODE_ENTRYPOINT` or `cli`
+- `cch`: Fixed value `379e5` (not random — matches CC exactly)
 
 ## 7) Body fields related to mimicry
 
@@ -350,8 +421,24 @@ To audit whether mimicry is active at runtime:
 
 1. confirm `signature_emulation.enabled=true` (config or env)
 2. inspect request headers and verify `x-stainless-*`, `x-app`, `anthropic-version`
-3. verify `anthropic-beta` includes expected flags for model/provider
-4. inspect body and confirm:
+3. verify `x-stainless-package-version` is `0.74.0` (SDK version, not CLI version)
+4. verify `x-stainless-timeout` is `600`
+5. verify `anthropic-beta` includes expected flags for model/provider
+6. inspect body and confirm:
    - `system[0..]` includes identity block (and billing block unless disabled)
+   - billing header has `cch=379e5` (fixed) and `cc_version` includes hash suffix
    - `metadata.user_id` follows composed format
    - `betas` is aligned with header
+
+## 11) Known false alarms in CC cli.js analysis
+
+When analyzing Claude Code's bundled `cli.js`, these patterns appear but are NOT part of Anthropic's OAuth:
+
+| Pattern                                | Actual source                  | Why it's not relevant                    |
+| -------------------------------------- | ------------------------------ | ---------------------------------------- |
+| `client_credentials` grant type        | MSAL (Microsoft Azure) library | Azure OAuth, not Anthropic               |
+| OIDC discovery (`jwks_uri`, `issuer`)  | MSAL library                   | Azure OpenID, not Anthropic              |
+| Google OAuth endpoints                 | `googleapis` library           | Google auth, bundled dependency          |
+| `22422756-60c9-4084-8eb7-27705fd5cf9a` | CC staging config              | Only used with `console.staging.ant.dev` |
+| `create_api_key` endpoint              | CC post-auth feature           | Separate from core OAuth login flow      |
+| `roles` endpoint                       | CC post-auth feature           | Separate from core OAuth login flow      |
