@@ -153,21 +153,23 @@ It also injects optional env-driven headers:
 
 ### 5.1 Beta composition rule in the plugin
 
-Function: `buildAnthropicBetaHeader(incomingBeta, signatureEnabled, model, provider, strategy)`
+Function: `buildAnthropicBetaHeader(incomingBeta, signatureEnabled, model, provider, customBetas, strategy, requestPath, hasFileReferences)`
 
 - starts with `oauth-2025-04-20`
 - preserves incoming betas (`incomingBeta`) and deduplicates on merge
 - accepts `strategy` (`"sticky"`, `"round-robin"`, `"hybrid"`) to conditionally exclude stateful betas
+- applies endpoint/content-aware betas using `requestPath` and `hasFileReferences`
 
 When `signatureEnabled=false`:
 
 - adds `interleaved-thinking-2025-05-14` (in addition to OAuth beta)
+- adds `token-counting-2024-11-01` for `/v1/messages/count_tokens`
 
 When `signatureEnabled=true`, current implementation may add dynamically:
 
 - `claude-code-20250219` (not added for Haiku models)
-- `code-execution-2025-08-25` (not added for Haiku models; **skipped in round-robin** — sandbox state is per-account)
-- `files-api-2025-04-14` (always; enables `/v1/files` endpoint and `file_id` references)
+- `files-api-2025-04-14` (only for `/v1/files` or when body references `file_id`)
+- `effort-2025-11-24` (Opus 4.6 models)
 - `interleaved-thinking-2025-05-14` (if model supports it and not disabled by `DISABLE_INTERLEAVED_THINKING`)
 - `context-1m-2025-08-07` (if model indicates 1M context)
 - `context-management-2025-06-27` (non-interactive mode + flags)
@@ -175,15 +177,20 @@ When `signatureEnabled=true`, current implementation may add dynamically:
 - `tool-examples-2025-10-29` (non-interactive mode + `TENGU_SCARF_COFFEE`)
 - `web-search-2025-03-05` (provider `vertex`/`foundry` + supported model)
 - `prompt-caching-scope-2026-01-05` (non-interactive mode; **skipped in round-robin** — cache is per-workspace)
-- additional betas from `ANTHROPIC_BETAS` (except Haiku)
-- `fine-grained-tool-streaming-2025-05-14` (see note in 5.4)
+- `token-counting-2024-11-01` (for `/v1/messages/count_tokens`)
+- additional betas from `ANTHROPIC_BETAS` (all models, including Haiku)
+- `custom_betas` from config
+
+Experimental beta safety switch:
+
+- if `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1/true/yes`, known experimental betas are stripped from the final header
+- this mirrors Claude Code's gateway-safety behavior used to avoid validation regressions on some routes/providers
 
 Strategy filter:
 
 - if `strategy` is `"round-robin"`, the following betas are excluded to avoid per-account state conflicts:
-  - `code-execution-2025-08-25` (sandbox state is per-account)
   - `prompt-caching-scope-2026-01-05` (cache is per-workspace)
-- the `OPENCODE_ANTHROPIC_INITIAL_ACCOUNT` env var overrides the strategy to `sticky` for the session, re-enabling all betas
+- the `OPENCODE_ANTHROPIC_INITIAL_ACCOUNT` env var overrides the strategy to `sticky` for the session, re-enabling strategy-sensitive auto betas
 
 Provider filter:
 
@@ -202,22 +209,23 @@ Automatically enabled by Claude Code (functional reference):
 - `structured-outputs-2025-12-15`
 - `tool-examples-2025-10-29`
 - `prompt-caching-scope-2026-01-05`
-- `adaptive-thinking-2026-01-28`
 - `effort-2025-11-24`
 - `fast-mode-2026-02-01`
 - `oauth-2025-04-20`
 - `token-counting-2024-11-01` (preflight `/v1/messages/count_tokens`)
 
-Now auto-included by the plugin (moved from manual-only):
+Now auto-included by the plugin:
 
-- `files-api-2025-04-14` (always in signature mode)
-- `code-execution-2025-08-25` (non-Haiku models, in signature mode)
+- `files-api-2025-04-14` (only `/v1/files` and Messages requests that reference `file_id`)
+- `effort-2025-11-24` (Opus 4.6)
+- `token-counting-2024-11-01` (preflight `/v1/messages/count_tokens`)
 
 Available via `/anthropic betas add` or `ANTHROPIC_BETAS`:
 
 - `message-batches-2024-09-24`
 - `compact-2026-01-12`
 - `mcp-servers-2025-12-04`
+- `code-execution-2025-08-25`
 
 Platform-specific betas (not cross-provider defaults):
 
@@ -230,10 +238,11 @@ Platform-specific betas (not cross-provider defaults):
 
 No dedicated automatic composition yet for:
 
-- `adaptive-thinking-2026-01-28`
-- `effort-2025-11-24`
+- `advanced-tool-use-2025-11-20`
 - `fast-mode-2026-02-01`
-- `token-counting-2024-11-01` (preflight flow)
+- `redact-thinking-2026-02-12`
+- `afk-mode-2026-01-31`
+- `tool-search-tool-2025-10-19`
 
 These can still be injected manually through `ANTHROPIC_BETAS` when operationally required.
 
@@ -241,7 +250,7 @@ These can still be injected manually through `ANTHROPIC_BETAS` when operationall
 
 In Claude Code, `fine-grained-tool-streaming` is primarily modeled through tool fields (`eager_input_streaming=true`) and feature/env flags, not as a mandatory beta header dependency.
 
-In this plugin's current state, it may still appear in the automatically composed beta list. This remains for compatibility with already-implemented behavior, but should be treated as an alignment refinement area against the reference CLI.
+This plugin no longer auto-includes `fine-grained-tool-streaming-2025-05-14` in the default beta header, matching the current reference behavior more closely.
 
 ## 6) System prompt mimicry
 
@@ -316,7 +325,7 @@ The plugin does not inject a `betas` field into request body. Beta flags are sen
 
 ## 8) Related URL shaping
 
-`transformRequestUrl(input)` appends `?beta=true` for `/v1/messages` requests when the query parameter is not already present.
+`transformRequestUrl(input)` appends `?beta=true` for `/v1/messages` and `/v1/messages/count_tokens` requests when the query parameter is not already present.
 
 ## 9) Compatibility and fallback behavior
 

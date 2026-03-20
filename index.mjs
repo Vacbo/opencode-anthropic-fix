@@ -106,6 +106,8 @@ async function promptManageAccounts(accountManager) {
 const FALLBACK_CLAUDE_CLI_VERSION = "2.1.76";
 const CLAUDE_CODE_NPM_LATEST_URL = "https://registry.npmjs.org/@anthropic-ai/claude-code/latest";
 const CLAUDE_CODE_BETA_FLAG = "claude-code-20250219";
+const EFFORT_BETA_FLAG = "effort-2025-11-24";
+const TOKEN_COUNTING_BETA_FLAG = "token-counting-2024-11-01";
 const BILLING_HASH_SALT = "59cf53e54c78";
 const BILLING_HASH_POSITIONS = [4, 7, 20];
 const CLAUDE_CODE_IDENTITY_STRING = "You are Claude Code, Anthropic's official CLI for Claude.";
@@ -121,6 +123,24 @@ const BEDROCK_UNSUPPORTED_BETAS = new Set([
   "tool-examples-2025-10-29",
   "code-execution-2025-08-25",
   "files-api-2025-04-14",
+]);
+const EXPERIMENTAL_BETA_FLAGS = new Set([
+  "adaptive-thinking-2026-01-28",
+  "advanced-tool-use-2025-11-20",
+  "afk-mode-2026-01-31",
+  "code-execution-2025-08-25",
+  "context-1m-2025-08-07",
+  "context-management-2025-06-27",
+  "fast-mode-2026-02-01",
+  "files-api-2025-04-14",
+  "fine-grained-tool-streaming-2025-05-14",
+  "interleaved-thinking-2025-05-14",
+  "prompt-caching-scope-2026-01-05",
+  "redact-thinking-2026-02-12",
+  "structured-outputs-2025-12-15",
+  "tool-examples-2025-10-29",
+  "tool-search-tool-2025-10-19",
+  "web-search-2025-03-05",
 ]);
 const STAINLESS_HELPER_KEYS = [
   "x_stainless_helper",
@@ -341,11 +361,11 @@ function detectProvider(requestUrl) {
 
 /**
  * @param {string | undefined} body
- * @returns {{model: string, tools: any[], messages: any[]}}
+ * @returns {{model: string, tools: any[], messages: any[], hasFileReferences: boolean}}
  */
 function parseRequestBodyMetadata(body) {
   if (!body || typeof body !== "string") {
-    return { model: "", tools: [], messages: [] };
+    return { model: "", tools: [], messages: [], hasFileReferences: false };
   }
 
   try {
@@ -353,9 +373,10 @@ function parseRequestBodyMetadata(body) {
     const model = typeof parsed?.model === "string" ? parsed.model : "";
     const tools = Array.isArray(parsed?.tools) ? parsed.tools : [];
     const messages = Array.isArray(parsed?.messages) ? parsed.messages : [];
-    return { model, tools, messages };
+    const hasFileReferences = extractFileIds(parsed).length > 0;
+    return { model, tools, messages, hasFileReferences };
   } catch {
-    return { model: "", tools: [], messages: [] };
+    return { model: "", tools: [], messages: [], hasFileReferences: false };
   }
 }
 
@@ -663,19 +684,40 @@ function buildSystemPromptBlocks(system, signature, messages) {
  * @param {"anthropic" | "bedrock" | "vertex" | "foundry"} provider
  * @param {string[]} [customBetas]
  * @param {import('./lib/config.mjs').AccountSelectionStrategy} [strategy]
+ * @param {string} [requestPath]
+ * @param {boolean} [hasFileReferences]
  * @returns {string}
  */
-function buildAnthropicBetaHeader(incomingBeta, signatureEnabled, model, provider, customBetas, strategy) {
+function buildAnthropicBetaHeader(
+  incomingBeta,
+  signatureEnabled,
+  model,
+  provider,
+  customBetas,
+  strategy,
+  requestPath,
+  hasFileReferences,
+) {
   const incomingBetasList = incomingBeta
     .split(",")
     .map((b) => b.trim())
     .filter(Boolean);
 
   const betas = ["oauth-2025-04-20"];
+  const disableExperimentalBetas = isTruthyEnv(process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS);
+  const isMessagesCountTokensPath = requestPath === "/v1/messages/count_tokens";
+  const isFilesEndpoint = requestPath?.startsWith("/v1/files") ?? false;
 
   if (!signatureEnabled) {
     betas.push("interleaved-thinking-2025-05-14");
-    return [...new Set([...betas, ...incomingBetasList])].join(",");
+    if (isMessagesCountTokensPath) {
+      betas.push(TOKEN_COUNTING_BETA_FLAG);
+    }
+    let mergedBetas = [...new Set([...betas, ...incomingBetasList])];
+    if (disableExperimentalBetas) {
+      mergedBetas = mergedBetas.filter((beta) => !EXPERIMENTAL_BETA_FLAGS.has(beta));
+    }
+    return mergedBetas.join(",");
   }
 
   const nonInteractive = isNonInteractiveMode();
@@ -684,72 +726,75 @@ function buildAnthropicBetaHeader(incomingBeta, signatureEnabled, model, provide
 
   if (!haiku) {
     betas.push(CLAUDE_CODE_BETA_FLAG);
-    // Code execution sandbox state is per-account; skip in round-robin to avoid
-    // losing sandbox state mid-workflow when requests rotate between accounts.
-    if (!isRoundRobin) {
-      betas.push("code-execution-2025-08-25");
-    }
   }
 
-  // Files API is model-independent; enables /v1/files endpoint and file_id references.
-  // Safe in round-robin because file-ID account pinning routes requests to the correct account.
-  betas.push("files-api-2025-04-14");
+  // Files API beta is endpoint/content-scoped instead of globally applied.
+  if ((isFilesEndpoint || hasFileReferences) && !disableExperimentalBetas) {
+    betas.push("files-api-2025-04-14");
+  }
 
   if (isOpus46Model(model)) {
-    // Opus 4.6 uses adaptive thinking — model decides how much to think based on task complexity.
-    // The effort parameter guides it; budgetTokens/interleaved-thinking are for older models.
-    if (!isTruthyEnv(process.env.DISABLE_INTERLEAVED_THINKING)) {
-      betas.push("adaptive-thinking-2026-01-28");
-    }
-  } else if (!isTruthyEnv(process.env.DISABLE_INTERLEAVED_THINKING) && supportsThinking(model)) {
+    // Opus 4.6 uses effort-based thinking controls.
+    betas.push(EFFORT_BETA_FLAG);
+  } else if (
+    !disableExperimentalBetas &&
+    !isTruthyEnv(process.env.DISABLE_INTERLEAVED_THINKING) &&
+    supportsThinking(model)
+  ) {
     betas.push("interleaved-thinking-2025-05-14");
   }
 
   // context-1m-2025-08-07 is only supported for API key users; OAuth provider does not support it.
   // For OAuth (this plugin's only auth mode), compaction is gated by model.limit.input instead.
-  if (hasOneMillionContext(model) && provider !== "anthropic") {
+  if (!disableExperimentalBetas && hasOneMillionContext(model) && provider !== "anthropic") {
     betas.push("context-1m-2025-08-07");
   }
 
   if (
+    !disableExperimentalBetas &&
     nonInteractive &&
     (isTruthyEnv(process.env.USE_API_CONTEXT_MANAGEMENT) || isTruthyEnv(process.env.TENGU_MARBLE_ANVIL))
   ) {
     betas.push("context-management-2025-06-27");
   }
 
-  if (supportsStructuredOutputs(model) && isTruthyEnv(process.env.TENGU_TOOL_PEAR)) {
+  if (!disableExperimentalBetas && supportsStructuredOutputs(model) && isTruthyEnv(process.env.TENGU_TOOL_PEAR)) {
     betas.push("structured-outputs-2025-12-15");
   }
 
-  if (nonInteractive && isTruthyEnv(process.env.TENGU_SCARF_COFFEE)) {
+  if (!disableExperimentalBetas && nonInteractive && isTruthyEnv(process.env.TENGU_SCARF_COFFEE)) {
     betas.push("tool-examples-2025-10-29");
   }
 
-  if ((provider === "vertex" || provider === "foundry") && supportsWebSearch(model)) {
+  if (!disableExperimentalBetas && (provider === "vertex" || provider === "foundry") && supportsWebSearch(model)) {
     betas.push("web-search-2025-03-05");
   }
 
   // Prompt caching is per-workspace (since Feb 2026); round-robin across accounts
   // means zero cache hits and doubled token costs. Skip in round-robin.
-  if (nonInteractive && !isRoundRobin) {
+  if (!disableExperimentalBetas && nonInteractive && !isRoundRobin) {
     betas.push("prompt-caching-scope-2026-01-05");
   }
 
-  if (process.env.ANTHROPIC_BETAS && !haiku) {
+  if (isMessagesCountTokensPath) {
+    betas.push(TOKEN_COUNTING_BETA_FLAG);
+  }
+
+  if (process.env.ANTHROPIC_BETAS) {
     const envBetas = process.env.ANTHROPIC_BETAS.split(",")
       .map((b) => b.trim())
       .filter(Boolean);
     betas.push(...envBetas);
   }
 
-  betas.push("fine-grained-tool-streaming-2025-05-14");
-
   if (Array.isArray(customBetas)) {
     betas.push(...customBetas.filter(Boolean));
   }
 
-  const mergedBetas = [...new Set([...betas, ...incomingBetasList])];
+  let mergedBetas = [...new Set([...betas, ...incomingBetasList])];
+  if (disableExperimentalBetas) {
+    mergedBetas = mergedBetas.filter((beta) => !EXPERIMENTAL_BETA_FLAGS.has(beta));
+  }
   if (provider === "bedrock") {
     return mergedBetas.filter((beta) => !BEDROCK_UNSUPPORTED_BETAS.has(beta)).join(",");
   }
@@ -759,7 +804,7 @@ function buildAnthropicBetaHeader(incomingBeta, signatureEnabled, model, provide
 /** @typedef {'low' | 'medium' | 'high'} ThinkingEffort */
 
 /**
- * Map budgetTokens to an adaptive thinking effort level.
+ * Map budgetTokens to an effort level.
  * Used when an Opus 4.6 request arrives with the legacy budgetTokens shape.
  * @param {number} budgetTokens
  * @returns {ThinkingEffort}
@@ -781,11 +826,11 @@ function isValidEffort(value) {
 
 /**
  * Normalise the `thinking` block in the request body for the target model:
- * - Opus 4.6 (adaptive thinking): produces `{ type: "enabled", effort: <effort> }`
+ * - Opus 4.6 (effort-based thinking): produces `{ type: "enabled", effort: <effort> }`
  * - Older models: passes the existing thinking block through unchanged.
  *
  * Handles three incoming shapes:
- *   1. Already adaptive: `{ type: "enabled", effort: "..." }` → kept as-is for Opus 4.6
+ *   1. Already effort-based: `{ type: "enabled", effort: "..." }` → kept as-is for Opus 4.6
  *   2. Legacy manual: `{ type: "enabled", budget_tokens: N }` → mapped to effort for Opus 4.6
  *   3. Absent / disabled: no transform
  *
@@ -873,7 +918,7 @@ async function fetchLatestClaudeCodeVersion(timeoutMs = 1200) {
  * @param {string} accessToken
  * @param {string | undefined} requestBody
  * @param {URL | null} requestUrl
- * @param {{enabled: boolean, claudeCliVersion: string, strategy?: import('./lib/config.mjs').AccountSelectionStrategy}} signature
+ * @param {{enabled: boolean, claudeCliVersion: string, strategy?: import('./lib/config.mjs').AccountSelectionStrategy, customBetas?: string[]}} signature
  * @returns {Headers}
  */
 function buildRequestHeaders(input, requestInit, accessToken, requestBody, requestUrl, signature) {
@@ -905,7 +950,7 @@ function buildRequestHeaders(input, requestInit, accessToken, requestBody, reque
 
   // Preserve all incoming beta headers while ensuring OAuth requirements
   const incomingBeta = requestHeaders.get("anthropic-beta") || "";
-  const { model, tools, messages } = parseRequestBodyMetadata(requestBody);
+  const { model, tools, messages, hasFileReferences } = parseRequestBodyMetadata(requestBody);
   const provider = detectProvider(requestUrl);
   const mergedBetas = buildAnthropicBetaHeader(
     incomingBeta,
@@ -914,6 +959,8 @@ function buildRequestHeaders(input, requestInit, accessToken, requestBody, reque
     provider,
     signature.customBetas,
     signature.strategy,
+    requestUrl?.pathname,
+    hasFileReferences,
   );
 
   const authTokenOverride = process.env.ANTHROPIC_AUTH_TOKEN?.trim();
@@ -1040,7 +1087,7 @@ function transformRequestBody(body, signature, runtime) {
 }
 
 /**
- * Transform the request URL: add ?beta=true to /v1/messages.
+ * Transform the request URL: add ?beta=true to /v1/messages and /v1/messages/count_tokens.
  * Preserves behaviors F1-F3.
  *
  * @param {any} input
@@ -1059,7 +1106,11 @@ function transformRequestUrl(input) {
     requestUrl = null;
   }
 
-  if (requestUrl && requestUrl.pathname === "/v1/messages" && !requestUrl.searchParams.has("beta")) {
+  if (
+    requestUrl &&
+    (requestUrl.pathname === "/v1/messages" || requestUrl.pathname === "/v1/messages/count_tokens") &&
+    !requestUrl.searchParams.has("beta")
+  ) {
     requestUrl.searchParams.set("beta", "true");
     requestInput = input instanceof Request ? new Request(requestUrl.toString(), input) : requestUrl;
   }
@@ -2039,12 +2090,12 @@ export async function AnthropicAuthPlugin({ client }) {
           "",
           "Preset betas (auto-computed per model/provider):",
           "  oauth-2025-04-20, claude-code-20250219,",
-          "  interleaved-thinking-2025-05-14 OR adaptive-thinking-2026-01-28,",
-          "  fine-grained-tool-streaming-2025-05-14,",
-          `  code-execution-2025-08-25 (non-Haiku${strategy === "round-robin" ? ", skipped in round-robin" : ""}),`,
-          "  files-api-2025-04-14,",
+          "  interleaved-thinking-2025-05-14 (non-Opus 4.6) OR effort-2025-11-24 (Opus 4.6),",
+          "  files-api-2025-04-14 (only /v1/files and requests with file_id),",
+          "  token-counting-2024-11-01 (only /v1/messages/count_tokens),",
           `  prompt-caching-scope-2026-01-05 (non-interactive${strategy === "round-robin" ? ", skipped in round-robin" : ""})`,
           "",
+          `Experimental betas: ${isTruthyEnv(process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS) ? "disabled (CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1)" : "enabled"}`,
           `Strategy: ${strategy}${initialAccountPinned ? " (pinned via OPENCODE_ANTHROPIC_INITIAL_ACCOUNT)" : ""}`,
           `Custom betas: ${fresh.custom_betas.length ? fresh.custom_betas.join(", ") : "(none)"}`,
           "",
@@ -2164,7 +2215,7 @@ export async function AnthropicAuthPlugin({ client }) {
         }
         return {
           authorization: `Bearer ${tok}`,
-          "anthropic-beta": "files-api-2025-04-14",
+          "anthropic-beta": "oauth-2025-04-20,files-api-2025-04-14",
         };
       }
 
@@ -2291,7 +2342,7 @@ export async function AnthropicAuthPlugin({ client }) {
             method: "POST",
             headers: {
               authorization: authHeaders.authorization,
-              "anthropic-beta": "files-api-2025-04-14",
+              "anthropic-beta": "oauth-2025-04-20,files-api-2025-04-14",
             },
             body: form,
           });

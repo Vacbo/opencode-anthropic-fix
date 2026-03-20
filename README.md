@@ -43,11 +43,11 @@ The [original plugin](https://github.com/anomalyco/opencode-anthropic-auth) prov
 - **Standalone CLI** &mdash; manage accounts without opening OpenCode
 - **Configurable strategies** &mdash; sticky, round-robin, or hybrid account selection
 - **Claude Code signature emulation** &mdash; full HTTP header, system prompt, beta flag, and metadata mimicry derived from Claude Code's open source code
-- **Adaptive thinking for Opus 4.6** &mdash; automatically uses `adaptive-thinking-2026-01-28` and maps `budgetTokens` to effort levels (`low`/`medium`/`high`)
+- **Effort-based thinking for Opus 4.6** &mdash; maps `budgetTokens` to effort levels (`low`/`medium`/`high`) and includes `effort-2025-11-24`
 - **1M context limit override** &mdash; patches `model.limit.context` so OpenCode compacts at the right threshold while `models.dev` catches up
 - **Runtime config + custom betas** &mdash; `/anthropic set`, `/anthropic config`, and `/anthropic betas` slash commands for live feature toggling without restarting OpenCode
-- **Files API integration** &mdash; upload, list, download, and manage files via `/anthropic files` with auto-included `files-api-2025-04-14` beta
-- **Code execution support** &mdash; auto-includes `code-execution-2025-08-25` beta for sandbox code execution (non-Haiku models)
+- **Files API integration** &mdash; upload, list, download, and manage files via `/anthropic files` with endpoint/content-scoped `files-api-2025-04-14` beta injection
+- **Code execution support** &mdash; available via explicit custom beta opt-in (`code-execution-2025-08-25`), not auto-enabled
 
 ## Installation
 
@@ -295,7 +295,7 @@ Example workflow:
 
 ### Files API management
 
-Upload, list, download, and delete files via the Anthropic Files API. The `files-api-2025-04-14` beta is auto-included in every request.
+Upload, list, download, and delete files via the Anthropic Files API. The `files-api-2025-04-14` beta is injected only when needed (`/v1/files` requests or Messages payloads with `file_id`).
 
 ```text
 /anthropic files                       # list files across ALL accounts
@@ -370,7 +370,7 @@ Some Anthropic API features maintain server-side per-account state that breaks w
 | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | **Files API** (`files-api-2025-04-14`)                 | `file_id` is per-account; referencing Account A's file from Account B = `file_not_found`                         | **Auto-pinning**: the plugin tracks which account owns each `file_id` and routes the request accordingly |
 | **Prompt Caching** (`prompt-caching-scope-2026-01-05`) | Cache is per-workspace; alternating accounts means zero cache hits, doubling token costs                         | **Auto-skipped** in round-robin: the `prompt-caching-scope` beta is excluded from the header             |
-| **Code Execution** (`code-execution-2025-08-25`)       | Sandbox state is ephemeral per-request; multi-step workflows lose files/state when routed to a different account | **Auto-skipped** in round-robin: the `code-execution` beta is excluded from the header                   |
+| **Code Execution** (`code-execution-2025-08-25`)       | Sandbox state is ephemeral per-request; multi-step workflows lose files/state when routed to a different account | **Manual opt-in only**: add the beta explicitly, and prefer sticky/pinned sessions for multi-step flows  |
 | **Message Batches** (`message-batches-2024-09-24`)     | `batch_id` is per-account; polling from wrong account = 404                                                      | No automatic mitigation (not auto-included)                                                              |
 
 **Recommendation for round-robin users:** If you need prompt caching or code execution, pin each OpenCode session to a single account:
@@ -383,7 +383,7 @@ OPENCODE_ANTHROPIC_INITIAL_ACCOUNT=1 opencode
 OPENCODE_ANTHROPIC_INITIAL_ACCOUNT=2 opencode
 ```
 
-This automatically overrides the strategy to `sticky` for that session, re-enabling all betas. Other sessions are unaffected.
+This automatically overrides the strategy to `sticky` for that session, re-enabling strategy-sensitive auto betas (for example `prompt-caching-scope-2026-01-05`). Other sessions are unaffected.
 
 ## Configuration
 
@@ -471,6 +471,7 @@ Configuration is stored at `~/.config/opencode/anthropic-auth.json`. All setting
 | `OPENCODE_ANTHROPIC_DEBUG_SYSTEM_PROMPT`           | Set to `1` to log the final transformed `system` prompt to stderr (title-generator requests are skipped).                                                 |
 | `OPENCODE_ANTHROPIC_OVERRIDE_MODEL_LIMITS`         | Set to `0` to disable context limit overrides for 1M-window models (e.g. when models.dev has been updated).                                               |
 | `OPENCODE_ANTHROPIC_INITIAL_ACCOUNT`               | Pin this session to a specific account (1-based index or email). Overrides strategy to `sticky`. See [Round-Robin Limitations](#round-robin-limitations). |
+| `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS`           | Set to `1` to suppress experimental auto-betas (mirrors Claude Code gateway safety switch).                                                               |
 
 ### OAuth-only behavior
 
@@ -496,7 +497,7 @@ The plugin also:
 - Emulates Claude-style request headers and beta flags by default
 - Sanitizes "OpenCode" references to "Claude Code" in system prompts (required by Anthropic's API)
 - In `prompt_compaction="minimal"`, deduplicates repeated/contained system blocks and uses a compact dedicated prompt for internal title-generation requests
-- Adds `?beta=true` to `/v1/messages` requests
+- Adds `?beta=true` to `/v1/messages` and `/v1/messages/count_tokens` requests
 
 When signature emulation is disabled (`signature_emulation.enabled=false`), the plugin falls back to legacy behavior including the Claude Code system prompt prefix.
 

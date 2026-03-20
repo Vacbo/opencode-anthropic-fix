@@ -145,7 +145,7 @@ function rpad(str, width) {
  */
 export async function refreshAccessToken(account) {
   try {
-    const resp = await fetch("https://console.anthropic.com/v1/oauth/token", {
+    const resp = await fetch("https://platform.claude.com/v1/oauth/token", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

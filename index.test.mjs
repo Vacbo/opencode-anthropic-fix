@@ -97,6 +97,7 @@ beforeEach(() => {
   delete process.env.CLAUDE_CODE_CONTAINER_ID;
   delete process.env.CLAUDE_CODE_REMOTE_SESSION_ID;
   delete process.env.CLAUDE_CODE_ADDITIONAL_PROTECTION;
+  delete process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS;
   delete process.env.OPENCODE_ANTHROPIC_DEBUG_SYSTEM_PROMPT;
   delete process.env.CLAUDE_CODE_ACCOUNT_UUID;
   delete process.env.CLAUDE_CODE_USER_EMAIL;
@@ -582,6 +583,7 @@ describe("fetch interceptor", () => {
   beforeEach(async () => {
     vi.resetAllMocks();
     delete process.env.DISABLE_INTERLEAVED_THINKING;
+    delete process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS;
     delete process.env.USE_API_CONTEXT_MANAGEMENT;
     delete process.env.TENGU_MARBLE_ANVIL;
     delete process.env.TENGU_TOOL_PEAR;
@@ -656,6 +658,20 @@ describe("fetch interceptor", () => {
 
     const [input] = mockFetch.mock.calls[0];
     const url = input instanceof URL ? input : new URL(input.toString());
+    expect(url.searchParams.get("beta")).toBe("true");
+  });
+
+  it("adds ?beta=true to /v1/messages/count_tokens URL", async () => {
+    mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
+
+    await fetchFn("https://api.anthropic.com/v1/messages/count_tokens", {
+      method: "POST",
+      body: JSON.stringify({ model: "claude-sonnet-4", messages: [] }),
+    });
+
+    const [input] = mockFetch.mock.calls[0];
+    const url = input instanceof URL ? input : new URL(input.toString());
+    expect(url.pathname).toBe("/v1/messages/count_tokens");
     expect(url.searchParams.get("beta")).toBe("true");
   });
 
@@ -1377,7 +1393,7 @@ describe("fetch interceptor — token refresh", () => {
 
     // First call should be the token refresh
     const [refreshUrl, refreshInit] = mockFetch.mock.calls[0];
-    expect(refreshUrl).toBe("https://console.anthropic.com/v1/oauth/token");
+    expect(refreshUrl).toBe("https://platform.claude.com/v1/oauth/token");
     expect(JSON.parse(refreshInit.body).grant_type).toBe("refresh_token");
 
     // Second call should use the fresh token
@@ -2680,9 +2696,9 @@ describe("header handling", () => {
     expect(betaHeader).toContain("oauth-2025-04-20");
     expect(betaHeader).toContain("interleaved-thinking-2025-05-14");
     expect(betaHeader).toContain("claude-code-20250219");
-    expect(betaHeader).toContain("fine-grained-tool-streaming-2025-05-14");
-    expect(betaHeader).toContain("code-execution-2025-08-25");
-    expect(betaHeader).toContain("files-api-2025-04-14");
+    expect(betaHeader).not.toContain("fine-grained-tool-streaming-2025-05-14");
+    expect(betaHeader).not.toContain("code-execution-2025-08-25");
+    expect(betaHeader).not.toContain("files-api-2025-04-14");
     expect(betaHeader).toContain("custom-beta-2025-01-01");
     expect(betaHeader).toContain("another-beta-2025-02-01");
   });
@@ -2701,7 +2717,7 @@ describe("header handling", () => {
     expect(init.headers.get("anthropic-beta")).not.toContain("context-1m-2025-08-07");
   });
 
-  it("adds adaptive-thinking beta instead of interleaved-thinking for Opus 4.6 models", async () => {
+  it("adds effort beta instead of interleaved-thinking for Opus 4.6 models", async () => {
     mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
 
     await fetchFn("https://api.anthropic.com/v1/messages", {
@@ -2712,7 +2728,7 @@ describe("header handling", () => {
 
     const [, init] = mockFetch.mock.calls[0];
     const betaHeader = init.headers.get("anthropic-beta");
-    expect(betaHeader).toContain("adaptive-thinking-2026-01-28");
+    expect(betaHeader).toContain("effort-2025-11-24");
     expect(betaHeader).not.toContain("interleaved-thinking-2025-05-14");
   });
 
@@ -2823,38 +2839,8 @@ describe("header handling", () => {
     expect(parsed.thinking).toEqual({ type: "enabled", budget_tokens: 8000 });
   });
 
-  it("adds ANTHROPIC_BETAS entries for non-haiku models", async () => {
+  it("adds ANTHROPIC_BETAS entries for haiku models too", async () => {
     process.env.ANTHROPIC_BETAS = "custom-a, custom-b";
-    mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
-
-    await fetchFn("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ model: "claude-sonnet-4", messages: [] }),
-    });
-
-    const [, init] = mockFetch.mock.calls[0];
-    const betaHeader = init.headers.get("anthropic-beta");
-    expect(betaHeader).toContain("custom-a");
-    expect(betaHeader).toContain("custom-b");
-  });
-
-  it("auto-includes code-execution and files-api betas for non-Haiku models", async () => {
-    mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
-
-    await fetchFn("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ model: "claude-sonnet-4", messages: [] }),
-    });
-
-    const [, init] = mockFetch.mock.calls[0];
-    const betaHeader = init.headers.get("anthropic-beta");
-    expect(betaHeader).toContain("code-execution-2025-08-25");
-    expect(betaHeader).toContain("files-api-2025-04-14");
-  });
-
-  it("excludes code-execution beta for Haiku models but includes files-api", async () => {
     mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
 
     await fetchFn("https://api.anthropic.com/v1/messages", {
@@ -2865,11 +2851,95 @@ describe("header handling", () => {
 
     const [, init] = mockFetch.mock.calls[0];
     const betaHeader = init.headers.get("anthropic-beta");
+    expect(betaHeader).toContain("custom-a");
+    expect(betaHeader).toContain("custom-b");
+  });
+
+  it("does not auto-include code-execution beta", async () => {
+    mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
+
+    await fetchFn("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: "claude-sonnet-4", messages: [] }),
+    });
+
+    const [, init] = mockFetch.mock.calls[0];
+    const betaHeader = init.headers.get("anthropic-beta");
     expect(betaHeader).not.toContain("code-execution-2025-08-25");
+  });
+
+  it("adds files-api beta for /v1/files endpoints", async () => {
+    mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
+
+    await fetchFn("https://api.anthropic.com/v1/files", {
+      method: "GET",
+    });
+
+    const [, init] = mockFetch.mock.calls[0];
+    const betaHeader = init.headers.get("anthropic-beta");
     expect(betaHeader).toContain("files-api-2025-04-14");
   });
 
-  it("excludes code-execution and prompt-caching-scope betas in round-robin strategy", async () => {
+  it("adds files-api beta when messages payload references file_id", async () => {
+    mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
+
+    await fetchFn("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "document",
+                source: {
+                  type: "file",
+                  file_id: "file_123",
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    const [, init] = mockFetch.mock.calls[0];
+    const betaHeader = init.headers.get("anthropic-beta");
+    expect(betaHeader).toContain("files-api-2025-04-14");
+  });
+
+  it("does not add files-api beta to regular messages without file_id", async () => {
+    mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
+
+    await fetchFn("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: "claude-sonnet-4", messages: [] }),
+    });
+
+    const [, init] = mockFetch.mock.calls[0];
+    const betaHeader = init.headers.get("anthropic-beta");
+    expect(betaHeader).not.toContain("files-api-2025-04-14");
+  });
+
+  it("adds token-counting beta for /v1/messages/count_tokens", async () => {
+    mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
+
+    await fetchFn("https://api.anthropic.com/v1/messages/count_tokens", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: "claude-sonnet-4", messages: [] }),
+    });
+
+    const [, init] = mockFetch.mock.calls[0];
+    const betaHeader = init.headers.get("anthropic-beta");
+    expect(betaHeader).toContain("token-counting-2024-11-01");
+  });
+
+  it("excludes prompt-caching-scope beta in round-robin strategy", async () => {
     // Override config with round-robin strategy for a fresh plugin
     loadConfig.mockReturnValueOnce({
       ...loadConfig(),
@@ -2900,18 +2970,16 @@ describe("header handling", () => {
     const [, init] = mockFetch.mock.calls[0];
     const betaHeader = init.headers.get("anthropic-beta");
 
-    // Code execution excluded in round-robin (sandbox state is per-account)
-    expect(betaHeader).not.toContain("code-execution-2025-08-25");
     // Prompt caching excluded in round-robin (cache is per-workspace)
     expect(betaHeader).not.toContain("prompt-caching-scope-2026-01-05");
-    // Files API still included (auto-pinning handles cross-account file_ids)
-    expect(betaHeader).toContain("files-api-2025-04-14");
+    // Files API is only endpoint/content-scoped
+    expect(betaHeader).not.toContain("files-api-2025-04-14");
     // Core betas still present
     expect(betaHeader).toContain("oauth-2025-04-20");
     expect(betaHeader).toContain("claude-code-20250219");
   });
 
-  it("includes code-execution and prompt-caching-scope betas in sticky strategy", async () => {
+  it("includes prompt-caching-scope beta in sticky strategy", async () => {
     // Default fetchFn uses sticky strategy
     mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
 
@@ -2924,9 +2992,29 @@ describe("header handling", () => {
     const [, init] = mockFetch.mock.calls[0];
     const betaHeader = init.headers.get("anthropic-beta");
 
-    expect(betaHeader).toContain("code-execution-2025-08-25");
     expect(betaHeader).toContain("prompt-caching-scope-2026-01-05");
-    expect(betaHeader).toContain("files-api-2025-04-14");
+    expect(betaHeader).not.toContain("files-api-2025-04-14");
+  });
+
+  it("disables experimental betas when CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1", async () => {
+    process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS = "1";
+    process.env.ANTHROPIC_BETAS = "custom-stable-beta,tool-examples-2025-10-29";
+    mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
+
+    await fetchFn("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: "claude-sonnet-4", messages: [] }),
+    });
+
+    const [, init] = mockFetch.mock.calls[0];
+    const betaHeader = init.headers.get("anthropic-beta");
+    expect(betaHeader).toContain("oauth-2025-04-20");
+    expect(betaHeader).toContain("claude-code-20250219");
+    expect(betaHeader).toContain("custom-stable-beta");
+    expect(betaHeader).not.toContain("interleaved-thinking-2025-05-14");
+    expect(betaHeader).not.toContain("prompt-caching-scope-2026-01-05");
+    expect(betaHeader).not.toContain("tool-examples-2025-10-29");
   });
 
   it("computes x-stainless-helper from tools and message content", async () => {
@@ -3332,7 +3420,7 @@ describe("OPENCODE_ANTHROPIC_INITIAL_ACCOUNT", () => {
     expect(init.headers.get("authorization")).toBe("Bearer access-2");
   });
 
-  it("includes code-execution beta when round-robin config is overridden to sticky by pinning", async () => {
+  it("includes prompt-caching beta when round-robin config is overridden to sticky by pinning", async () => {
     vi.resetAllMocks();
     process.env.OPENCODE_ANTHROPIC_INITIAL_ACCOUNT = "1";
     process.env.OPENCODE_ANTHROPIC_SIGNATURE_USER_ID = "test-signature-user";
@@ -3380,9 +3468,10 @@ describe("OPENCODE_ANTHROPIC_INITIAL_ACCOUNT", () => {
     const [, init] = mockFetch.mock.calls[0];
     const betaHeader = init.headers.get("anthropic-beta");
 
-    // Pinning overrides round-robin to sticky — code-execution should be included
-    expect(betaHeader).toContain("code-execution-2025-08-25");
-    expect(betaHeader).toContain("files-api-2025-04-14");
+    // Pinning overrides round-robin to sticky — prompt-caching should be included
+    expect(betaHeader).toContain("prompt-caching-scope-2026-01-05");
+    expect(betaHeader).not.toContain("code-execution-2025-08-25");
+    expect(betaHeader).not.toContain("files-api-2025-04-14");
     // Should use account 1 (pinned)
     expect(init.headers.get("authorization")).toBe("Bearer access-1");
   });
