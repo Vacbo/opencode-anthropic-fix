@@ -329,7 +329,11 @@ async function runOAuthFlow() {
 
     const credentials = await exchange(trimmed, verifier);
     if (credentials.type === "failed") {
-      console.error(c.red("Error: token exchange failed. The code may be invalid or expired."));
+      if (credentials.details) {
+        console.error(c.red(`Error: token exchange failed (${credentials.details}).`));
+      } else {
+        console.error(c.red("Error: token exchange failed. The code may be invalid or expired."));
+      }
       return null;
     }
 

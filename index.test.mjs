@@ -520,6 +520,21 @@ describe("slash commands", () => {
     );
   });
 
+  it("surfaces token exchange error details in slash OAuth flow", async () => {
+    await runAnthropic("login");
+
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      text: async () => JSON.stringify({ error: "invalid_grant", error_description: "state mismatch" }),
+    });
+
+    const text = await runAnthropic("login complete bad-code#bad-state");
+    expect(text).toContain("Token exchange failed");
+    expect(text).toContain("HTTP 400");
+    expect(text).toContain("invalid_grant");
+  });
+
   it("expires pending slash OAuth flow after TTL", async () => {
     await runAnthropic("login");
 
@@ -668,7 +683,7 @@ describe("fetch interceptor", () => {
     expect(headers.get("authorization")).toBe("Bearer test-access");
     expect(headers.get("anthropic-beta")).toContain("oauth-2025-04-20");
     expect(headers.get("anthropic-beta")).toContain("claude-code-20250219");
-    expect(headers.get("user-agent")).toContain("claude-cli/2.1.76");
+    expect(headers.get("user-agent")).toContain("claude-cli/2.1.79");
     expect(headers.get("x-app")).toBe("cli");
     expect(headers.get("x-stainless-lang")).toBe("js");
     expect(headers.has("x-api-key")).toBe(false);
@@ -1421,6 +1436,7 @@ describe("fetch interceptor — token refresh", () => {
     const [refreshUrl, refreshInit] = mockFetch.mock.calls[0];
     expect(refreshUrl).toBe("https://platform.claude.com/v1/oauth/token");
     expect(JSON.parse(refreshInit.body).grant_type).toBe("refresh_token");
+    expect(refreshInit.headers["User-Agent"]).toBe("claude-cli/2.1.79 (external, cli)");
 
     // Second call should use the fresh token
     const [, apiInit] = mockFetch.mock.calls[1];
@@ -2505,6 +2521,8 @@ describe("OAuth exchange failure", () => {
     const credentials = await authResult.callback("bad-code#state");
 
     expect(credentials.type).toBe("failed");
+    const [, exchangeInit] = mockFetch.mock.calls[0];
+    expect(exchangeInit.headers["User-Agent"]).toBe("claude-cli/2.1.79 (external, cli)");
     // saveAccounts should NOT have been called
     expect(saveAccounts).not.toHaveBeenCalled();
   });

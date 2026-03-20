@@ -103,7 +103,7 @@ async function promptManageAccounts(accountManager) {
 // Request building helpers (extracted from original fetch interceptor)
 // ---------------------------------------------------------------------------
 
-const FALLBACK_CLAUDE_CLI_VERSION = "2.1.76";
+const FALLBACK_CLAUDE_CLI_VERSION = "2.1.79";
 const CLAUDE_CODE_NPM_LATEST_URL = "https://registry.npmjs.org/@anthropic-ai/claude-code/latest";
 const CLAUDE_CODE_BETA_FLAG = "claude-code-20250219";
 const EFFORT_BETA_FLAG = "effort-2025-11-24";
@@ -1866,7 +1866,12 @@ export async function AnthropicAuthPlugin({ client }) {
 
     const credentials = await exchange(code, pending.verifier);
     if (credentials.type === "failed") {
-      return { ok: false, message: "Token exchange failed. The code may be invalid or expired." };
+      return {
+        ok: false,
+        message: credentials.details
+          ? `Token exchange failed (${credentials.details}).`
+          : "Token exchange failed. The code may be invalid or expired.",
+      };
     }
 
     const stored = (await loadAccounts()) || { version: 1, accounts: [], activeIndex: 0 };

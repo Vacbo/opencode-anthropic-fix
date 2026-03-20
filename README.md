@@ -43,6 +43,7 @@ The [original plugin](https://github.com/anomalyco/opencode-anthropic-auth) prov
 - **Standalone CLI** &mdash; manage accounts without opening OpenCode
 - **Configurable strategies** &mdash; sticky, round-robin, or hybrid account selection
 - **Claude Code signature emulation** &mdash; full HTTP header, system prompt, beta flag, and metadata mimicry derived from Claude Code's open source code
+- **OAuth endpoint fingerprint parity** &mdash; sends Claude Code-style `User-Agent` on `/v1/oauth/token` and `/v1/oauth/revoke` to match current OAuth validation
 - **Effort-based thinking for Opus 4.6** &mdash; maps `budgetTokens` to effort levels (`low`/`medium`/`high`) and includes `effort-2025-11-24`
 - **1M context limit override** &mdash; patches `model.limit.context` so OpenCode compacts at the right threshold while `models.dev` catches up
 - **Runtime config + custom betas** &mdash; `/anthropic set`, `/anthropic config`, and `/anthropic betas` slash commands for live feature toggling without restarting OpenCode

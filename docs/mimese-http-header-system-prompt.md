@@ -149,6 +149,19 @@ It also injects optional env-driven headers:
 - `CLAUDE_AGENT_SDK_CLIENT_APP` => `x-client-app`
 - `CLAUDE_CODE_ADDITIONAL_PROTECTION=1/true/yes` => `x-anthropic-additional-protection: true`
 
+### 4.3 OAuth token-layer user-agent mimicry
+
+OAuth token calls now include Claude Code-style user-agent fingerprinting on:
+
+- `POST /v1/oauth/token`
+- `POST /v1/oauth/revoke`
+
+Header sent:
+
+- `User-Agent: claude-cli/2.1.79 (external, cli)`
+
+Without this header, current Anthropic OAuth token endpoints may reject requests.
+
 ## 5) Beta header catalog (Claude Code reference vs current plugin)
 
 ### 5.1 Beta composition rule in the plugin
