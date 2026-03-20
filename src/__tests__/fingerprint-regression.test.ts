@@ -31,21 +31,6 @@ import { buildUserAgent } from "../headers/user-agent.js";
 // ---------------------------------------------------------------------------
 const CC_VERSION = "2.1.80";
 const STAINLESS_PACKAGE_VERSION = "0.74.0";
-const FIXED_CCH = "379e5";
-
-// ---------------------------------------------------------------------------
-// Helper: build a minimal signature config
-// ---------------------------------------------------------------------------
-function makeSignature(overrides: Record<string, unknown> = {}) {
-  return {
-    enabled: true,
-    claudeCliVersion: CC_VERSION,
-    customBetas: undefined,
-    strategy: undefined,
-    promptCompactionMode: "off" as const,
-    ...overrides,
-  };
-}
 
 // ---------------------------------------------------------------------------
 // User-Agent

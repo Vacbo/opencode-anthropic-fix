@@ -76,8 +76,8 @@ vi.mock("./src/config.js", async (importOriginal) => {
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
-import { AnthropicAuthPlugin } from "./src/index.js";
 import { DEFAULT_CONFIG, loadConfig, loadConfigFresh, saveConfig as saveRuntimeConfig } from "./src/config.js";
+import { AnthropicAuthPlugin } from "./src/index.js";
 import { acquireRefreshLock, releaseRefreshLock } from "./src/refresh-lock.js";
 import { clearAccounts, loadAccounts, saveAccounts } from "./src/storage.js";
 
@@ -856,6 +856,7 @@ describe("fetch interceptor", () => {
   });
 
   it("preserves verbose system instructions when prompt compaction is off", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const configModule = await import("./src/config.js");
     loadConfig.mockReturnValueOnce({
       ...loadConfig(),
@@ -1436,6 +1437,7 @@ describe("system prompt transform", () => {
   });
 
   it("keeps legacy prefix behavior when emulation is disabled", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const configModule = await import("./src/config.js");
     loadConfig.mockReturnValueOnce({
       ...loadConfig(),
