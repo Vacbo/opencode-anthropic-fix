@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 /**
  * Integration tests for the plugin lifecycle.
  *
@@ -1700,7 +1700,7 @@ describe("fetch interceptor — token refresh", () => {
     );
     mockSaveAccounts.mockResolvedValue(undefined);
 
-    mockAcquireRefreshLock.mockResolvedValue({ acquired: false, lockPath: null });
+    _mockAcquireRefreshLock.mockResolvedValue({ acquired: false, lockPath: null });
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
