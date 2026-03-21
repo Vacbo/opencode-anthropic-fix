@@ -6,11 +6,12 @@ Use the `cc-version-tracker` or `cc-mimicry-auditor` skills to automate extracti
 
 ## Current baseline
 
-- [2.1.80.md](2.1.80.md) — Current alignment target (2026-03-20)
+- [2.1.81.md](2.1.81.md) — Current alignment target (2026-03-21)
+- [2.1.80.md](2.1.80.md) — Previous version (2026-03-20)
 
 ## Shared across versions (stable since 2.1.79)
 
-These values have NOT changed between 2.1.79 and 2.1.80:
+These values have NOT changed between 2.1.79 and 2.1.81:
 
 - **Production client ID**: `9d1c250a-e61b-44d9-88ed-5944d1962f5e`
 - **Staging client ID**: `22422756-60c9-4084-8eb7-27705fd5cf9a`
@@ -21,7 +22,7 @@ These values have NOT changed between 2.1.79 and 2.1.80:
 - **OAuth beta**: `oauth-2025-04-20`
 - **Identity string**: `You are Claude Code, Anthropic's official CLI for Claude.`
 - **anthropic-version**: `2023-06-01`
-- **Billing cch**: `379e5` (fixed)
+- **Billing cch**: `00000` (fixed)
 - **Billing hash salt**: `59cf53e54c78`, positions [4,7,20]
 
 ## Version-specific values

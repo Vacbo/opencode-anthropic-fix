@@ -1,11 +1,11 @@
 /**
- * Fingerprint regression tests for CC 2.1.80
+ * Fingerprint regression tests for CC 2.1.81
  *
  * These tests lock in the exact header values, beta flags, and identity strings
  * that must match the upstream Claude Code fingerprint. Any divergence here
  * means the plugin would be detectable as a non-CC client.
  *
- * Reference: docs/cc-versions/2.1.80.md
+ * Reference: docs/cc-versions/2.1.81.md
  */
 
 import { createHash } from "node:crypto";
@@ -27,15 +27,15 @@ import { getStainlessArch, getStainlessOs } from "../headers/stainless.js";
 import { buildUserAgent } from "../headers/user-agent.js";
 
 // ---------------------------------------------------------------------------
-// CC 2.1.80 documented values
+// CC 2.1.81 documented values
 // ---------------------------------------------------------------------------
-const CC_VERSION = "2.1.80";
+const CC_VERSION = "2.1.81";
 const STAINLESS_PACKAGE_VERSION = "0.74.0";
 
 // ---------------------------------------------------------------------------
 // User-Agent
 // ---------------------------------------------------------------------------
-describe("CC 2.1.80 — User-Agent format", () => {
+describe("CC 2.1.81 — User-Agent format", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });
@@ -48,13 +48,13 @@ describe("CC 2.1.80 — User-Agent format", () => {
     expect(ua).toBe(`claude-cli/${CC_VERSION} (external, cli)`);
   });
 
-  it("embeds the correct CC version (2.1.80)", () => {
+  it("embeds the correct CC version (2.1.81)", () => {
     const ua = buildUserAgent(CC_VERSION);
-    expect(ua).toMatch(/^claude-cli\/2\.1\.80 /);
+    expect(ua).toMatch(/^claude-cli\/2\.1\.81 /);
   });
 
-  it("FALLBACK_CLAUDE_CLI_VERSION constant is 2.1.80", () => {
-    expect(FALLBACK_CLAUDE_CLI_VERSION).toBe("2.1.80");
+  it("FALLBACK_CLAUDE_CLI_VERSION constant is 2.1.81", () => {
+    expect(FALLBACK_CLAUDE_CLI_VERSION).toBe("2.1.81");
   });
 
   it("appends agent-sdk suffix when CLAUDE_AGENT_SDK_VERSION is set", () => {
@@ -75,7 +75,7 @@ describe("CC 2.1.80 — User-Agent format", () => {
 // ---------------------------------------------------------------------------
 // Stainless headers
 // ---------------------------------------------------------------------------
-describe("CC 2.1.80 — Stainless headers", () => {
+describe("CC 2.1.81 — Stainless headers", () => {
   it("x-stainless-package-version is 0.74.0", () => {
     // The constant is hardcoded in builder.ts — verify the documented value
     expect(STAINLESS_PACKAGE_VERSION).toBe("0.74.0");
@@ -130,7 +130,7 @@ describe("CC 2.1.80 — Stainless headers", () => {
 // ---------------------------------------------------------------------------
 // Billing header / cch
 // ---------------------------------------------------------------------------
-describe("CC 2.1.80 — Billing header", () => {
+describe("CC 2.1.81 — Billing header", () => {
   beforeEach(() => {
     vi.stubEnv("CLAUDE_CODE_ATTRIBUTION_HEADER", "true");
     vi.stubEnv("CLAUDE_CODE_ENTRYPOINT", "cli");
@@ -140,9 +140,9 @@ describe("CC 2.1.80 — Billing header", () => {
     vi.unstubAllEnvs();
   });
 
-  it("contains the fixed cch value 379e5", () => {
+  it("contains the fixed cch value 00000", () => {
     const header = buildAnthropicBillingHeader(CC_VERSION, []);
-    expect(header).toContain("cch=379e5;");
+    expect(header).toContain("cch=00000;");
   });
 
   it("contains the correct cc_version", () => {
@@ -193,7 +193,7 @@ describe("CC 2.1.80 — Billing header", () => {
 // ---------------------------------------------------------------------------
 // Beta flags
 // ---------------------------------------------------------------------------
-describe("CC 2.1.80 — Beta constants", () => {
+describe("CC 2.1.81 — Beta constants", () => {
   it("CLAUDE_CODE_BETA_FLAG is claude-code-20250219", () => {
     expect(CLAUDE_CODE_BETA_FLAG).toBe("claude-code-20250219");
   });
@@ -224,7 +224,7 @@ describe("CC 2.1.80 — Beta constants", () => {
   });
 });
 
-describe("CC 2.1.80 — Beta header composition (signature enabled)", () => {
+describe("CC 2.1.81 — Beta header composition (signature enabled)", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });
@@ -329,7 +329,7 @@ describe("CC 2.1.80 — Beta header composition (signature enabled)", () => {
     expect(list).not.toContain("tool-examples-2025-10-29");
   });
 
-  it("does not auto-include redact-thinking-2026-02-12 (removed in 2.1.80)", () => {
+  it("does not auto-include redact-thinking-2026-02-12 (removed in 2.1.81)", () => {
     const betas = callBuildBeta().split(",");
     expect(betas).not.toContain("redact-thinking-2026-02-12");
   });
@@ -342,7 +342,7 @@ describe("CC 2.1.80 — Beta header composition (signature enabled)", () => {
   });
 });
 
-describe("CC 2.1.80 — Beta header composition (signature disabled / non-CC mode)", () => {
+describe("CC 2.1.81 — Beta header composition (signature disabled / non-CC mode)", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });
@@ -373,7 +373,7 @@ describe("CC 2.1.80 — Beta header composition (signature disabled / non-CC mod
 // ---------------------------------------------------------------------------
 // System prompt identity block
 // ---------------------------------------------------------------------------
-describe("CC 2.1.80 — System prompt identity string", () => {
+describe("CC 2.1.81 — System prompt identity string", () => {
   it("CLAUDE_CODE_IDENTITY_STRING is the documented value", () => {
     expect(CLAUDE_CODE_IDENTITY_STRING).toBe("You are Claude Code, Anthropic's official CLI for Claude.");
   });

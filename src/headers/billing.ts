@@ -28,6 +28,6 @@ export function buildAnthropicBillingHeader(claudeCliVersion: string, messages: 
   }
 
   const entrypoint = process.env.CLAUDE_CODE_ENTRYPOINT || "cli";
-  // CC uses a fixed cch value "379e5", not random
-  return `x-anthropic-billing-header: cc_version=${claudeCliVersion}${versionSuffix}; cc_entrypoint=${entrypoint}; cch=379e5;`;
+  // CC uses a fixed cch value "00000" in the billing template
+  return `x-anthropic-billing-header: cc_version=${claudeCliVersion}${versionSuffix}; cc_entrypoint=${entrypoint}; cch=00000;`;
 }
