@@ -1,0 +1,2 @@
+- Matched Claude Code 2.1.81 temperature behavior by deleting `temperature` whenever thinking resolves to `{ type: "enabled" }` and defaulting to `1` only when the caller omitted it on non-thinking requests.
+- Added `// @ts-nocheck` to `cli.test.ts`, `index.test.ts`, and `src/storage.test.ts` because the repo-level `tsconfig.json` excludes `*.test.ts`, and standalone LSP diagnostics on those files are otherwise noisy despite passing runtime tests.

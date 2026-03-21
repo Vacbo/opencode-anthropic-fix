@@ -1,5 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { appendFileSync, existsSync, promises as fs, readFileSync, writeFileSync } from "node:fs";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import {
   clearAccounts,
   createDefaultStats,
@@ -31,6 +32,9 @@ vi.mock("node:crypto", () => ({
     toString: () => "abcdef123456",
   })),
 }));
+
+const mockExistsSync = existsSync as Mock;
+const mockReadFileSync = readFileSync as Mock;
 
 // ---------------------------------------------------------------------------
 // deduplicateByRefreshToken
@@ -136,7 +140,7 @@ describe("ensureGitignore", () => {
   });
 
   it("creates new .gitignore when none exists", () => {
-    vi.mocked(existsSync).mockReturnValue(false);
+    mockExistsSync.mockReturnValue(false);
     ensureGitignore("/config/dir");
     expect(writeFileSync).toHaveBeenCalledWith(
       expect.stringMatching(/[\\/]config[\\/]dir[\\/]\.gitignore$/),
@@ -146,8 +150,8 @@ describe("ensureGitignore", () => {
   });
 
   it("appends missing entries to existing .gitignore", () => {
-    vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue("some-other-file\n");
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue("some-other-file\n");
     ensureGitignore("/config/dir");
     expect(appendFileSync).toHaveBeenCalledWith(
       expect.stringMatching(/[\\/]config[\\/]dir[\\/]\.gitignore$/),
@@ -157,15 +161,15 @@ describe("ensureGitignore", () => {
   });
 
   it("does nothing when all entries already present", () => {
-    vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue(".gitignore\nanthropic-accounts.json\nanthropic-accounts.json.*.tmp\n");
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(".gitignore\nanthropic-accounts.json\nanthropic-accounts.json.*.tmp\n");
     ensureGitignore("/config/dir");
     expect(appendFileSync).not.toHaveBeenCalled();
     expect(writeFileSync).not.toHaveBeenCalled();
   });
 
   it("handles errors gracefully", () => {
-    vi.mocked(existsSync).mockImplementation(() => {
+    mockExistsSync.mockImplementation(() => {
       throw new Error("permission denied");
     });
     // Should not throw
@@ -312,8 +316,8 @@ describe("loadAccounts", () => {
 describe("saveAccounts", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue(".gitignore\nanthropic-accounts.json\nanthropic-accounts.json.*.tmp\n");
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(".gitignore\nanthropic-accounts.json\nanthropic-accounts.json.*.tmp\n");
     fs.mkdir.mockResolvedValue(undefined);
     fs.writeFile.mockResolvedValue(undefined);
     fs.rename.mockResolvedValue(undefined);

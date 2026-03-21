@@ -26,6 +26,12 @@ export function transformRequestBody(
     if (Object.hasOwn(parsed, "thinking")) {
       parsed.thinking = normalizeThinkingBlock(parsed.thinking, parsed.model || "");
     }
+    const hasThinking = parsed.thinking && typeof parsed.thinking === "object" && parsed.thinking.type === "enabled";
+    if (hasThinking) {
+      delete parsed.temperature;
+    } else if (!Object.hasOwn(parsed, "temperature")) {
+      parsed.temperature = 1;
+    }
 
     // Sanitize system prompt and optionally inject Claude Code identity/billing blocks.
     parsed.system = buildSystemPromptBlocks(normalizeSystemTextBlocks(parsed.system), signature, parsed.messages);

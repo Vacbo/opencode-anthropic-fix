@@ -11,8 +11,8 @@ import {
 import { isTruthyEnv } from "./env.js";
 import {
   hasOneMillionContext,
+  isAdaptiveThinkingModel,
   isHaikuModel,
-  isOpus46Model,
   supportsStructuredOutputs,
   supportsThinking,
   supportsWebSearch,
@@ -83,8 +83,8 @@ export function buildAnthropicBetaHeader(
     betas.push(FAST_MODE_BETA_FLAG);
   }
 
-  if (isOpus46Model(model)) {
-    // Opus 4.6 uses effort-based thinking controls.
+  if (isAdaptiveThinkingModel(model)) {
+    // Adaptive thinking models (Opus 4.6, Sonnet 4.6) use effort-based thinking controls.
     betas.push(EFFORT_BETA_FLAG);
   } else if (
     !disableExperimentalBetas &&

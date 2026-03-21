@@ -28,15 +28,20 @@ export const EXPERIMENTAL_BETA_FLAGS = new Set([
   "adaptive-thinking-2026-01-28",
   "advanced-tool-use-2025-11-20",
   "afk-mode-2026-01-31",
+  "ccr-byoc-2025-07-29",
+  "ccr-triggers-2026-01-30",
   "code-execution-2025-08-25",
   "context-1m-2025-08-07",
   "context-management-2025-06-27",
+  "environments-2025-11-01",
   "fast-mode-2026-02-01",
   "files-api-2025-04-14",
   "fine-grained-tool-streaming-2025-05-14",
   "interleaved-thinking-2025-05-14",
+  "mcp-client-2025-11-20",
   "prompt-caching-scope-2026-01-05",
   "redact-thinking-2026-02-12",
+  "skills-2025-10-02",
   "structured-outputs-2025-12-15",
   "tool-examples-2025-10-29",
   "tool-search-tool-2025-10-19",
@@ -64,6 +69,7 @@ export const USER_ID_STORAGE_FILE = "anthropic-signature-user-id";
 export const DEBUG_SYSTEM_PROMPT_ENV = "OPENCODE_ANTHROPIC_DEBUG_SYSTEM_PROMPT";
 export const ANTHROPIC_COMMAND_HANDLED = "__ANTHROPIC_COMMAND_HANDLED__";
 export const PENDING_OAUTH_TTL_MS = 10 * 60 * 1000;
+export const FOREGROUND_EXPIRY_BUFFER_MS = 5 * 60 * 1000; // 5 minutes
 
 export const COMPACT_TITLE_GENERATOR_SYSTEM_PROMPT = [
   "You are a title generator. You output ONLY a thread title. Nothing else.",

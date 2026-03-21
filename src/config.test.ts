@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { DEFAULT_CONFIG, getConfigDir, getConfigPath, loadConfig } from "./config.js";
 
 // Mock fs module
@@ -7,6 +7,9 @@ vi.mock("node:fs", () => ({
   existsSync: vi.fn(),
   readFileSync: vi.fn(),
 }));
+
+const mockExistsSync = existsSync as Mock;
+const mockReadFileSync = readFileSync as Mock;
 
 describe("DEFAULT_CONFIG", () => {
   it("has expected default strategy", () => {
@@ -77,56 +80,56 @@ describe("loadConfig", () => {
   });
 
   it("returns defaults when config file does not exist", () => {
-    vi.mocked(existsSync).mockReturnValue(false);
+    mockExistsSync.mockReturnValue(false);
     const config = loadConfig();
     expect(config).toEqual(DEFAULT_CONFIG);
   });
 
   it("returns defaults when config file is invalid JSON", () => {
-    vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue("not json {{{");
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue("not json {{{");
     const config = loadConfig();
     expect(config).toEqual(DEFAULT_CONFIG);
   });
 
   it("returns defaults when config file is an array", () => {
-    vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue("[]");
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue("[]");
     const config = loadConfig();
     expect(config).toEqual(DEFAULT_CONFIG);
   });
 
   it("returns defaults when config file is null", () => {
-    vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue("null");
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue("null");
     const config = loadConfig();
     expect(config).toEqual(DEFAULT_CONFIG);
   });
 
   it("merges valid strategy from config file", () => {
-    vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ account_selection_strategy: "sticky" }));
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(JSON.stringify({ account_selection_strategy: "sticky" }));
     const config = loadConfig();
     expect(config.account_selection_strategy).toBe("sticky");
   });
 
   it("ignores invalid strategy", () => {
-    vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ account_selection_strategy: "invalid" }));
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(JSON.stringify({ account_selection_strategy: "invalid" }));
     const config = loadConfig();
     expect(config.account_selection_strategy).toBe("sticky");
   });
 
   it("accepts boolean debug", () => {
-    vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ debug: true }));
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(JSON.stringify({ debug: true }));
     const config = loadConfig();
     expect(config.debug).toBe(true);
   });
 
   it("merges signature emulation sub-config", () => {
-    vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue(
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
       JSON.stringify({
         signature_emulation: {
           enabled: false,
@@ -142,8 +145,8 @@ describe("loadConfig", () => {
   });
 
   it("merges health_score sub-config", () => {
-    vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue(
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
       JSON.stringify({
         health_score: {
           initial: 80,
@@ -159,8 +162,8 @@ describe("loadConfig", () => {
   });
 
   it("clamps health_score values to valid ranges", () => {
-    vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue(
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
       JSON.stringify({
         health_score: {
           initial: 200, // max 100
@@ -174,8 +177,8 @@ describe("loadConfig", () => {
   });
 
   it("merges token_bucket sub-config", () => {
-    vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue(
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
       JSON.stringify({
         token_bucket: {
           max_tokens: 100,
@@ -189,65 +192,65 @@ describe("loadConfig", () => {
 
   // Environment variable overrides
   it("overrides strategy from OPENCODE_ANTHROPIC_STRATEGY", () => {
-    vi.mocked(existsSync).mockReturnValue(false);
+    mockExistsSync.mockReturnValue(false);
     process.env.OPENCODE_ANTHROPIC_STRATEGY = "round-robin";
     const config = loadConfig();
     expect(config.account_selection_strategy).toBe("round-robin");
   });
 
   it("ignores invalid OPENCODE_ANTHROPIC_STRATEGY", () => {
-    vi.mocked(existsSync).mockReturnValue(false);
+    mockExistsSync.mockReturnValue(false);
     process.env.OPENCODE_ANTHROPIC_STRATEGY = "invalid";
     const config = loadConfig();
     expect(config.account_selection_strategy).toBe("sticky");
   });
 
   it("enables debug from OPENCODE_ANTHROPIC_DEBUG=1", () => {
-    vi.mocked(existsSync).mockReturnValue(false);
+    mockExistsSync.mockReturnValue(false);
     process.env.OPENCODE_ANTHROPIC_DEBUG = "1";
     const config = loadConfig();
     expect(config.debug).toBe(true);
   });
 
   it("enables debug from OPENCODE_ANTHROPIC_DEBUG=true", () => {
-    vi.mocked(existsSync).mockReturnValue(false);
+    mockExistsSync.mockReturnValue(false);
     process.env.OPENCODE_ANTHROPIC_DEBUG = "true";
     const config = loadConfig();
     expect(config.debug).toBe(true);
   });
 
   it("disables debug from OPENCODE_ANTHROPIC_DEBUG=0", () => {
-    vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ debug: true }));
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(JSON.stringify({ debug: true }));
     process.env.OPENCODE_ANTHROPIC_DEBUG = "0";
     const config = loadConfig();
     expect(config.debug).toBe(false);
   });
 
   it("disables signature emulation from OPENCODE_ANTHROPIC_EMULATE_CLAUDE_CODE_SIGNATURE=0", () => {
-    vi.mocked(existsSync).mockReturnValue(false);
+    mockExistsSync.mockReturnValue(false);
     process.env.OPENCODE_ANTHROPIC_EMULATE_CLAUDE_CODE_SIGNATURE = "0";
     const config = loadConfig();
     expect(config.signature_emulation.enabled).toBe(false);
   });
 
   it("disables version fetch from OPENCODE_ANTHROPIC_FETCH_CLAUDE_CODE_VERSION=0", () => {
-    vi.mocked(existsSync).mockReturnValue(false);
+    mockExistsSync.mockReturnValue(false);
     process.env.OPENCODE_ANTHROPIC_FETCH_CLAUDE_CODE_VERSION = "0";
     const config = loadConfig();
     expect(config.signature_emulation.fetch_claude_code_version_on_startup).toBe(false);
   });
 
   it("disables prompt compaction from OPENCODE_ANTHROPIC_PROMPT_COMPACTION=off", () => {
-    vi.mocked(existsSync).mockReturnValue(false);
+    mockExistsSync.mockReturnValue(false);
     process.env.OPENCODE_ANTHROPIC_PROMPT_COMPACTION = "off";
     const config = loadConfig();
     expect(config.signature_emulation.prompt_compaction).toBe("off");
   });
 
   it("env overrides take precedence over config file", () => {
-    vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ account_selection_strategy: "sticky" }));
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(JSON.stringify({ account_selection_strategy: "sticky" }));
     process.env.OPENCODE_ANTHROPIC_STRATEGY = "round-robin";
     const config = loadConfig();
     expect(config.account_selection_strategy).toBe("round-robin");
@@ -255,51 +258,51 @@ describe("loadConfig", () => {
 
   // Toast config
   it("has toast defaults", () => {
-    vi.mocked(existsSync).mockReturnValue(false);
+    mockExistsSync.mockReturnValue(false);
     const config = loadConfig();
     expect(config.toasts.quiet).toBe(false);
     expect(config.toasts.debounce_seconds).toBe(30);
   });
 
   it("merges toasts sub-config", () => {
-    vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ toasts: { quiet: true, debounce_seconds: 10 } }));
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(JSON.stringify({ toasts: { quiet: true, debounce_seconds: 10 } }));
     const config = loadConfig();
     expect(config.toasts.quiet).toBe(true);
     expect(config.toasts.debounce_seconds).toBe(10);
   });
 
   it("clamps debounce_seconds to valid range", () => {
-    vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ toasts: { debounce_seconds: 999 } }));
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(JSON.stringify({ toasts: { debounce_seconds: 999 } }));
     const config = loadConfig();
     expect(config.toasts.debounce_seconds).toBe(300);
   });
 
   it("clamps negative debounce_seconds to 0", () => {
-    vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ toasts: { debounce_seconds: -5 } }));
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(JSON.stringify({ toasts: { debounce_seconds: -5 } }));
     const config = loadConfig();
     expect(config.toasts.debounce_seconds).toBe(0);
   });
 
   it("ignores non-boolean quiet", () => {
-    vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ toasts: { quiet: "yes" } }));
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(JSON.stringify({ toasts: { quiet: "yes" } }));
     const config = loadConfig();
     expect(config.toasts.quiet).toBe(false);
   });
 
   it("enables quiet from OPENCODE_ANTHROPIC_QUIET=1", () => {
-    vi.mocked(existsSync).mockReturnValue(false);
+    mockExistsSync.mockReturnValue(false);
     process.env.OPENCODE_ANTHROPIC_QUIET = "1";
     const config = loadConfig();
     expect(config.toasts.quiet).toBe(true);
   });
 
   it("disables quiet from OPENCODE_ANTHROPIC_QUIET=0", () => {
-    vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ toasts: { quiet: true } }));
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(JSON.stringify({ toasts: { quiet: true } }));
     process.env.OPENCODE_ANTHROPIC_QUIET = "0";
     const config = loadConfig();
     expect(config.toasts.quiet).toBe(false);

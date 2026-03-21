@@ -12,7 +12,7 @@ import type { CommandDeps } from "./commands/router.js";
 import { ANTHROPIC_COMMAND_HANDLED, handleAnthropicSlashCommand, stripAnsi } from "./commands/router.js";
 import type { AnthropicAuthConfig } from "./config.js";
 import { loadConfig } from "./config.js";
-import { CLAUDE_CODE_IDENTITY_STRING, FALLBACK_CLAUDE_CLI_VERSION } from "./constants.js";
+import { CLAUDE_CODE_IDENTITY_STRING, FALLBACK_CLAUDE_CLI_VERSION, FOREGROUND_EXPIRY_BUFFER_MS } from "./constants.js";
 import { getOrCreateSignatureUserId, isTruthyEnv, logTransformedSystemPrompt } from "./env.js";
 import { buildRequestHeaders } from "./headers/builder.js";
 import { fetchLatestClaudeCodeVersion } from "./headers/user-agent.js";
@@ -20,6 +20,7 @@ import { hasOneMillionContext, isOpus46Model } from "./models.js";
 import { authorize, exchange } from "./oauth.js";
 import { transformRequestBody } from "./request/body.js";
 import { extractFileIds, getAccountIdentifier } from "./request/metadata.js";
+import { fetchWithRetry } from "./request/retry.js";
 import { transformRequestUrl } from "./request/url.js";
 import { isEventStreamResponse, transformResponse } from "./response/streaming.js";
 import { clearAccounts, loadAccounts } from "./storage.js";
@@ -464,7 +465,7 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient &
 
                 // Determine access token
                 let accessToken: string | undefined;
-                if (!account.access || !account.expires || account.expires < Date.now()) {
+                if (!account.access || !account.expires || account.expires < Date.now() + FOREGROUND_EXPIRY_BUFFER_MS) {
                   const attemptedRefreshToken = account.refreshToken;
                   try {
                     accessToken = await refreshAccountTokenSingleFlight(account);
@@ -618,10 +619,54 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient &
                     continue;
                   }
 
-                  debugLog("service-wide response error, returning directly", {
-                    status: response.status,
-                  });
-                  return transformResponse(response);
+                  if (response.status === 500 || response.status === 503 || response.status === 529) {
+                    debugLog("service-wide response error, attempting retry", {
+                      status: response.status,
+                    });
+
+                    let retryCount = 0;
+                    const retried = await fetchWithRetry(
+                      async () => {
+                        if (retryCount === 0) {
+                          retryCount += 1;
+                          return response;
+                        }
+
+                        const headersForRetry = new Headers(requestHeaders);
+                        headersForRetry.set("x-stainless-retry-count", String(retryCount));
+                        retryCount += 1;
+                        if (fetchInput instanceof Request) {
+                          return fetch(
+                            new Request(fetchInput, {
+                              ...requestInit,
+                              body,
+                              headers: headersForRetry,
+                            }),
+                          );
+                        }
+
+                        return fetch(
+                          new Request(fetchInput.toString(), {
+                            ...requestInit,
+                            body,
+                            headers: headersForRetry,
+                          }),
+                        );
+                      },
+                      { maxRetries: 2 },
+                    );
+
+                    if (!retried.ok) {
+                      return transformResponse(retried);
+                    }
+
+                    response = retried;
+                  } else {
+                    debugLog("non-account-specific response error, returning directly", {
+                      status: response.status,
+                    });
+                    return transformResponse(response);
+                  }
                 }
 
                 // Success

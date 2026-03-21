@@ -4,6 +4,7 @@
 
 import type { ManagedAccount } from "./accounts.js";
 import type { RateLimitReason } from "./backoff.js";
+import { FOREGROUND_EXPIRY_BUFFER_MS } from "./constants.js";
 import { refreshToken } from "./oauth.js";
 import { acquireRefreshLock, releaseRefreshLock } from "./refresh-lock.js";
 import { loadAccounts } from "./storage.js";
@@ -124,7 +125,7 @@ export async function refreshAccountToken(
     const adopted = applyDiskAuthIfFresher(account, diskAuth, {
       allowExpiredFallback: true,
     });
-    if (adopted && account.access && account.expires && account.expires > Date.now()) {
+    if (adopted && account.access && account.expires && account.expires > Date.now() + FOREGROUND_EXPIRY_BUFFER_MS) {
       return account.access;
     }
     throw new Error("Refresh lock busy");
@@ -133,7 +134,13 @@ export async function refreshAccountToken(
   try {
     const diskAuthBeforeRefresh = await readDiskAccountAuth(account.id);
     const adopted = applyDiskAuthIfFresher(account, diskAuthBeforeRefresh);
-    if (source === "foreground" && adopted && account.access && account.expires && account.expires > Date.now()) {
+    if (
+      source === "foreground" &&
+      adopted &&
+      account.access &&
+      account.expires &&
+      account.expires > Date.now() + FOREGROUND_EXPIRY_BUFFER_MS
+    ) {
       return account.access;
     }
 

@@ -20,7 +20,7 @@ export interface UsageStats {
 export interface SystemBlock {
   type: string;
   text: string;
-  cache_control?: { type: string };
+  cache_control?: { type: string; ttl?: string };
 }
 
 export interface SignatureConfig {

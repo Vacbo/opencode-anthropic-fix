@@ -2,7 +2,7 @@
 // Thinking block normalization extracted from index.mjs
 // ---------------------------------------------------------------------------
 
-import { isOpus46Model } from "./models.ts";
+import { isAdaptiveThinkingModel } from "./models.ts";
 import type { ThinkingEffort } from "./types.ts";
 
 /**
@@ -37,14 +37,14 @@ export function normalizeThinkingBlock(thinking: unknown, model: string): unknow
     return thinking;
   }
 
-  if (!isOpus46Model(model)) {
+  if (!isAdaptiveThinkingModel(model)) {
     // Older models: pass through unchanged (may have budget_tokens)
     return thinking;
   }
 
   const t = thinking as Record<string, unknown>;
 
-  // Opus 4.6: use adaptive thinking with effort
+  // Adaptive thinking models: use adaptive thinking with effort
   if (isValidEffort(t.effort)) {
     // Already in adaptive shape — just strip any legacy budget_tokens field
     const { budget_tokens: _dropped, ...rest } = t;

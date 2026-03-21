@@ -1,18 +1,30 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { AccountManager } from "./accounts.js";
 import { DEFAULT_CONFIG } from "./config.js";
 
-// Mock storage module — pass through pure helpers, mock I/O
-vi.mock("./storage.js", async (importOriginal) => {
-  const actual = (await importOriginal()) as Record<string, unknown>;
-  return {
-    ...actual,
-    loadAccounts: vi.fn(),
-    saveAccounts: vi.fn().mockResolvedValue(undefined),
-  };
-});
+vi.mock("./storage.js", () => ({
+  createDefaultStats: (now?: number) => ({
+    requests: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    lastReset: now ?? Date.now(),
+  }),
+  loadAccounts: vi.fn(),
+  saveAccounts: vi.fn().mockResolvedValue(undefined),
+}));
 
 import { createDefaultStats, loadAccounts, saveAccounts } from "./storage.js";
+
+const mockLoadAccounts = loadAccounts as Mock;
+const mockSaveAccounts = saveAccounts as Mock;
+
+function expectAccount(account: import("./accounts.js").ManagedAccount | null): import("./accounts.js").ManagedAccount {
+  expect(account).not.toBeNull();
+  return account!;
+}
 
 /** Build a stored account with sensible defaults; override any field. */
 function makeStoredAccount(overrides: Record<string, unknown> = {}) {
@@ -59,14 +71,14 @@ describe("AccountManager.load", () => {
   });
 
   it("creates empty manager when no stored accounts and no fallback", async () => {
-    vi.mocked(loadAccounts).mockResolvedValue(null);
+    mockLoadAccounts.mockResolvedValue(null);
     const manager = await AccountManager.load(DEFAULT_CONFIG, null);
     expect(manager.getAccountCount()).toBe(0);
     expect(manager.getTotalAccountCount()).toBe(0);
   });
 
   it("bootstraps from auth fallback when no stored accounts", async () => {
-    vi.mocked(loadAccounts).mockResolvedValue(null);
+    mockLoadAccounts.mockResolvedValue(null);
     const manager = await AccountManager.load(DEFAULT_CONFIG, {
       refresh: "refresh-token-1",
       access: "access-token-1",
@@ -78,7 +90,7 @@ describe("AccountManager.load", () => {
   });
 
   it("does not bootstrap from auth fallback when storage exists but is empty", async () => {
-    vi.mocked(loadAccounts).mockResolvedValue(makeAccountsData([], { activeIndex: 0 }));
+    mockLoadAccounts.mockResolvedValue(makeAccountsData([], { activeIndex: 0 }));
     const manager = await AccountManager.load(DEFAULT_CONFIG, {
       refresh: "refresh-token-1",
       access: "access-token-1",
@@ -90,7 +102,7 @@ describe("AccountManager.load", () => {
   });
 
   it("loads stored accounts from disk", async () => {
-    vi.mocked(loadAccounts).mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([{ lastUsed: 2000 }, { lastUsed: 4000 }], {
         activeIndex: 1,
       }),
@@ -101,7 +113,7 @@ describe("AccountManager.load", () => {
   });
 
   it("matches auth fallback to existing stored account", async () => {
-    vi.mocked(loadAccounts).mockResolvedValue(makeAccountsData([{ lastUsed: 2000 }]));
+    mockLoadAccounts.mockResolvedValue(makeAccountsData([{ lastUsed: 2000 }]));
     const manager = await AccountManager.load(DEFAULT_CONFIG, {
       refresh: "token1",
       access: "fresh-access",
@@ -112,7 +124,7 @@ describe("AccountManager.load", () => {
   });
 
   it("does not let stale/partial fallback override fresher stored auth", async () => {
-    vi.mocked(loadAccounts).mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([
         {
           lastUsed: 2000,
@@ -135,7 +147,7 @@ describe("AccountManager.load", () => {
   });
 
   it("clamps activeIndex to valid range", async () => {
-    vi.mocked(loadAccounts).mockResolvedValue(makeAccountsData([{ lastUsed: 2000 }], { activeIndex: 99 }));
+    mockLoadAccounts.mockResolvedValue(makeAccountsData([{ lastUsed: 2000 }], { activeIndex: 99 }));
     const manager = await AccountManager.load(DEFAULT_CONFIG, null);
     expect(manager.getCurrentIndex()).toBe(0);
   });
@@ -147,13 +159,13 @@ describe("AccountManager.load", () => {
 
 describe("AccountManager account management", () => {
   /** @type {AccountManager} */
-  let manager;
+  let manager: AccountManager;
 
   beforeEach(async () => {
     vi.resetAllMocks();
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-15T12:00:00Z"));
-    vi.mocked(loadAccounts).mockResolvedValue(null);
+    mockLoadAccounts.mockResolvedValue(null);
     manager = await AccountManager.load(DEFAULT_CONFIG, {
       refresh: "token1",
       access: "access1",
@@ -162,8 +174,7 @@ describe("AccountManager account management", () => {
   });
 
   it("addAccount adds a new account", () => {
-    const account = manager.addAccount("token2", "access2", Date.now() + 3600_000, "user@example.com");
-    expect(account).not.toBeNull();
+    const account = expectAccount(manager.addAccount("token2", "access2", Date.now() + 3600_000, "user@example.com"));
     expect(manager.getTotalAccountCount()).toBe(2);
     expect(account.email).toBe("user@example.com");
   });
@@ -244,13 +255,13 @@ describe("AccountManager account management", () => {
 
 describe("AccountManager account selection", () => {
   /** @type {AccountManager} */
-  let manager;
+  let manager: AccountManager;
 
   beforeEach(async () => {
     vi.resetAllMocks();
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-15T12:00:00Z"));
-    vi.mocked(loadAccounts).mockResolvedValue(null);
+    mockLoadAccounts.mockResolvedValue(null);
     manager = await AccountManager.load(DEFAULT_CONFIG, {
       refresh: "token1",
       access: "access1",
@@ -259,13 +270,12 @@ describe("AccountManager account selection", () => {
   });
 
   it("getCurrentAccount returns an account", () => {
-    const account = manager.getCurrentAccount();
-    expect(account).not.toBeNull();
+    const account = expectAccount(manager.getCurrentAccount());
     expect(account.refreshToken).toBe("token1");
   });
 
   it("getCurrentAccount returns null when no accounts", async () => {
-    vi.mocked(loadAccounts).mockResolvedValue(null);
+    mockLoadAccounts.mockResolvedValue(null);
     const empty = await AccountManager.load(DEFAULT_CONFIG, null);
     expect(empty.getCurrentAccount()).toBeNull();
   });
@@ -285,13 +295,13 @@ describe("AccountManager account selection", () => {
 
 describe("AccountManager rate limiting", () => {
   /** @type {AccountManager} */
-  let manager;
+  let manager: AccountManager;
 
   beforeEach(async () => {
     vi.resetAllMocks();
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-15T12:00:00Z"));
-    vi.mocked(loadAccounts).mockResolvedValue(null);
+    mockLoadAccounts.mockResolvedValue(null);
     manager = await AccountManager.load(DEFAULT_CONFIG, {
       refresh: "token1",
       access: "access1",
@@ -301,21 +311,21 @@ describe("AccountManager rate limiting", () => {
   });
 
   it("markRateLimited sets backoff and returns duration", () => {
-    const account = manager.getCurrentAccount();
+    const account = expectAccount(manager.getCurrentAccount());
     const backoffMs = manager.markRateLimited(account, "RATE_LIMIT_EXCEEDED", null);
     expect(backoffMs).toBeGreaterThan(0);
     expect(account.consecutiveFailures).toBe(1);
   });
 
   it("markRateLimited increments consecutive failures", () => {
-    const account = manager.getCurrentAccount();
+    const account = expectAccount(manager.getCurrentAccount());
     manager.markRateLimited(account, "RATE_LIMIT_EXCEEDED", null);
     manager.markRateLimited(account, "RATE_LIMIT_EXCEEDED", null);
     expect(account.consecutiveFailures).toBe(2);
   });
 
   it("markSuccess resets consecutive failures", () => {
-    const account = manager.getCurrentAccount();
+    const account = expectAccount(manager.getCurrentAccount());
     manager.markRateLimited(account, "RATE_LIMIT_EXCEEDED", null);
     expect(account.consecutiveFailures).toBe(1);
     manager.markSuccess(account);
@@ -324,14 +334,14 @@ describe("AccountManager rate limiting", () => {
   });
 
   it("markFailure reduces health score", () => {
-    const account = manager.getCurrentAccount();
+    const account = expectAccount(manager.getCurrentAccount());
     manager.markFailure(account);
     // Can't directly check health score, but we can verify it doesn't crash
     expect(account).toBeDefined();
   });
 
   it("failure TTL resets consecutive failures after timeout", () => {
-    const account = manager.getCurrentAccount();
+    const account = expectAccount(manager.getCurrentAccount());
     manager.markRateLimited(account, "RATE_LIMIT_EXCEEDED", null);
     expect(account.consecutiveFailures).toBe(1);
 
@@ -350,14 +360,14 @@ describe("AccountManager rate limiting", () => {
 
 describe("AccountManager persistence", () => {
   /** @type {AccountManager} */
-  let manager;
+  let manager: AccountManager;
 
   beforeEach(async () => {
     vi.resetAllMocks();
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-15T12:00:00Z"));
-    vi.mocked(loadAccounts).mockResolvedValue(null);
-    saveAccounts.mockResolvedValue(undefined);
+    mockLoadAccounts.mockResolvedValue(null);
+    mockSaveAccounts.mockResolvedValue(undefined);
     manager = await AccountManager.load(DEFAULT_CONFIG, {
       refresh: "token1",
       access: "access1",
@@ -410,7 +420,7 @@ describe("AccountManager persistence", () => {
   });
 
   it("toAuthDetails converts to OpenCode format", () => {
-    const account = manager.getCurrentAccount();
+    const account = expectAccount(manager.getCurrentAccount());
     const details = manager.toAuthDetails(account);
     expect(details).toEqual({
       type: "oauth",
@@ -427,7 +437,7 @@ describe("AccountManager persistence", () => {
     expect(manager.getCurrentIndex()).toBe(0);
 
     // CLI changes activeIndex to 1 on disk
-    vi.mocked(loadAccounts).mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([{ email: "a@test.com" }, { email: "b@test.com" }], {
         activeIndex: 1,
       }),
@@ -442,7 +452,7 @@ describe("AccountManager persistence", () => {
 
     expect(manager.getCurrentIndex()).toBe(0);
 
-    vi.mocked(loadAccounts).mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([{ email: "a@test.com" }, { email: "b@test.com", enabled: false }], { activeIndex: 1 }),
     );
 
@@ -456,7 +466,7 @@ describe("AccountManager persistence", () => {
 
     expect(manager.getCurrentIndex()).toBe(0);
 
-    vi.mocked(loadAccounts).mockResolvedValue(makeAccountsData([{ email: "a@test.com" }, { email: "b@test.com" }]));
+    mockLoadAccounts.mockResolvedValue(makeAccountsData([{ email: "a@test.com" }, { email: "b@test.com" }]));
 
     await manager.syncActiveIndexFromDisk();
     expect(manager.getCurrentIndex()).toBe(0);
@@ -465,12 +475,12 @@ describe("AccountManager persistence", () => {
   it("syncActiveIndexFromDisk reconciles removed accounts from disk", async () => {
     manager.addAccount("token2", "access2", Date.now() + 3600_000, "b@test.com");
 
-    vi.mocked(loadAccounts).mockResolvedValue(makeAccountsData([{ email: "a@test.com" }]));
+    mockLoadAccounts.mockResolvedValue(makeAccountsData([{ email: "a@test.com" }]));
 
     await manager.syncActiveIndexFromDisk();
     await manager.saveToDisk();
 
-    const saved = saveAccounts.mock.calls.at(-1)?.[0];
+    const saved = mockSaveAccounts.mock.calls[mockSaveAccounts.mock.calls.length - 1]?.[0];
     expect(saved.accounts).toHaveLength(1);
     expect(saved.accounts[0].refreshToken).toBe("token1");
   });
@@ -478,7 +488,7 @@ describe("AccountManager persistence", () => {
   it("syncActiveIndexFromDisk updates enabled state from disk", async () => {
     manager.addAccount("token2", "access2", Date.now() + 3600_000, "b@test.com");
 
-    vi.mocked(loadAccounts).mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([{ email: "a@test.com", enabled: false }, { email: "b@test.com" }], { activeIndex: 1 }),
     );
 
@@ -489,7 +499,7 @@ describe("AccountManager persistence", () => {
   it("syncActiveIndexFromDisk reconciles by stable id when refresh token rotates", async () => {
     const current = manager.getAccountsSnapshot()[0];
 
-    vi.mocked(loadAccounts).mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([
         {
           id: current.id,
@@ -520,7 +530,7 @@ describe("AccountManager usage stats", () => {
   });
 
   async function createManagerWithAccounts(n = 2) {
-    vi.mocked(loadAccounts).mockResolvedValue(null);
+    mockLoadAccounts.mockResolvedValue(null);
     const manager = await AccountManager.load(DEFAULT_CONFIG, {
       refresh: "tok-1",
       access: "access-1",
@@ -650,7 +660,7 @@ describe("AccountManager merge-on-save", () => {
   });
 
   async function createManagerWithAccounts(n = 1) {
-    vi.mocked(loadAccounts).mockResolvedValue(null);
+    mockLoadAccounts.mockResolvedValue(null);
     const manager = await AccountManager.load(DEFAULT_CONFIG, {
       refresh: "tok-1",
       access: "access-1",
@@ -671,7 +681,7 @@ describe("AccountManager merge-on-save", () => {
     const accountId = snap[0].id;
 
     // Simulate another instance having written stats to disk
-    vi.mocked(loadAccounts).mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([
         {
           id: accountId,
@@ -687,7 +697,7 @@ describe("AccountManager merge-on-save", () => {
         },
       ]),
     );
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     // This instance records 3 requests
     manager.recordUsage(0, {
@@ -701,7 +711,7 @@ describe("AccountManager merge-on-save", () => {
 
     await manager.saveToDisk();
 
-    const saved = saveAccounts.mock.calls[0][0];
+    const saved = mockSaveAccounts.mock.calls[0][0];
     const stats = saved.accounts[0].stats;
 
     // Should be disk values + our deltas
@@ -718,7 +728,7 @@ describe("AccountManager merge-on-save", () => {
     const snap = manager.getAccountsSnapshot();
     const accountId = snap[0].id;
 
-    vi.mocked(loadAccounts).mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([
         {
           id: accountId,
@@ -734,16 +744,16 @@ describe("AccountManager merge-on-save", () => {
         },
       ]),
     );
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     manager.recordUsage(0, { inputTokens: 100 });
     await manager.saveToDisk();
 
     // First save: 10 + 1 = 11 requests
-    expect(saveAccounts.mock.calls[0][0].accounts[0].stats.requests).toBe(11);
+    expect(mockSaveAccounts.mock.calls[0][0].accounts[0].stats.requests).toBe(11);
 
     // Second save with no new usage should write disk values as-is (no delta)
-    vi.mocked(loadAccounts).mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([
         {
           id: accountId,
@@ -762,7 +772,7 @@ describe("AccountManager merge-on-save", () => {
 
     await manager.saveToDisk();
     // No delta, so stats should match what's on disk
-    expect(saveAccounts.mock.calls[1][0].accounts[0].stats.requests).toBe(11);
+    expect(mockSaveAccounts.mock.calls[1][0].accounts[0].stats.requests).toBe(11);
   });
 
   it("resetStats writes absolute values ignoring disk", async () => {
@@ -771,7 +781,7 @@ describe("AccountManager merge-on-save", () => {
     const accountId = snap[0].id;
 
     // Disk has 100 requests from other instances
-    vi.mocked(loadAccounts).mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([
         {
           id: accountId,
@@ -787,12 +797,12 @@ describe("AccountManager merge-on-save", () => {
         },
       ]),
     );
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     manager.resetStats(0);
     await manager.saveToDisk();
 
-    const stats = saveAccounts.mock.calls[0][0].accounts[0].stats;
+    const stats = mockSaveAccounts.mock.calls[0][0].accounts[0].stats;
     expect(stats.requests).toBe(0);
     expect(stats.inputTokens).toBe(0);
     expect(stats.outputTokens).toBe(0);
@@ -803,7 +813,7 @@ describe("AccountManager merge-on-save", () => {
     const snap = manager.getAccountsSnapshot();
     const accountId = snap[0].id;
 
-    vi.mocked(loadAccounts).mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([
         {
           id: accountId,
@@ -819,7 +829,7 @@ describe("AccountManager merge-on-save", () => {
         },
       ]),
     );
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     // Reset then record new usage before saving
     manager.resetStats(0);
@@ -827,7 +837,7 @@ describe("AccountManager merge-on-save", () => {
 
     await manager.saveToDisk();
 
-    const stats = saveAccounts.mock.calls[0][0].accounts[0].stats;
+    const stats = mockSaveAccounts.mock.calls[0][0].accounts[0].stats;
     expect(stats.requests).toBe(1); // 0 (reset) + 1
     expect(stats.inputTokens).toBe(200); // 0 (reset) + 200
     expect(stats.outputTokens).toBe(100); // 0 (reset) + 100
@@ -837,14 +847,14 @@ describe("AccountManager merge-on-save", () => {
     const manager = await createManagerWithAccounts(1);
 
     // Disk read fails
-    loadAccounts.mockRejectedValue(new Error("disk error"));
-    saveAccounts.mockResolvedValue(undefined);
+    mockLoadAccounts.mockRejectedValue(new Error("disk error"));
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     manager.recordUsage(0, { inputTokens: 100, outputTokens: 50 });
     await manager.saveToDisk();
 
     // Should write in-memory stats as-is
-    const stats = saveAccounts.mock.calls[0][0].accounts[0].stats;
+    const stats = mockSaveAccounts.mock.calls[0][0].accounts[0].stats;
     expect(stats.requests).toBe(1);
     expect(stats.inputTokens).toBe(100);
   });
@@ -853,7 +863,7 @@ describe("AccountManager merge-on-save", () => {
     const manager = await createManagerWithAccounts(1);
     const account = manager.getAccountsSnapshot()[0];
 
-    vi.mocked(loadAccounts).mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([
         {
           id: account.id,
@@ -867,7 +877,7 @@ describe("AccountManager merge-on-save", () => {
 
     await manager.saveToDisk();
 
-    const saved = saveAccounts.mock.calls[0][0];
+    const saved = mockSaveAccounts.mock.calls[0][0];
     expect(saved.accounts[0].refreshToken).toBe("disk-rotated-refresh");
     expect(saved.accounts[0].access).toBe("disk-fresh-access");
     expect(saved.accounts[0].token_updated_at).toBeGreaterThan(account.tokenUpdatedAt);
@@ -878,7 +888,7 @@ describe("AccountManager merge-on-save", () => {
     const account = manager.getAccountsSnapshot()[0];
 
     // Simulate legacy/id-less disk record after token rotation.
-    vi.mocked(loadAccounts).mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([
         {
           id: undefined,
@@ -893,7 +903,7 @@ describe("AccountManager merge-on-save", () => {
 
     await manager.saveToDisk();
 
-    const saved = saveAccounts.mock.calls[0][0];
+    const saved = mockSaveAccounts.mock.calls[0][0];
     expect(saved.accounts[0].refreshToken).toBe("disk-rotated-no-id");
     expect(saved.accounts[0].access).toBe("disk-fresh-no-id");
   });

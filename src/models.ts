@@ -26,6 +26,23 @@ export function isOpus46Model(model: string): boolean {
   return /claude-opus-4[._-]6|opus[._-]4[._-]6/i.test(model);
 }
 
+/**
+ * Detects claude-sonnet-4.6 / claude-sonnet-4-6 model IDs.
+ * Like Opus 4.6, these models use adaptive thinking (effort parameter).
+ */
+export function isSonnet46Model(model: string): boolean {
+  if (!model) return false;
+  return /claude-sonnet-4[._-]6|sonnet[._-]4[._-]6/i.test(model);
+}
+
+/**
+ * Detects models that use adaptive thinking (effort parameter).
+ * This includes both Opus 4.6 and Sonnet 4.6.
+ */
+export function isAdaptiveThinkingModel(model: string): boolean {
+  return isOpus46Model(model) || isSonnet46Model(model);
+}
+
 export function hasOneMillionContext(model: string): boolean {
   // Models with explicit 1m suffix, or Opus 4.6 (1M by default since v2.1.75).
   return /(^|[-_ ])1m($|[-_ ])|context[-_]?1m/i.test(model) || isOpus46Model(model);

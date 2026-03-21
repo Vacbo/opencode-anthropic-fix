@@ -1,0 +1,5 @@
+- `transformRequestBody()` should normalize `temperature` immediately after thinking normalization so adaptive/manual thinking state is finalized before defaulting or omission.
+- The regression suite in `src/__tests__/fingerprint-regression.test.ts` uses the local Vitest runner (`bunx vitest run ...`), not Bun's native test runner, because the file relies on `vi.stubEnv()` helpers.
+- Request retry behavior should prefer `retry-after-ms`, then `retry-after`, then Stainless-style exponential backoff (`500ms * 2^attempt`, capped at `8000ms`, with up to `25%` downward jitter) and stop after two retries.
+- `src/__tests__/fingerprint-regression.test.ts` is now Bun-compatible for env setup by snapshotting original `process.env` values in `beforeEach`, mutating `process.env` directly inside tests, and restoring manually in `afterEach`.
+- Bun-compatible test mocking in this repo uses direct mock handles like `(fn as Mock)` / cached mock aliases plus manual `globalThis.fetch` save-and-restore instead of `vi.mocked()` and `vi.stubGlobal()`.

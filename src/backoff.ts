@@ -29,6 +29,29 @@ export function parseRetryAfterHeader(response: Response): number | null {
   return null;
 }
 
+/**
+ * Parse the retry-after-ms header from a response (Stainless SDK pattern).
+ * Returns the value in milliseconds, rounded to nearest integer.
+ */
+export function parseRetryAfterMsHeader(response: Response): number | null {
+  const header = response.headers.get("retry-after-ms");
+  if (!header) return null;
+
+  const ms = parseFloat(header);
+  return !isNaN(ms) && ms > 0 ? Math.round(ms) : null;
+}
+
+/**
+ * Parse the x-should-retry header from a response (Stainless SDK pattern).
+ * Returns true for "true", false for "false", null for absent or unrecognized.
+ */
+export function parseShouldRetryHeader(response: Response): boolean | null {
+  const header = response.headers.get("x-should-retry");
+  if (header === "true") return true;
+  if (header === "false") return false;
+  return null; // not present or unrecognized
+}
+
 interface ErrorSignals {
   errorType: string;
   message: string;

@@ -9,7 +9,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildAnthropicBetaHeader } from "../betas.js";
 import {
@@ -17,14 +17,19 @@ import {
   BEDROCK_UNSUPPORTED_BETAS,
   CLAUDE_CODE_BETA_FLAG,
   CLAUDE_CODE_IDENTITY_STRING,
+  EFFORT_BETA_FLAG,
   EXPERIMENTAL_BETA_FLAGS,
   FALLBACK_CLAUDE_CLI_VERSION,
   FAST_MODE_BETA_FLAG,
   TOKEN_COUNTING_BETA_FLAG,
 } from "../constants.js";
 import { buildAnthropicBillingHeader } from "../headers/billing.js";
+import { isAdaptiveThinkingModel, isSonnet46Model } from "../models.js";
 import { getStainlessArch, getStainlessOs } from "../headers/stainless.js";
 import { buildUserAgent } from "../headers/user-agent.js";
+import { normalizeThinkingBlock } from "../thinking.js";
+import { transformRequestBody } from "../request/body.js";
+import { buildSystemPromptBlocks } from "../system-prompt/builder.js";
 
 // ---------------------------------------------------------------------------
 // CC 2.1.81 documented values
@@ -32,18 +37,46 @@ import { buildUserAgent } from "../headers/user-agent.js";
 const CC_VERSION = "2.1.81";
 const STAINLESS_PACKAGE_VERSION = "0.74.0";
 
+type EnvKey =
+  | "CLAUDE_AGENT_SDK_CLIENT_APP"
+  | "CLAUDE_AGENT_SDK_VERSION"
+  | "CLAUDE_CODE_ATTRIBUTION_HEADER"
+  | "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS"
+  | "CLAUDE_CODE_ENTRYPOINT";
+
+function snapshotEnv(...keys: readonly EnvKey[]) {
+  return Object.fromEntries(keys.map((key) => [key, process.env[key]])) as Partial<Record<EnvKey, string | undefined>>;
+}
+
+function restoreEnv(snapshot: Partial<Record<EnvKey, string | undefined>>) {
+  for (const [key, value] of Object.entries(snapshot) as [EnvKey, string | undefined][]) {
+    if (value === undefined) {
+      delete process.env[key];
+      continue;
+    }
+
+    process.env[key] = value;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // User-Agent
 // ---------------------------------------------------------------------------
 describe("CC 2.1.81 — User-Agent format", () => {
+  let originalEnv: Partial<Record<EnvKey, string | undefined>>;
+
+  beforeEach(() => {
+    originalEnv = snapshotEnv("CLAUDE_CODE_ENTRYPOINT", "CLAUDE_AGENT_SDK_VERSION", "CLAUDE_AGENT_SDK_CLIENT_APP");
+  });
+
   afterEach(() => {
-    vi.unstubAllEnvs();
+    restoreEnv(originalEnv);
   });
 
   it("matches the claude-cli/<version> (external, cli) pattern", () => {
-    vi.stubEnv("CLAUDE_CODE_ENTRYPOINT", undefined as unknown as string);
-    vi.stubEnv("CLAUDE_AGENT_SDK_VERSION", undefined as unknown as string);
-    vi.stubEnv("CLAUDE_AGENT_SDK_CLIENT_APP", undefined as unknown as string);
+    delete process.env.CLAUDE_CODE_ENTRYPOINT;
+    delete process.env.CLAUDE_AGENT_SDK_VERSION;
+    delete process.env.CLAUDE_AGENT_SDK_CLIENT_APP;
     const ua = buildUserAgent(CC_VERSION);
     expect(ua).toBe(`claude-cli/${CC_VERSION} (external, cli)`);
   });
@@ -58,15 +91,15 @@ describe("CC 2.1.81 — User-Agent format", () => {
   });
 
   it("appends agent-sdk suffix when CLAUDE_AGENT_SDK_VERSION is set", () => {
-    vi.stubEnv("CLAUDE_AGENT_SDK_VERSION", "1.2.3");
-    vi.stubEnv("CLAUDE_CODE_ENTRYPOINT", "cli");
+    process.env.CLAUDE_AGENT_SDK_VERSION = "1.2.3";
+    process.env.CLAUDE_CODE_ENTRYPOINT = "cli";
     const ua = buildUserAgent(CC_VERSION);
     expect(ua).toContain(", agent-sdk/1.2.3");
   });
 
   it("appends client-app suffix when CLAUDE_AGENT_SDK_CLIENT_APP is set", () => {
-    vi.stubEnv("CLAUDE_AGENT_SDK_CLIENT_APP", "myapp");
-    vi.stubEnv("CLAUDE_CODE_ENTRYPOINT", "cli");
+    process.env.CLAUDE_AGENT_SDK_CLIENT_APP = "myapp";
+    process.env.CLAUDE_CODE_ENTRYPOINT = "cli";
     const ua = buildUserAgent(CC_VERSION);
     expect(ua).toContain(", client-app/myapp");
   });
@@ -131,13 +164,16 @@ describe("CC 2.1.81 — Stainless headers", () => {
 // Billing header / cch
 // ---------------------------------------------------------------------------
 describe("CC 2.1.81 — Billing header", () => {
+  let originalEnv: Partial<Record<EnvKey, string | undefined>>;
+
   beforeEach(() => {
-    vi.stubEnv("CLAUDE_CODE_ATTRIBUTION_HEADER", "true");
-    vi.stubEnv("CLAUDE_CODE_ENTRYPOINT", "cli");
+    originalEnv = snapshotEnv("CLAUDE_CODE_ATTRIBUTION_HEADER", "CLAUDE_CODE_ENTRYPOINT");
+    process.env.CLAUDE_CODE_ATTRIBUTION_HEADER = "true";
+    process.env.CLAUDE_CODE_ENTRYPOINT = "cli";
   });
 
   afterEach(() => {
-    vi.unstubAllEnvs();
+    restoreEnv(originalEnv);
   });
 
   it("contains the fixed cch value 00000", () => {
@@ -161,7 +197,7 @@ describe("CC 2.1.81 — Billing header", () => {
   });
 
   it("returns empty string when CLAUDE_CODE_ATTRIBUTION_HEADER is not set", () => {
-    vi.stubEnv("CLAUDE_CODE_ATTRIBUTION_HEADER", "false");
+    process.env.CLAUDE_CODE_ATTRIBUTION_HEADER = "false";
     const header = buildAnthropicBillingHeader(CC_VERSION, []);
     expect(header).toBe("");
   });
@@ -222,11 +258,26 @@ describe("CC 2.1.81 — Beta constants", () => {
     expect(EXPERIMENTAL_BETA_FLAGS).toContain("fast-mode-2026-02-01");
     expect(EXPERIMENTAL_BETA_FLAGS).toContain("advanced-tool-use-2025-11-20");
   });
+
+  it("EXPERIMENTAL_BETA_FLAGS includes CC v2.1.81 new betas", () => {
+    // CC Remote and feature betas from v2.1.81
+    expect(EXPERIMENTAL_BETA_FLAGS).toContain("ccr-byoc-2025-07-29");
+    expect(EXPERIMENTAL_BETA_FLAGS).toContain("ccr-triggers-2026-01-30");
+    expect(EXPERIMENTAL_BETA_FLAGS).toContain("environments-2025-11-01");
+    expect(EXPERIMENTAL_BETA_FLAGS).toContain("mcp-client-2025-11-20");
+    expect(EXPERIMENTAL_BETA_FLAGS).toContain("skills-2025-10-02");
+  });
 });
 
 describe("CC 2.1.81 — Beta header composition (signature enabled)", () => {
+  let originalEnv: Partial<Record<EnvKey, string | undefined>>;
+
+  beforeEach(() => {
+    originalEnv = snapshotEnv("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
+  });
+
   afterEach(() => {
-    vi.unstubAllEnvs();
+    restoreEnv(originalEnv);
   });
 
   const baseArgs = {
@@ -240,8 +291,10 @@ describe("CC 2.1.81 — Beta header composition (signature enabled)", () => {
     hasFileReferences: false,
   };
 
-  function callBuildBeta(overrides: Partial<typeof baseArgs> = {}) {
-    const args = { ...baseArgs, ...overrides };
+  function callBuildBeta(
+    overrides: Partial<Omit<typeof baseArgs, "provider">> & { provider?: "anthropic" | "bedrock" } = {},
+  ) {
+    const args = { ...baseArgs, ...overrides } as typeof baseArgs & { provider?: "anthropic" | "bedrock" };
     return buildAnthropicBetaHeader(
       args.incomingBeta,
       args.signatureEnabled,
@@ -265,19 +318,19 @@ describe("CC 2.1.81 — Beta header composition (signature enabled)", () => {
   });
 
   it("always includes advanced-tool-use-2025-11-20 when experimental enabled", () => {
-    vi.stubEnv("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", "");
+    process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS = "";
     const betas = callBuildBeta();
     expect(betas.split(",")).toContain("advanced-tool-use-2025-11-20");
   });
 
   it("always includes fast-mode-2026-02-01 when experimental enabled", () => {
-    vi.stubEnv("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", "");
+    process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS = "";
     const betas = callBuildBeta();
     expect(betas.split(",")).toContain("fast-mode-2026-02-01");
   });
 
   it("excludes advanced-tool-use and fast-mode when experimental betas disabled", () => {
-    vi.stubEnv("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", "1");
+    process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS = "1";
     const betas = callBuildBeta().split(",");
     expect(betas).not.toContain("advanced-tool-use-2025-11-20");
     expect(betas).not.toContain("fast-mode-2026-02-01");
@@ -294,13 +347,13 @@ describe("CC 2.1.81 — Beta header composition (signature enabled)", () => {
   });
 
   it("includes files-api-2025-04-14 when request has file references", () => {
-    vi.stubEnv("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", "");
+    process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS = "";
     const betas = callBuildBeta({ hasFileReferences: true });
     expect(betas.split(",")).toContain("files-api-2025-04-14");
   });
 
   it("includes files-api-2025-04-14 for /v1/files endpoint", () => {
-    vi.stubEnv("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", "");
+    process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS = "";
     const betas = callBuildBeta({ requestPath: "/v1/files/upload" });
     expect(betas.split(",")).toContain("files-api-2025-04-14");
   });
@@ -334,6 +387,15 @@ describe("CC 2.1.81 — Beta header composition (signature enabled)", () => {
     expect(betas).not.toContain("redact-thinking-2026-02-12");
   });
 
+  it("does not auto-include CC v2.1.81 new experimental betas", () => {
+    const betas = callBuildBeta().split(",");
+    expect(betas).not.toContain("ccr-byoc-2025-07-29");
+    expect(betas).not.toContain("ccr-triggers-2026-01-30");
+    expect(betas).not.toContain("environments-2025-11-01");
+    expect(betas).not.toContain("mcp-client-2025-11-20");
+    expect(betas).not.toContain("skills-2025-10-02");
+  });
+
   it("does not include claude-code-20250219 for haiku models", () => {
     const betas = callBuildBeta({
       model: "claude-haiku-4-5",
@@ -343,10 +405,6 @@ describe("CC 2.1.81 — Beta header composition (signature enabled)", () => {
 });
 
 describe("CC 2.1.81 — Beta header composition (signature disabled / non-CC mode)", () => {
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
   it("includes oauth-2025-04-20 and interleaved-thinking-2025-05-14", () => {
     const betas = buildAnthropicBetaHeader("", false, "", "anthropic", undefined, undefined, undefined, false).split(
       ",",
@@ -381,5 +439,254 @@ describe("CC 2.1.81 — System prompt identity string", () => {
   it("identity string does not include trailing period variation", () => {
     // Exact match — no extra text
     expect(CLAUDE_CODE_IDENTITY_STRING).not.toContain("running within the Claude Agent SDK");
+  });
+});
+
+describe("CC 2.1.81 — Identity block cache TTL", () => {
+  it("identity block has cache_control with ttl: '1h'", () => {
+    const blocks = buildSystemPromptBlocks(
+      [],
+      { enabled: true, claudeCliVersion: "2.1.81", promptCompactionMode: "minimal" },
+      [],
+    );
+
+    const identityBlock = blocks.find((b) => b.text === CLAUDE_CODE_IDENTITY_STRING);
+    expect(identityBlock).toBeDefined();
+    expect(identityBlock!.cache_control).toBeDefined();
+    expect(identityBlock!.cache_control!.type).toBe("ephemeral");
+    expect(identityBlock!.cache_control!.ttl).toBe("1h");
+  });
+
+  it("billing header block does NOT have cache_control", () => {
+    const blocks = buildSystemPromptBlocks(
+      [],
+      { enabled: true, claudeCliVersion: "2.1.81", promptCompactionMode: "minimal" },
+      [],
+    );
+
+    const billingBlock = blocks.find((b) => b.type === "text" && b.text.startsWith("x-anthropic-billing-header:"));
+    expect(billingBlock).toBeDefined();
+    expect(billingBlock!.cache_control).toBeUndefined();
+  });
+
+  it("user-provided system blocks do NOT have cache_control", () => {
+    const blocks = buildSystemPromptBlocks(
+      [{ type: "text", text: "Custom system prompt" }],
+      { enabled: true, claudeCliVersion: "2.1.81", promptCompactionMode: "minimal" },
+      [],
+    );
+
+    const userBlock = blocks.find((b) => b.text === "Custom system prompt");
+    expect(userBlock).toBeDefined();
+    expect(userBlock!.cache_control).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sonnet 4.6 adaptive thinking (CC 2.1.81)
+// ---------------------------------------------------------------------------
+describe("Sonnet 4.6 — Adaptive thinking model detection", () => {
+  it("isSonnet46Model detects claude-sonnet-4-6", () => {
+    expect(isSonnet46Model("claude-sonnet-4-6")).toBe(true);
+  });
+
+  it("isSonnet46Model detects claude-sonnet-4.6", () => {
+    expect(isSonnet46Model("claude-sonnet-4.6")).toBe(true);
+  });
+
+  it("isSonnet46Model detects sonnet-4-6", () => {
+    expect(isSonnet46Model("sonnet-4-6")).toBe(true);
+  });
+
+  it("isSonnet46Model returns false for non-Sonnet 4.6 models", () => {
+    expect(isSonnet46Model("claude-3-5-sonnet-20241022")).toBe(false);
+    expect(isSonnet46Model("claude-opus-4-6")).toBe(false);
+    expect(isSonnet46Model("claude-haiku-4-5")).toBe(false);
+  });
+
+  it("isAdaptiveThinkingModel returns true for Sonnet 4.6", () => {
+    expect(isAdaptiveThinkingModel("claude-sonnet-4-6")).toBe(true);
+    expect(isAdaptiveThinkingModel("sonnet-4-6")).toBe(true);
+  });
+
+  it("isAdaptiveThinkingModel returns true for Opus 4.6", () => {
+    expect(isAdaptiveThinkingModel("claude-opus-4-6")).toBe(true);
+    expect(isAdaptiveThinkingModel("opus-4-6")).toBe(true);
+  });
+
+  it("isAdaptiveThinkingModel returns false for non-adaptive thinking models", () => {
+    expect(isAdaptiveThinkingModel("claude-3-5-sonnet-20241022")).toBe(false);
+    expect(isAdaptiveThinkingModel("claude-haiku-4-5")).toBe(false);
+  });
+});
+
+describe("Sonnet 4.6 — Beta header includes effort-2025-11-24", () => {
+  it("includes effort-2025-11-24 for claude-sonnet-4-6", () => {
+    const betas = buildAnthropicBetaHeader(
+      "",
+      true,
+      "claude-sonnet-4-6",
+      "anthropic",
+      undefined,
+      undefined,
+      undefined,
+      false,
+    ).split(",");
+    expect(betas).toContain(EFFORT_BETA_FLAG);
+  });
+
+  it("includes effort-2025-11-24 for sonnet-4-6", () => {
+    const betas = buildAnthropicBetaHeader(
+      "",
+      true,
+      "sonnet-4-6",
+      "anthropic",
+      undefined,
+      undefined,
+      undefined,
+      false,
+    ).split(",");
+    expect(betas).toContain(EFFORT_BETA_FLAG);
+  });
+
+  it("does not include effort-2025-11-24 for claude-3-5-sonnet", () => {
+    const betas = buildAnthropicBetaHeader(
+      "",
+      true,
+      "claude-3-5-sonnet-20241022",
+      "anthropic",
+      undefined,
+      undefined,
+      undefined,
+      false,
+    ).split(",");
+    expect(betas).not.toContain(EFFORT_BETA_FLAG);
+  });
+});
+
+describe("Sonnet 4.6 — Thinking block normalization", () => {
+  it("normalizes budget_tokens to effort for Sonnet 4.6", () => {
+    const result = normalizeThinkingBlock({ type: "enabled", budget_tokens: 8000 }, "claude-sonnet-4-6");
+    expect(result).toEqual({ type: "enabled", effort: "medium" });
+  });
+
+  it("preserves existing effort for Sonnet 4.6", () => {
+    const result = normalizeThinkingBlock({ type: "enabled", effort: "high" }, "claude-sonnet-4-6");
+    expect(result).toEqual({ type: "enabled", effort: "high" });
+  });
+
+  it("passes through thinking block unchanged for non-adaptive models", () => {
+    const input = { type: "enabled", budget_tokens: 8000 };
+    const result = normalizeThinkingBlock(input, "claude-3-5-sonnet-20241022");
+    expect(result).toEqual(input);
+  });
+
+  it("maps low budget_tokens to low effort for Sonnet 4.6", () => {
+    const result = normalizeThinkingBlock({ type: "enabled", budget_tokens: 500 }, "claude-sonnet-4-6");
+    expect(result).toEqual({ type: "enabled", effort: "low" });
+  });
+
+  it("maps high budget_tokens to high effort for Sonnet 4.6", () => {
+    const result = normalizeThinkingBlock({ type: "enabled", budget_tokens: 20000 }, "claude-sonnet-4-6");
+    expect(result).toEqual({ type: "enabled", effort: "high" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Speed parameter passthrough (Opus 4.6 fast mode)
+// ---------------------------------------------------------------------------
+describe("Speed parameter passthrough", () => {
+  const mockSignature = { enabled: false, claudeCliVersion: "2.1.81", promptCompactionMode: "minimal" as const };
+  const mockRuntime = { persistentUserId: "", accountId: "", sessionId: "" };
+
+  it("preserves speed: 'fast' in request body", () => {
+    const body = JSON.stringify({
+      model: "claude-opus-4-6",
+      messages: [{ role: "user", content: "Hello" }],
+      speed: "fast",
+    });
+    const result = transformRequestBody(body, mockSignature, mockRuntime);
+    const parsed = JSON.parse(result!);
+    expect(parsed.speed).toBe("fast");
+  });
+
+  it("preserves speed: 'normal' in request body", () => {
+    const body = JSON.stringify({
+      model: "claude-opus-4-6",
+      messages: [{ role: "user", content: "Hello" }],
+      speed: "normal",
+    });
+    const result = transformRequestBody(body, mockSignature, mockRuntime);
+    const parsed = JSON.parse(result!);
+    expect(parsed.speed).toBe("normal");
+  });
+
+  it("does not inject speed when not provided", () => {
+    const body = JSON.stringify({
+      model: "claude-opus-4-6",
+      messages: [{ role: "user", content: "Hello" }],
+    });
+    const result = transformRequestBody(body, mockSignature, mockRuntime);
+    const parsed = JSON.parse(result!);
+    expect(parsed.speed).toBeUndefined();
+  });
+
+  it("preserves speed alongside other fields", () => {
+    const body = JSON.stringify({
+      model: "claude-opus-4-6",
+      messages: [{ role: "user", content: "Hello" }],
+      speed: "fast",
+      thinking: { type: "enabled", effort: "high" },
+      system: "You are helpful.",
+    });
+    const result = transformRequestBody(body, mockSignature, mockRuntime);
+    const parsed = JSON.parse(result!);
+    expect(parsed.speed).toBe("fast");
+    expect(parsed.thinking).toEqual({ type: "enabled", effort: "high" });
+    expect(parsed.system).toBeDefined();
+  });
+});
+
+describe("Temperature normalization", () => {
+  const mockSignature = { enabled: false, claudeCliVersion: "2.1.81", promptCompactionMode: "minimal" as const };
+  const mockRuntime = { persistentUserId: "", accountId: "", sessionId: "" };
+
+  it("defaults temperature to 1 for non-thinking requests", () => {
+    const body = JSON.stringify({
+      model: "claude-3-5-sonnet-20241022",
+      messages: [{ role: "user", content: "Hello" }],
+    });
+
+    const result = transformRequestBody(body, mockSignature, mockRuntime);
+    const parsed = JSON.parse(result!);
+
+    expect(parsed.temperature).toBe(1);
+  });
+
+  it("omits temperature when thinking is enabled", () => {
+    const body = JSON.stringify({
+      model: "claude-3-5-sonnet-20241022",
+      messages: [{ role: "user", content: "Hello" }],
+      temperature: 0.7,
+      thinking: { type: "enabled", budget_tokens: 8000 },
+    });
+
+    const result = transformRequestBody(body, mockSignature, mockRuntime);
+    const parsed = JSON.parse(result!);
+
+    expect(Object.prototype.hasOwnProperty.call(parsed, "temperature")).toBe(false);
+  });
+
+  it("preserves explicit caller temperature for non-thinking requests", () => {
+    const body = JSON.stringify({
+      model: "claude-3-5-sonnet-20241022",
+      messages: [{ role: "user", content: "Hello" }],
+      temperature: 0.7,
+    });
+
+    const result = transformRequestBody(body, mockSignature, mockRuntime);
+    const parsed = JSON.parse(result!);
+
+    expect(parsed.temperature).toBe(0.7);
   });
 });

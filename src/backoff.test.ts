@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { calculateBackoffMs, isAccountSpecificError, parseRateLimitReason, parseRetryAfterHeader } from "./backoff.js";
+import {
+  calculateBackoffMs,
+  isAccountSpecificError,
+  parseRateLimitReason,
+  parseRetryAfterHeader,
+  parseRetryAfterMsHeader,
+  parseShouldRetryHeader,
+} from "./backoff.js";
 
 // ---------------------------------------------------------------------------
 // isAccountSpecificError
@@ -305,5 +312,97 @@ describe("parseRetryAfterHeader", () => {
       headers: { "retry-after": "-5" },
     });
     expect(parseRetryAfterHeader(response)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseRetryAfterMsHeader
+// ---------------------------------------------------------------------------
+
+describe("parseRetryAfterMsHeader", () => {
+  it("returns null when header not present", () => {
+    const response = new Response(null, { headers: {} });
+    expect(parseRetryAfterMsHeader(response)).toBeNull();
+  });
+
+  it("parses integer milliseconds", () => {
+    const response = new Response(null, {
+      headers: { "retry-after-ms": "1500" },
+    });
+    expect(parseRetryAfterMsHeader(response)).toBe(1500);
+  });
+
+  it("parses fractional milliseconds and rounds", () => {
+    const response = new Response(null, {
+      headers: { "retry-after-ms": "1500.7" },
+    });
+    expect(parseRetryAfterMsHeader(response)).toBe(1501);
+  });
+
+  it("returns null for malformed value", () => {
+    const response = new Response(null, {
+      headers: { "retry-after-ms": "not-a-number" },
+    });
+    expect(parseRetryAfterMsHeader(response)).toBeNull();
+  });
+
+  it("returns null for zero", () => {
+    const response = new Response(null, {
+      headers: { "retry-after-ms": "0" },
+    });
+    expect(parseRetryAfterMsHeader(response)).toBeNull();
+  });
+
+  it("returns null for negative value", () => {
+    const response = new Response(null, {
+      headers: { "retry-after-ms": "-500" },
+    });
+    expect(parseRetryAfterMsHeader(response)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseShouldRetryHeader
+// ---------------------------------------------------------------------------
+
+describe("parseShouldRetryHeader", () => {
+  it("returns null when header not present", () => {
+    const response = new Response(null, { headers: {} });
+    expect(parseShouldRetryHeader(response)).toBeNull();
+  });
+
+  it("returns true for 'true'", () => {
+    const response = new Response(null, {
+      headers: { "x-should-retry": "true" },
+    });
+    expect(parseShouldRetryHeader(response)).toBe(true);
+  });
+
+  it("returns false for 'false'", () => {
+    const response = new Response(null, {
+      headers: { "x-should-retry": "false" },
+    });
+    expect(parseShouldRetryHeader(response)).toBe(false);
+  });
+
+  it("returns null for unrecognized value", () => {
+    const response = new Response(null, {
+      headers: { "x-should-retry": "maybe" },
+    });
+    expect(parseShouldRetryHeader(response)).toBeNull();
+  });
+
+  it("returns null for uppercase 'TRUE'", () => {
+    const response = new Response(null, {
+      headers: { "x-should-retry": "TRUE" },
+    });
+    expect(parseShouldRetryHeader(response)).toBeNull();
+  });
+
+  it("returns null for '1'", () => {
+    const response = new Response(null, {
+      headers: { "x-should-retry": "1" },
+    });
+    expect(parseShouldRetryHeader(response)).toBeNull();
   });
 });

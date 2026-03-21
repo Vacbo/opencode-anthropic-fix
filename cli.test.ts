@@ -1,31 +1,91 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Tests for the CLI account management tool.
  *
  * We mock storage and config to control what the CLI sees,
  * and capture console output to verify formatting.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
 
-vi.mock("./src/storage.js", async (importOriginal) => {
-  const original = await importOriginal();
-  return {
-    ...original,
-    loadAccounts: vi.fn().mockResolvedValue(null),
-    saveAccounts: vi.fn().mockResolvedValue(undefined),
-    clearAccounts: vi.fn().mockResolvedValue(undefined),
-    getStoragePath: vi.fn(() => "/home/user/.config/opencode/anthropic-accounts.json"),
-  };
-});
+vi.mock("./src/storage.js", () => ({
+  createDefaultStats: (now?: number) => ({
+    requests: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    lastReset: now ?? Date.now(),
+  }),
+  loadAccounts: vi.fn().mockResolvedValue(null),
+  saveAccounts: vi.fn().mockResolvedValue(undefined),
+  clearAccounts: vi.fn().mockResolvedValue(undefined),
+  getStoragePath: vi.fn(() => "/home/user/.config/opencode/anthropic-accounts.json"),
+}));
 
-vi.mock("./src/config.js", async (importOriginal) => {
-  const original = await importOriginal();
+vi.mock("./src/config.js", () => {
+  const DEFAULT_CONFIG = {
+    account_selection_strategy: "sticky",
+    failure_ttl_seconds: 3600,
+    debug: false,
+    signature_emulation: {
+      enabled: true,
+      fetch_claude_code_version_on_startup: true,
+      prompt_compaction: "minimal",
+    },
+    override_model_limits: {
+      enabled: false,
+      context: 1_000_000,
+      output: 0,
+    },
+    custom_betas: [],
+    health_score: {
+      initial: 70,
+      success_reward: 1,
+      rate_limit_penalty: -10,
+      failure_penalty: -20,
+      recovery_rate_per_hour: 2,
+      min_usable: 50,
+      max_score: 100,
+    },
+    token_bucket: {
+      max_tokens: 50,
+      regeneration_rate_per_minute: 6,
+      initial_tokens: 50,
+    },
+    toasts: {
+      quiet: false,
+      debounce_seconds: 30,
+    },
+    headers: {},
+    idle_refresh: {
+      enabled: true,
+      window_minutes: 60,
+      min_interval_minutes: 30,
+    },
+  };
+
+  const createDefaultConfig = () => ({
+    ...DEFAULT_CONFIG,
+    signature_emulation: { ...DEFAULT_CONFIG.signature_emulation },
+    override_model_limits: { ...DEFAULT_CONFIG.override_model_limits },
+    custom_betas: [...DEFAULT_CONFIG.custom_betas],
+    health_score: { ...DEFAULT_CONFIG.health_score },
+    token_bucket: { ...DEFAULT_CONFIG.token_bucket },
+    toasts: { ...DEFAULT_CONFIG.toasts },
+    headers: { ...DEFAULT_CONFIG.headers },
+    idle_refresh: { ...DEFAULT_CONFIG.idle_refresh },
+  });
+
   return {
-    ...original,
-    loadConfig: vi.fn(() => ({ ...original.DEFAULT_CONFIG })),
+    CLIENT_ID: "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
+    DEFAULT_CONFIG,
+    VALID_STRATEGIES: ["sticky", "round-robin", "hybrid"],
+    loadConfig: vi.fn(() => createDefaultConfig()),
+    saveConfig: vi.fn(),
     getConfigPath: vi.fn(() => "/home/user/.config/opencode/anthropic-auth.json"),
     getConfigDir: vi.fn(() => "/home/user/.config/opencode"),
   };
@@ -93,12 +153,25 @@ import { loadAccounts, saveAccounts } from "./src/storage.js";
 // Global fetch mock — prevents real HTTP calls and speeds up tests
 // ---------------------------------------------------------------------------
 const mockFetch = vi.fn();
-vi.stubGlobal("fetch", mockFetch);
+const originalFetch = globalThis.fetch;
+const mockCreateInterface = createInterface as Mock;
+const mockAuthorize = authorize as Mock;
+const mockExchange = exchange as Mock;
+const mockRevoke = revoke as Mock;
+const mockLoadAccounts = loadAccounts as Mock;
+const mockSaveAccounts = saveAccounts as Mock;
+// eslint-disable-next-line no-control-regex
+const ANSI_REGEX = new RegExp("\\x1b\\[[0-9;]*m", "g");
 
 beforeEach(() => {
+  globalThis.fetch = mockFetch as typeof fetch;
   mockFetch.mockReset();
   // Default: all fetches fail gracefully (usage endpoints return null)
   mockFetch.mockResolvedValue({ ok: false, status: 500 });
+});
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
 });
 
 // ---------------------------------------------------------------------------
@@ -107,8 +180,8 @@ beforeEach(() => {
 
 /** Capture console.log and console.error output */
 function captureOutput() {
-  const logs = [];
-  const errors = [];
+  const logs: string[] = [];
+  const errors: string[] = [];
   const origLog = console.log;
   const origError = console.error;
 
@@ -119,9 +192,9 @@ function captureOutput() {
     logs,
     errors,
     /** Get all log output as a single string (ANSI stripped) */
-    text: () => logs.join("\n").replace(/\x1b\[[0-9;]*m/g, ""), // eslint-disable-line no-control-regex
+    text: () => logs.join("\n").replace(ANSI_REGEX, ""),
     /** Get all error output as a single string (ANSI stripped) */
-    errorText: () => errors.join("\n").replace(/\x1b\[[0-9;]*m/g, ""), // eslint-disable-line no-control-regex
+    errorText: () => errors.join("\n").replace(ANSI_REGEX, ""),
     restore: () => {
       console.log = origLog;
       console.error = origError;
@@ -148,7 +221,7 @@ function mockReadlineAnswer(answer) {
     question: vi.fn().mockResolvedValue(answer),
     close: vi.fn(),
   };
-  vi.mocked(createInterface).mockReturnValue(rl);
+  mockCreateInterface.mockReturnValue(rl);
   return rl;
 }
 
@@ -242,7 +315,7 @@ describe("formatTimeAgo", () => {
 
 /** Strip ANSI escape codes for test assertions. */
 function stripAnsi(str) {
-  return str.replace(/\x1b\[[0-9;]*m/g, ""); // eslint-disable-line no-control-regex
+  return str.replace(ANSI_REGEX, "");
 }
 
 // ---------------------------------------------------------------------------
@@ -538,11 +611,11 @@ function mockUsageForAccounts(...usages) {
 }
 
 describe("cmdList", () => {
-  let output;
+  let output: ReturnType<typeof captureOutput>;
 
   beforeEach(() => {
     vi.resetAllMocks();
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
     output = captureOutput();
   });
 
@@ -551,14 +624,14 @@ describe("cmdList", () => {
   });
 
   it("shows 'no accounts' message when storage is empty", async () => {
-    loadAccounts.mockResolvedValue(null);
+    mockLoadAccounts.mockResolvedValue(null);
     const code = await cmdList();
     expect(code).toBe(1);
     expect(output.text()).toContain("No accounts configured");
   });
 
   it("displays account table with correct columns", async () => {
-    loadAccounts.mockResolvedValue(makeStorage());
+    mockLoadAccounts.mockResolvedValue(makeStorage());
     const code = await cmdList();
     expect(code).toBe(0);
 
@@ -573,7 +646,7 @@ describe("cmdList", () => {
   });
 
   it("shows enabled/disabled counts", async () => {
-    loadAccounts.mockResolvedValue(makeStorage());
+    mockLoadAccounts.mockResolvedValue(makeStorage());
     const code = await cmdList();
     expect(code).toBe(0);
 
@@ -587,7 +660,7 @@ describe("cmdList", () => {
     storage.accounts[1].rateLimitResetTimes = {
       anthropic: Date.now() + 150_000, // 2m 30s from now
     };
-    loadAccounts.mockResolvedValue(storage);
+    mockLoadAccounts.mockResolvedValue(storage);
 
     const code = await cmdList();
     expect(code).toBe(0);
@@ -599,7 +672,7 @@ describe("cmdList", () => {
   it("shows consecutive failure count", async () => {
     const storage = makeStorage();
     storage.accounts[0].consecutiveFailures = 5;
-    loadAccounts.mockResolvedValue(storage);
+    mockLoadAccounts.mockResolvedValue(storage);
 
     const code = await cmdList();
     expect(code).toBe(0);
@@ -609,14 +682,14 @@ describe("cmdList", () => {
   });
 
   it("shows strategy name", async () => {
-    loadAccounts.mockResolvedValue(makeStorage());
+    mockLoadAccounts.mockResolvedValue(makeStorage());
     const code = await cmdList();
     expect(code).toBe(0);
     expect(output.text()).toContain("sticky");
   });
 
   it("shows live usage quotas for enabled accounts", async () => {
-    loadAccounts.mockResolvedValue(makeStorage());
+    mockLoadAccounts.mockResolvedValue(makeStorage());
     const usage = {
       five_hour: {
         utilization: 9.0,
@@ -652,7 +725,7 @@ describe("cmdList", () => {
   it("shows 'quotas: unavailable' when usage fetch fails", async () => {
     const storage = makeStorage();
     storage.accounts[2].enabled = true; // enable all 3
-    loadAccounts.mockResolvedValue(storage);
+    mockLoadAccounts.mockResolvedValue(storage);
     // All three accounts: token refresh fails
     mockUsageForAccounts(null, null, null);
 
@@ -662,7 +735,7 @@ describe("cmdList", () => {
   });
 
   it("does not show quota lines for disabled accounts", async () => {
-    loadAccounts.mockResolvedValue(makeStorage());
+    mockLoadAccounts.mockResolvedValue(makeStorage());
     // Account 1 and 2 (enabled) get usage; account 3 is disabled and skips fetch entirely
     mockUsageForAccounts(
       {
@@ -696,8 +769,8 @@ describe("cmdList", () => {
   });
 
   it("persists refreshed tokens back to disk", async () => {
-    loadAccounts.mockResolvedValue(makeStorage());
-    saveAccounts.mockResolvedValue(undefined);
+    mockLoadAccounts.mockResolvedValue(makeStorage());
+    mockSaveAccounts.mockResolvedValue(undefined);
     // Only 2 enabled accounts need mocking (account 3 is disabled)
     mockUsageForAccounts(
       {
@@ -725,7 +798,7 @@ describe("cmdList", () => {
 // ---------------------------------------------------------------------------
 
 describe("cmdStatus", () => {
-  let output;
+  let output: ReturnType<typeof captureOutput>;
 
   beforeEach(() => {
     vi.resetAllMocks();
@@ -737,14 +810,14 @@ describe("cmdStatus", () => {
   });
 
   it("shows 'no accounts' for empty storage", async () => {
-    loadAccounts.mockResolvedValue(null);
+    mockLoadAccounts.mockResolvedValue(null);
     const code = await cmdStatus();
     expect(code).toBe(1);
     expect(output.text()).toContain("no accounts configured");
   });
 
   it("shows compact one-liner with account count", async () => {
-    loadAccounts.mockResolvedValue(makeStorage());
+    mockLoadAccounts.mockResolvedValue(makeStorage());
     const code = await cmdStatus();
     expect(code).toBe(0);
 
@@ -761,7 +834,7 @@ describe("cmdStatus", () => {
     storage.accounts[0].rateLimitResetTimes = {
       anthropic: Date.now() + 60_000,
     };
-    loadAccounts.mockResolvedValue(storage);
+    mockLoadAccounts.mockResolvedValue(storage);
 
     const code = await cmdStatus();
     expect(code).toBe(0);
@@ -774,12 +847,12 @@ describe("cmdStatus", () => {
 // ---------------------------------------------------------------------------
 
 describe("cmdSwitch", () => {
-  let output;
+  let output: ReturnType<typeof captureOutput>;
 
   beforeEach(() => {
     vi.resetAllMocks();
     output = captureOutput();
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -787,7 +860,7 @@ describe("cmdSwitch", () => {
   });
 
   it("switches active account", async () => {
-    loadAccounts.mockResolvedValue(makeStorage());
+    mockLoadAccounts.mockResolvedValue(makeStorage());
     const code = await cmdSwitch("2");
     expect(code).toBe(0);
     expect(output.text()).toContain("Switched");
@@ -798,14 +871,14 @@ describe("cmdSwitch", () => {
   });
 
   it("rejects invalid account number", async () => {
-    loadAccounts.mockResolvedValue(makeStorage());
+    mockLoadAccounts.mockResolvedValue(makeStorage());
     const code = await cmdSwitch("99");
     expect(code).toBe(1);
     expect(output.errorText()).toContain("does not exist");
   });
 
   it("rejects switching to disabled account", async () => {
-    loadAccounts.mockResolvedValue(makeStorage());
+    mockLoadAccounts.mockResolvedValue(makeStorage());
     const code = await cmdSwitch("3"); // charlie is disabled
     expect(code).toBe(1);
     expect(output.errorText()).toContain("disabled");
@@ -818,7 +891,7 @@ describe("cmdSwitch", () => {
   });
 
   it("rejects when no accounts exist", async () => {
-    loadAccounts.mockResolvedValue(null);
+    mockLoadAccounts.mockResolvedValue(null);
     const code = await cmdSwitch("1");
     expect(code).toBe(1);
     expect(output.errorText()).toContain("no accounts");
@@ -830,12 +903,12 @@ describe("cmdSwitch", () => {
 // ---------------------------------------------------------------------------
 
 describe("cmdEnable", () => {
-  let output;
+  let output: ReturnType<typeof captureOutput>;
 
   beforeEach(() => {
     vi.resetAllMocks();
     output = captureOutput();
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -843,7 +916,7 @@ describe("cmdEnable", () => {
   });
 
   it("enables a disabled account", async () => {
-    loadAccounts.mockResolvedValue(makeStorage());
+    mockLoadAccounts.mockResolvedValue(makeStorage());
     const code = await cmdEnable("3"); // charlie is disabled
     expect(code).toBe(0);
     expect(output.text()).toContain("Enabled");
@@ -862,7 +935,7 @@ describe("cmdEnable", () => {
   });
 
   it("is a no-op for already enabled account", async () => {
-    loadAccounts.mockResolvedValue(makeStorage());
+    mockLoadAccounts.mockResolvedValue(makeStorage());
     const code = await cmdEnable("1");
     expect(code).toBe(0);
     expect(output.text()).toContain("already enabled");
@@ -870,7 +943,7 @@ describe("cmdEnable", () => {
   });
 
   it("rejects invalid account number", async () => {
-    loadAccounts.mockResolvedValue(makeStorage());
+    mockLoadAccounts.mockResolvedValue(makeStorage());
     const code = await cmdEnable("99");
     expect(code).toBe(1);
     expect(output.errorText()).toContain("does not exist");
@@ -882,12 +955,12 @@ describe("cmdEnable", () => {
 // ---------------------------------------------------------------------------
 
 describe("cmdDisable", () => {
-  let output;
+  let output: ReturnType<typeof captureOutput>;
 
   beforeEach(() => {
     vi.resetAllMocks();
     output = captureOutput();
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -895,7 +968,7 @@ describe("cmdDisable", () => {
   });
 
   it("disables an enabled account", async () => {
-    loadAccounts.mockResolvedValue(makeStorage());
+    mockLoadAccounts.mockResolvedValue(makeStorage());
     const code = await cmdDisable("2");
     expect(code).toBe(0);
     expect(output.text()).toContain("Disabled");
@@ -903,7 +976,7 @@ describe("cmdDisable", () => {
   });
 
   it("is a no-op for already disabled account", async () => {
-    loadAccounts.mockResolvedValue(makeStorage());
+    mockLoadAccounts.mockResolvedValue(makeStorage());
     const code = await cmdDisable("3");
     expect(code).toBe(0);
     expect(output.text()).toContain("already disabled");
@@ -913,7 +986,7 @@ describe("cmdDisable", () => {
     const storage = makeStorage();
     // Only one enabled account
     storage.accounts = [storage.accounts[0]];
-    loadAccounts.mockResolvedValue(storage);
+    mockLoadAccounts.mockResolvedValue(storage);
 
     const code = await cmdDisable("1");
     expect(code).toBe(1);
@@ -921,13 +994,13 @@ describe("cmdDisable", () => {
   });
 
   it("switches active account when disabling the active one (single atomic save)", async () => {
-    loadAccounts.mockResolvedValue(makeStorage());
+    mockLoadAccounts.mockResolvedValue(makeStorage());
     const code = await cmdDisable("1"); // alice is active
     expect(code).toBe(0);
 
     // Should save exactly once (disable + activeIndex adjustment in one write)
     expect(saveAccounts).toHaveBeenCalledTimes(1);
-    const saved = saveAccounts.mock.calls[0][0];
+    const saved = mockSaveAccounts.mock.calls[0][0];
     expect(saved.accounts[0].enabled).toBe(false);
     expect(saved.activeIndex).toBe(1); // switched to bob (next enabled)
   });
@@ -938,25 +1011,25 @@ describe("cmdDisable", () => {
 // ---------------------------------------------------------------------------
 
 describe("auth commands", () => {
-  let output;
+  let output: ReturnType<typeof captureOutput>;
 
   beforeEach(() => {
     vi.resetAllMocks();
     output = captureOutput();
-    saveAccounts.mockResolvedValue(undefined);
-    loadAccounts.mockResolvedValue(makeStorage());
-    vi.mocked(authorize).mockResolvedValue({
+    mockSaveAccounts.mockResolvedValue(undefined);
+    mockLoadAccounts.mockResolvedValue(makeStorage());
+    mockAuthorize.mockResolvedValue({
       url: "https://auth.example/authorize",
       verifier: "pkce-verifier",
     });
-    vi.mocked(exchange).mockResolvedValue({
+    mockExchange.mockResolvedValue({
       type: "success",
       refresh: "refresh-new",
       access: "access-new",
       expires: Date.now() + 3600_000,
       email: "new@example.com",
     });
-    vi.mocked(revoke).mockResolvedValue(true);
+    mockRevoke.mockResolvedValue(true);
   });
 
   afterEach(() => {
@@ -976,7 +1049,7 @@ describe("auth commands", () => {
   });
 
   it("cmdLogin adds a new account via OAuth", async () => {
-    loadAccounts.mockResolvedValue(null);
+    mockLoadAccounts.mockResolvedValue(null);
     const restoreTTY = setStdinTTY(true);
     mockReadlineAnswer("auth-code#state");
 
@@ -1021,14 +1094,14 @@ describe("auth commands", () => {
         lastFailureTime: Date.now(),
       })),
     };
-    loadAccounts.mockResolvedValue(fullStorage);
+    mockLoadAccounts.mockResolvedValue(fullStorage);
     const restoreTTY = setStdinTTY(true);
     mockReadlineAnswer("auth-code#state");
 
     try {
       const code = await cmdLogin();
       expect(code).toBe(0);
-      const saved = saveAccounts.mock.calls[0][0];
+      const saved = mockSaveAccounts.mock.calls[0][0];
       expect(saved.accounts).toHaveLength(10);
       expect(saved.accounts[4].refreshToken).toBe("refresh-new");
       expect(saved.accounts[4].access).toBe("access-new");
@@ -1054,7 +1127,7 @@ describe("auth commands", () => {
         lastFailureTime: null,
       })),
     };
-    loadAccounts.mockResolvedValue(fullStorage);
+    mockLoadAccounts.mockResolvedValue(fullStorage);
     const restoreTTY = setStdinTTY(true);
     mockReadlineAnswer("auth-code#state");
 
@@ -1069,18 +1142,18 @@ describe("auth commands", () => {
   });
 
   it("cmdLogout removes one account and revokes token", async () => {
-    loadAccounts.mockResolvedValue(makeStorage());
+    mockLoadAccounts.mockResolvedValue(makeStorage());
 
     const code = await cmdLogout("2", { force: true });
     expect(code).toBe(0);
     expect(revoke).toHaveBeenCalledWith("refresh-bob");
-    const saved = saveAccounts.mock.calls[0][0];
+    const saved = mockSaveAccounts.mock.calls[0][0];
     expect(saved.accounts).toHaveLength(2);
     expect(saved.accounts.find((a) => a.refreshToken === "refresh-bob")).toBeUndefined();
   });
 
   it("cmdLogout --all revokes all accounts and writes explicit empty storage", async () => {
-    loadAccounts.mockResolvedValue(makeStorage());
+    mockLoadAccounts.mockResolvedValue(makeStorage());
 
     const code = await cmdLogout(undefined, { all: true, force: true });
     expect(code).toBe(0);
@@ -1100,8 +1173,8 @@ describe("auth commands", () => {
     storage.accounts[0].rateLimitResetTimes = {
       anthropic: Date.now() + 60_000,
     };
-    loadAccounts.mockResolvedValue(storage);
-    vi.mocked(exchange).mockResolvedValueOnce({
+    mockLoadAccounts.mockResolvedValue(storage);
+    mockExchange.mockResolvedValueOnce({
       type: "success",
       refresh: "refresh-reauth",
       access: "access-reauth",
@@ -1115,7 +1188,7 @@ describe("auth commands", () => {
     try {
       const code = await cmdReauth("1");
       expect(code).toBe(0);
-      const saved = saveAccounts.mock.calls[0][0];
+      const saved = mockSaveAccounts.mock.calls[0][0];
       expect(saved.accounts[0]).toEqual(
         expect.objectContaining({
           refreshToken: "refresh-reauth",
@@ -1141,7 +1214,7 @@ describe("auth commands", () => {
     storage.accounts[2].rateLimitResetTimes = {
       anthropic: Date.now() + 30_000,
     };
-    loadAccounts.mockResolvedValue(storage);
+    mockLoadAccounts.mockResolvedValue(storage);
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -1153,7 +1226,7 @@ describe("auth commands", () => {
 
     const code = await cmdRefresh("3");
     expect(code).toBe(0);
-    const saved = saveAccounts.mock.calls[0][0];
+    const saved = mockSaveAccounts.mock.calls[0][0];
     expect(saved.accounts[2]).toEqual(
       expect.objectContaining({
         access: "fresh-access",
@@ -1169,7 +1242,7 @@ describe("auth commands", () => {
   });
 
   it("cmdRefresh suggests reauth when refresh fails", async () => {
-    loadAccounts.mockResolvedValue(makeStorage());
+    mockLoadAccounts.mockResolvedValue(makeStorage());
     mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
 
     const code = await cmdRefresh("1");
@@ -1184,12 +1257,12 @@ describe("auth commands", () => {
 // ---------------------------------------------------------------------------
 
 describe("cmdRemove", () => {
-  let output;
+  let output: ReturnType<typeof captureOutput>;
 
   beforeEach(() => {
     vi.resetAllMocks();
     output = captureOutput();
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -1197,7 +1270,7 @@ describe("cmdRemove", () => {
   });
 
   it("removes account with --force (no confirmation)", async () => {
-    loadAccounts.mockResolvedValue(makeStorage());
+    mockLoadAccounts.mockResolvedValue(makeStorage());
     const code = await cmdRemove("2", { force: true });
     expect(code).toBe(0);
     expect(output.text()).toContain("Removed");
@@ -1212,18 +1285,18 @@ describe("cmdRemove", () => {
       }),
     );
     // Should have 2 accounts remaining (alice + charlie)
-    const saved = saveAccounts.mock.calls[0][0];
+    const saved = mockSaveAccounts.mock.calls[0][0];
     expect(saved.accounts).toHaveLength(2);
   });
 
   it("adjusts activeIndex when removing account before active", async () => {
     const storage = makeStorage({ activeIndex: 2 }); // charlie is active
-    loadAccounts.mockResolvedValue(storage);
+    mockLoadAccounts.mockResolvedValue(storage);
 
     const code = await cmdRemove("1", { force: true }); // remove alice (before active)
     expect(code).toBe(0);
 
-    const saved = saveAccounts.mock.calls[0][0];
+    const saved = mockSaveAccounts.mock.calls[0][0];
     expect(saved.activeIndex).toBe(1); // shifted down by 1
   });
 
@@ -1231,19 +1304,19 @@ describe("cmdRemove", () => {
     const storage = makeStorage();
     storage.accounts = [storage.accounts[0]];
     storage.activeIndex = 0;
-    loadAccounts.mockResolvedValue(storage);
+    mockLoadAccounts.mockResolvedValue(storage);
 
     const code = await cmdRemove("1", { force: true });
     expect(code).toBe(0);
 
-    const saved = saveAccounts.mock.calls[0][0];
+    const saved = mockSaveAccounts.mock.calls[0][0];
     expect(saved.accounts).toHaveLength(0);
     expect(saved.activeIndex).toBe(0);
     expect(output.text()).toContain("No accounts remaining");
   });
 
   it("rejects invalid account number", async () => {
-    loadAccounts.mockResolvedValue(makeStorage());
+    mockLoadAccounts.mockResolvedValue(makeStorage());
     const code = await cmdRemove("99", { force: true });
     expect(code).toBe(1);
     expect(output.errorText()).toContain("does not exist");
@@ -1255,12 +1328,12 @@ describe("cmdRemove", () => {
 // ---------------------------------------------------------------------------
 
 describe("cmdReset", () => {
-  let output;
+  let output: ReturnType<typeof captureOutput>;
 
   beforeEach(() => {
     vi.resetAllMocks();
     output = captureOutput();
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -1274,14 +1347,14 @@ describe("cmdReset", () => {
     storage.accounts[0].rateLimitResetTimes = {
       anthropic: Date.now() + 60_000,
     };
-    loadAccounts.mockResolvedValue(storage);
+    mockLoadAccounts.mockResolvedValue(storage);
 
     const code = await cmdReset("1");
     expect(code).toBe(0);
     expect(output.text()).toContain("Reset tracking");
     expect(output.text()).toContain("alice@example.com");
 
-    const saved = saveAccounts.mock.calls[0][0];
+    const saved = mockSaveAccounts.mock.calls[0][0];
     expect(saved.accounts[0].consecutiveFailures).toBe(0);
     expect(saved.accounts[0].lastFailureTime).toBeNull();
     expect(saved.accounts[0].rateLimitResetTimes).toEqual({});
@@ -1291,13 +1364,13 @@ describe("cmdReset", () => {
     const storage = makeStorage();
     storage.accounts[0].consecutiveFailures = 3;
     storage.accounts[1].consecutiveFailures = 7;
-    loadAccounts.mockResolvedValue(storage);
+    mockLoadAccounts.mockResolvedValue(storage);
 
     const code = await cmdReset("all");
     expect(code).toBe(0);
     expect(output.text()).toContain("all 3 account(s)");
 
-    const saved = saveAccounts.mock.calls[0][0];
+    const saved = mockSaveAccounts.mock.calls[0][0];
     for (const acc of saved.accounts) {
       expect(acc.consecutiveFailures).toBe(0);
       expect(acc.lastFailureTime).toBeNull();
@@ -1312,7 +1385,7 @@ describe("cmdReset", () => {
   });
 
   it("rejects invalid account number", async () => {
-    loadAccounts.mockResolvedValue(makeStorage());
+    mockLoadAccounts.mockResolvedValue(makeStorage());
     const code = await cmdReset("99");
     expect(code).toBe(1);
     expect(output.errorText()).toContain("does not exist");
@@ -1324,7 +1397,7 @@ describe("cmdReset", () => {
 // ---------------------------------------------------------------------------
 
 describe("cmdConfig", () => {
-  let output;
+  let output: ReturnType<typeof captureOutput>;
 
   beforeEach(() => {
     vi.resetAllMocks();
@@ -1336,7 +1409,7 @@ describe("cmdConfig", () => {
   });
 
   it("displays configuration values", async () => {
-    loadAccounts.mockResolvedValue(makeStorage());
+    mockLoadAccounts.mockResolvedValue(makeStorage());
     const code = await cmdConfig();
     expect(code).toBe(0);
 
@@ -1348,7 +1421,7 @@ describe("cmdConfig", () => {
   });
 
   it("shows health score config", async () => {
-    loadAccounts.mockResolvedValue(null);
+    mockLoadAccounts.mockResolvedValue(null);
     const code = await cmdConfig();
     expect(code).toBe(0);
 
@@ -1360,7 +1433,7 @@ describe("cmdConfig", () => {
   });
 
   it("shows token bucket config", async () => {
-    loadAccounts.mockResolvedValue(null);
+    mockLoadAccounts.mockResolvedValue(null);
     const code = await cmdConfig();
     expect(code).toBe(0);
 
@@ -1370,7 +1443,7 @@ describe("cmdConfig", () => {
   });
 
   it("shows file paths", async () => {
-    loadAccounts.mockResolvedValue(null);
+    mockLoadAccounts.mockResolvedValue(null);
     const code = await cmdConfig();
     expect(code).toBe(0);
 
@@ -1380,14 +1453,14 @@ describe("cmdConfig", () => {
   });
 
   it("shows account count when accounts exist", async () => {
-    loadAccounts.mockResolvedValue(makeStorage());
+    mockLoadAccounts.mockResolvedValue(makeStorage());
     const code = await cmdConfig();
     expect(code).toBe(0);
     expect(output.text()).toContain("3 (2 enabled)");
   });
 
   it("shows 'none' when no accounts exist", async () => {
-    loadAccounts.mockResolvedValue(null);
+    mockLoadAccounts.mockResolvedValue(null);
     const code = await cmdConfig();
     expect(code).toBe(0);
     expect(output.text()).toContain("none");
@@ -1399,7 +1472,7 @@ describe("cmdConfig", () => {
 // ---------------------------------------------------------------------------
 
 describe("cmdHelp", () => {
-  let output;
+  let output: ReturnType<typeof captureOutput>;
 
   beforeEach(() => {
     output = captureOutput();
@@ -1444,25 +1517,25 @@ describe("cmdHelp", () => {
 // ---------------------------------------------------------------------------
 
 describe("main routing", () => {
-  let output;
+  let output: ReturnType<typeof captureOutput>;
 
   beforeEach(() => {
     vi.resetAllMocks();
     output = captureOutput();
-    loadAccounts.mockResolvedValue(makeStorage());
-    saveAccounts.mockResolvedValue(undefined);
-    vi.mocked(authorize).mockResolvedValue({
+    mockLoadAccounts.mockResolvedValue(makeStorage());
+    mockSaveAccounts.mockResolvedValue(undefined);
+    mockAuthorize.mockResolvedValue({
       url: "https://auth.example/authorize",
       verifier: "pkce-verifier",
     });
-    vi.mocked(exchange).mockResolvedValue({
+    mockExchange.mockResolvedValue({
       type: "success",
       refresh: "refresh-new",
       access: "access-new",
       expires: Date.now() + 3600_000,
       email: "new@example.com",
     });
-    vi.mocked(revoke).mockResolvedValue(true);
+    mockRevoke.mockResolvedValue(true);
   });
 
   afterEach(() => {
@@ -1543,7 +1616,7 @@ describe("main routing", () => {
   });
 
   it("routes 'ln' alias to login", async () => {
-    loadAccounts.mockResolvedValue(null);
+    mockLoadAccounts.mockResolvedValue(null);
     const restoreTTY = setStdinTTY(true);
     mockReadlineAnswer("auth-code#state");
     try {
@@ -1618,13 +1691,13 @@ describe("main routing", () => {
 // ---------------------------------------------------------------------------
 
 describe("missing argument handling", () => {
-  let output;
+  let output: ReturnType<typeof captureOutput>;
 
   beforeEach(() => {
     vi.resetAllMocks();
     output = captureOutput();
-    loadAccounts.mockResolvedValue(makeStorage());
-    saveAccounts.mockResolvedValue(undefined);
+    mockLoadAccounts.mockResolvedValue(makeStorage());
+    mockSaveAccounts.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -1661,12 +1734,12 @@ describe("missing argument handling", () => {
 // ---------------------------------------------------------------------------
 
 describe("case insensitivity", () => {
-  let output;
+  let output: ReturnType<typeof captureOutput>;
 
   beforeEach(() => {
     vi.resetAllMocks();
     output = captureOutput();
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -1676,7 +1749,7 @@ describe("case insensitivity", () => {
   it("cmdReset accepts 'ALL' (uppercase)", async () => {
     const storage = makeStorage();
     storage.accounts[0].consecutiveFailures = 3;
-    loadAccounts.mockResolvedValue(storage);
+    mockLoadAccounts.mockResolvedValue(storage);
 
     const code = await cmdReset("ALL");
     expect(code).toBe(0);
@@ -1685,7 +1758,7 @@ describe("case insensitivity", () => {
 
   it("cmdReset accepts 'All' (mixed case)", async () => {
     const storage = makeStorage();
-    loadAccounts.mockResolvedValue(storage);
+    mockLoadAccounts.mockResolvedValue(storage);
 
     const code = await cmdReset("All");
     expect(code).toBe(0);
@@ -1698,12 +1771,12 @@ describe("case insensitivity", () => {
 // ---------------------------------------------------------------------------
 
 describe("cmdRemove active account", () => {
-  let output;
+  let output: ReturnType<typeof captureOutput>;
 
   beforeEach(() => {
     vi.resetAllMocks();
     output = captureOutput();
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -1712,12 +1785,12 @@ describe("cmdRemove active account", () => {
 
   it("adjusts activeIndex when removing the active account", async () => {
     const storage = makeStorage({ activeIndex: 1 }); // bob is active
-    loadAccounts.mockResolvedValue(storage);
+    mockLoadAccounts.mockResolvedValue(storage);
 
     const code = await cmdRemove("2", { force: true }); // remove bob
     expect(code).toBe(0);
 
-    const saved = saveAccounts.mock.calls[0][0];
+    const saved = mockSaveAccounts.mock.calls[0][0];
     // activeIndex was 1, we removed index 1, so it should clamp to length-1 = 1
     // (now pointing to charlie, the new index 1)
     expect(saved.activeIndex).toBe(1);
@@ -1730,7 +1803,7 @@ describe("cmdRemove active account", () => {
 // ---------------------------------------------------------------------------
 
 describe("cmdStats", () => {
-  let output;
+  let output: ReturnType<typeof captureOutput>;
 
   beforeEach(() => {
     output = captureOutput();
@@ -1764,7 +1837,7 @@ describe("cmdStats", () => {
   }
 
   it("displays per-account usage statistics", async () => {
-    loadAccounts.mockResolvedValue(makeStatsStorage());
+    mockLoadAccounts.mockResolvedValue(makeStatsStorage());
     const code = await cmdStats();
     expect(code).toBe(0);
     const text = output.text();
@@ -1777,7 +1850,7 @@ describe("cmdStats", () => {
   });
 
   it("returns 1 when no accounts configured", async () => {
-    loadAccounts.mockResolvedValue(null);
+    mockLoadAccounts.mockResolvedValue(null);
     const code = await cmdStats();
     expect(code).toBe(1);
     const text = output.text();
@@ -1787,7 +1860,7 @@ describe("cmdStats", () => {
   it("handles accounts with no stats (defaults)", async () => {
     const storage = makeStorage();
     storage.accounts = [storage.accounts[0]]; // single account, no stats field
-    loadAccounts.mockResolvedValue(storage);
+    mockLoadAccounts.mockResolvedValue(storage);
     const code = await cmdStats();
     expect(code).toBe(0);
     const text = output.text();
@@ -1801,12 +1874,12 @@ describe("cmdStats", () => {
 // ---------------------------------------------------------------------------
 
 describe("cmdResetStats", () => {
-  let output;
+  let output: ReturnType<typeof captureOutput>;
 
   beforeEach(() => {
     output = captureOutput();
     vi.clearAllMocks();
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -1824,14 +1897,14 @@ describe("cmdResetStats", () => {
       cacheWriteTokens: 0,
       lastReset: 1000,
     };
-    loadAccounts.mockResolvedValue(storage);
+    mockLoadAccounts.mockResolvedValue(storage);
 
     const code = await cmdResetStats("all");
     expect(code).toBe(0);
     const text = output.text();
     expect(text).toContain("Reset usage statistics for all");
 
-    const saved = saveAccounts.mock.calls[0][0];
+    const saved = mockSaveAccounts.mock.calls[0][0];
     expect(saved.accounts[0].stats.requests).toBe(0);
     expect(saved.accounts[0].stats.inputTokens).toBe(0);
   });
@@ -1847,7 +1920,7 @@ describe("cmdResetStats", () => {
       cacheWriteTokens: 0,
       lastReset: 1000,
     };
-    loadAccounts.mockResolvedValue(storage);
+    mockLoadAccounts.mockResolvedValue(storage);
 
     const code = await cmdResetStats("1");
     expect(code).toBe(0);
@@ -1858,7 +1931,7 @@ describe("cmdResetStats", () => {
   it("returns 1 for invalid account number", async () => {
     const storage = makeStorage();
     storage.accounts = [storage.accounts[0]];
-    loadAccounts.mockResolvedValue(storage);
+    mockLoadAccounts.mockResolvedValue(storage);
 
     const code = await cmdResetStats("99");
     expect(code).toBe(1);
@@ -1875,19 +1948,19 @@ describe("cmdResetStats", () => {
       cacheWriteTokens: 0,
       lastReset: 1000,
     };
-    loadAccounts.mockResolvedValue(storage);
+    mockLoadAccounts.mockResolvedValue(storage);
 
     const code = await cmdResetStats();
     expect(code).toBe(0);
     const text = output.text();
     expect(text).toContain("Reset usage statistics for all");
 
-    const saved = saveAccounts.mock.calls[0][0];
+    const saved = mockSaveAccounts.mock.calls[0][0];
     expect(saved.accounts[0].stats.requests).toBe(0);
   });
 
   it("returns 1 when no accounts configured", async () => {
-    loadAccounts.mockResolvedValue(null);
+    mockLoadAccounts.mockResolvedValue(null);
     const code = await cmdResetStats("all");
     expect(code).toBe(1);
   });

@@ -2,15 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { authorize, exchange, refreshToken, revoke } from "./oauth.js";
 
 const mockFetch = vi.fn();
+const originalFetch = globalThis.fetch;
 
 describe("oauth headers", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    vi.stubGlobal("fetch", mockFetch);
+    globalThis.fetch = mockFetch as typeof fetch;
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
+    globalThis.fetch = originalFetch;
   });
 
   it("sends Claude Code user-agent on token exchange", async () => {
@@ -110,11 +111,11 @@ describe("oauth authorize options", () => {
 describe("oauth exchange timeout", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    vi.stubGlobal("fetch", mockFetch);
+    globalThis.fetch = mockFetch as typeof fetch;
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
+    globalThis.fetch = originalFetch;
   });
 
   it("sets 15s timeout on token exchange", async () => {

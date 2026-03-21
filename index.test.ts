@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Integration tests for the plugin lifecycle.
  *
@@ -7,7 +8,7 @@
  * We mock external dependencies (fetch, PKCE, readline, storage fs) but exercise
  * the real plugin code paths.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Mocks — must be set up before importing the module under test
@@ -22,15 +23,19 @@ vi.mock("node:readline/promises", () => ({
 }));
 
 // Mock storage — we control what's on "disk"
-vi.mock("./src/storage.js", async (importOriginal) => {
-  const original = await importOriginal();
-  return {
-    ...original,
-    loadAccounts: vi.fn().mockResolvedValue(null),
-    saveAccounts: vi.fn().mockResolvedValue(undefined),
-    clearAccounts: vi.fn().mockResolvedValue(undefined),
-  };
-});
+vi.mock("./src/storage.js", () => ({
+  createDefaultStats: (now?: number) => ({
+    requests: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    lastReset: now ?? Date.now(),
+  }),
+  loadAccounts: vi.fn().mockResolvedValue(null),
+  saveAccounts: vi.fn().mockResolvedValue(undefined),
+  clearAccounts: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock("./src/refresh-lock.js", () => ({
   acquireRefreshLock: vi.fn().mockResolvedValue({ acquired: true, lockPath: "/tmp/opencode-test.lock" }),
@@ -38,50 +43,98 @@ vi.mock("./src/refresh-lock.js", () => ({
 }));
 
 // Mock config — always return defaults
-vi.mock("./src/config.js", async (importOriginal) => {
-  const original = await importOriginal();
+vi.mock("./src/config.js", () => {
+  const DEFAULT_CONFIG = {
+    account_selection_strategy: "sticky",
+    failure_ttl_seconds: 3600,
+    debug: false,
+    signature_emulation: {
+      enabled: true,
+      fetch_claude_code_version_on_startup: true,
+      prompt_compaction: "minimal",
+    },
+    override_model_limits: {
+      enabled: false,
+      context: 1_000_000,
+      output: 0,
+    },
+    custom_betas: [],
+    health_score: {
+      initial: 70,
+      success_reward: 1,
+      rate_limit_penalty: -10,
+      failure_penalty: -20,
+      recovery_rate_per_hour: 2,
+      min_usable: 50,
+      max_score: 100,
+    },
+    token_bucket: {
+      max_tokens: 50,
+      regeneration_rate_per_minute: 6,
+      initial_tokens: 50,
+    },
+    toasts: {
+      quiet: false,
+      debounce_seconds: 30,
+    },
+    headers: {},
+    idle_refresh: {
+      enabled: true,
+      window_minutes: 60,
+      min_interval_minutes: 30,
+    },
+  };
+
+  const createBaseConfig = () => ({
+    ...DEFAULT_CONFIG,
+    account_selection_strategy: "sticky",
+    signature_emulation: {
+      ...DEFAULT_CONFIG.signature_emulation,
+      fetch_claude_code_version_on_startup: false,
+    },
+    override_model_limits: {
+      ...DEFAULT_CONFIG.override_model_limits,
+    },
+    custom_betas: [...DEFAULT_CONFIG.custom_betas],
+    health_score: { ...DEFAULT_CONFIG.health_score },
+    token_bucket: { ...DEFAULT_CONFIG.token_bucket },
+    toasts: { ...DEFAULT_CONFIG.toasts },
+    headers: { ...DEFAULT_CONFIG.headers },
+    idle_refresh: { ...DEFAULT_CONFIG.idle_refresh, enabled: false },
+  });
+
   return {
-    ...original,
-    loadConfig: vi.fn(() => ({
-      ...original.DEFAULT_CONFIG,
-      account_selection_strategy: "sticky",
-      signature_emulation: {
-        ...original.DEFAULT_CONFIG.signature_emulation,
-        fetch_claude_code_version_on_startup: false,
-      },
-      override_model_limits: {
-        ...original.DEFAULT_CONFIG.override_model_limits,
-      },
-      custom_betas: [...(original.DEFAULT_CONFIG.custom_betas || [])],
-      idle_refresh: { ...original.DEFAULT_CONFIG.idle_refresh, enabled: false },
-    })),
-    loadConfigFresh: vi.fn(() => ({
-      ...original.DEFAULT_CONFIG,
-      account_selection_strategy: "sticky",
-      signature_emulation: {
-        ...original.DEFAULT_CONFIG.signature_emulation,
-        fetch_claude_code_version_on_startup: false,
-      },
-      override_model_limits: {
-        ...original.DEFAULT_CONFIG.override_model_limits,
-      },
-      custom_betas: [...(original.DEFAULT_CONFIG.custom_betas || [])],
-      idle_refresh: { ...original.DEFAULT_CONFIG.idle_refresh, enabled: false },
-    })),
+    CLIENT_ID: "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
+    DEFAULT_CONFIG,
+    VALID_STRATEGIES: ["sticky", "round-robin", "hybrid"],
+    loadConfig: vi.fn(() => createBaseConfig()),
+    loadConfigFresh: vi.fn(() => createBaseConfig()),
     saveConfig: vi.fn(),
   };
 });
 
 // Mock global fetch for OAuth token exchange and API requests
 const mockFetch = vi.fn();
-vi.stubGlobal("fetch", mockFetch);
+const originalFetch = globalThis.fetch;
+globalThis.fetch = mockFetch as typeof fetch;
 
 import { DEFAULT_CONFIG, loadConfig, loadConfigFresh, saveConfig as saveRuntimeConfig } from "./src/config.js";
+import { AccountManager } from "./src/accounts.js";
 import { AnthropicAuthPlugin } from "./src/index.js";
 import { acquireRefreshLock, releaseRefreshLock } from "./src/refresh-lock.js";
 import { clearAccounts, loadAccounts, saveAccounts } from "./src/storage.js";
 
+const mockLoadConfig = loadConfig as Mock;
+const mockLoadConfigFresh = loadConfigFresh as Mock;
+const _mockSaveRuntimeConfig = saveRuntimeConfig as Mock;
+const _mockAcquireRefreshLock = acquireRefreshLock as Mock;
+const _mockReleaseRefreshLock = releaseRefreshLock as Mock;
+const _mockClearAccounts = clearAccounts as Mock;
+const mockLoadAccounts = loadAccounts as Mock;
+const mockSaveAccounts = saveAccounts as Mock;
+
 beforeEach(() => {
+  globalThis.fetch = mockFetch as typeof fetch;
   delete process.env.DISABLE_INTERLEAVED_THINKING;
   delete process.env.USE_API_CONTEXT_MANAGEMENT;
   delete process.env.TENGU_MARBLE_ANVIL;
@@ -105,6 +158,10 @@ beforeEach(() => {
   delete process.env.CLAUDE_CODE_DISABLE_1M_CONTEXT;
   delete process.env.OPENCODE_ANTHROPIC_INITIAL_ACCOUNT;
   process.env.OPENCODE_ANTHROPIC_SIGNATURE_USER_ID = "test-signature-user";
+});
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
 });
 
 // ---------------------------------------------------------------------------
@@ -204,8 +261,8 @@ function makeAccountsData(accountOverrides = [{}], extra = {}) {
  */
 async function setupFetchFn(client, accountOverrides = [{}], authOverrides = {}) {
   const data = makeAccountsData(accountOverrides);
-  loadAccounts.mockResolvedValue(data);
-  saveAccounts.mockResolvedValue(undefined);
+  mockLoadAccounts.mockResolvedValue(data);
+  mockSaveAccounts.mockResolvedValue(undefined);
 
   const plugin = await AnthropicAuthPlugin({ client });
   const getAuth = vi.fn().mockResolvedValue({
@@ -232,18 +289,29 @@ function mockTokenRefresh(token = "access-new", refresh = "refresh-new") {
   };
 }
 
+function getFetchHeaders(callIndex) {
+  const [input, init] = mockFetch.mock.calls[callIndex] ?? [];
+  if (init?.headers) {
+    return init.headers;
+  }
+  if (input instanceof Request) {
+    return input.headers;
+  }
+  return undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Plugin lifecycle: authorize → callback → loader ordering
 // ---------------------------------------------------------------------------
 
 describe("plugin lifecycle", () => {
-  let client;
+  let client: ReturnType<typeof makeClient>;
 
   beforeEach(() => {
     vi.resetAllMocks();
     client = makeClient();
-    loadAccounts.mockResolvedValue(null);
-    saveAccounts.mockResolvedValue(undefined);
+    mockLoadAccounts.mockResolvedValue(null);
+    mockSaveAccounts.mockResolvedValue(undefined);
   });
 
   it("authorize callback creates accounts file on first login (accountManager starts null)", async () => {
@@ -326,7 +394,7 @@ describe("plugin lifecycle", () => {
 
   it("second login adds to existing account pool", async () => {
     // First login already happened — accounts file exists
-    loadAccounts.mockResolvedValue(makeAccountsData([{ refreshToken: "first-refresh", lastUsed: 2000 }]));
+    mockLoadAccounts.mockResolvedValue(makeAccountsData([{ refreshToken: "first-refresh", lastUsed: 2000 }]));
 
     const plugin = await AnthropicAuthPlugin({ client });
 
@@ -340,7 +408,7 @@ describe("plugin lifecycle", () => {
     await plugin.auth.loader(getAuth, makeProvider());
 
     // Reset mock to track only the second login's save
-    saveAccounts.mockClear();
+    mockSaveAccounts.mockClear();
 
     // Now simulate second OAuth login
     // loadAccounts returns existing accounts — but accountManager is already loaded,
@@ -367,7 +435,7 @@ describe("plugin lifecycle", () => {
 
     // Should have saved with BOTH accounts
     expect(saveAccounts).toHaveBeenCalled();
-    const savedData = saveAccounts.mock.calls[saveAccounts.mock.calls.length - 1][0];
+    const savedData = mockSaveAccounts.mock.calls[mockSaveAccounts.mock.calls.length - 1][0];
     expect(savedData.accounts).toHaveLength(2);
     expect(savedData.accounts[0].refreshToken).toBe("first-refresh");
     expect(savedData.accounts[1].refreshToken).toBe("second-refresh");
@@ -391,8 +459,8 @@ describe("plugin lifecycle", () => {
 // ---------------------------------------------------------------------------
 
 describe("slash commands", () => {
-  let client;
-  let plugin;
+  let client: ReturnType<typeof makeClient>;
+  let plugin: Awaited<ReturnType<typeof AnthropicAuthPlugin>>;
 
   /**
    * Run /anthropic command hook and return the last session message.
@@ -417,8 +485,8 @@ describe("slash commands", () => {
   beforeEach(async () => {
     vi.resetAllMocks();
     client = makeClient();
-    loadAccounts.mockResolvedValue(null);
-    saveAccounts.mockResolvedValue(undefined);
+    mockLoadAccounts.mockResolvedValue(null);
+    mockSaveAccounts.mockResolvedValue(undefined);
     plugin = await AnthropicAuthPlugin({ client });
   });
 
@@ -440,13 +508,13 @@ describe("slash commands", () => {
   });
 
   it("routes usage alias to CLI list", async () => {
-    loadAccounts.mockResolvedValue(makeAccountsData([{ refreshToken: "refresh-1", enabled: true }]));
+    mockLoadAccounts.mockResolvedValue(makeAccountsData([{ refreshToken: "refresh-1", enabled: true }]));
     const text = await runAnthropic("usage");
     expect(text).toContain("Anthropic Multi-Account Status");
   });
 
   it("routes switch through CLI command surface", async () => {
-    loadAccounts.mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([
         { refreshToken: "refresh-1", enabled: true, email: "a@example.com" },
         { refreshToken: "refresh-2", enabled: true, email: "b@example.com" },
@@ -477,7 +545,7 @@ describe("slash commands", () => {
   });
 
   it("supports beta shortcut in remove flow", async () => {
-    loadConfigFresh.mockReturnValueOnce({
+    mockLoadConfigFresh.mockReturnValueOnce({
       ...DEFAULT_CONFIG,
       custom_betas: ["fast-mode-2026-02-01"],
     });
@@ -575,7 +643,7 @@ describe("slash commands", () => {
         rateLimitResetTimes: { anthropic: Date.now() + 60_000 },
       },
     ]);
-    loadAccounts.mockResolvedValue(stored);
+    mockLoadAccounts.mockResolvedValue(stored);
 
     let text = await runAnthropic("reauth 1");
     expect(text).toContain("Started reauth 1 flow");
@@ -604,7 +672,7 @@ describe("slash commands", () => {
       }),
     );
 
-    const saved = saveAccounts.mock.calls[saveAccounts.mock.calls.length - 1][0];
+    const saved = mockSaveAccounts.mock.calls[mockSaveAccounts.mock.calls.length - 1][0];
     expect(saved.accounts[0]).toEqual(
       expect.objectContaining({
         refreshToken: "fresh-refresh",
@@ -635,8 +703,8 @@ describe("slash commands", () => {
 // ---------------------------------------------------------------------------
 
 describe("fetch interceptor", () => {
-  let client;
-  let fetchFn;
+  let client: ReturnType<typeof makeClient>;
+  let fetchFn: typeof fetch;
 
   beforeEach(async () => {
     vi.resetAllMocks();
@@ -666,8 +734,8 @@ describe("fetch interceptor", () => {
     delete process.env.CLAUDE_CODE_ENTRYPOINT;
 
     client = makeClient();
-    loadAccounts.mockResolvedValue(null);
-    saveAccounts.mockResolvedValue(undefined);
+    mockLoadAccounts.mockResolvedValue(null);
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -858,7 +926,7 @@ describe("fetch interceptor", () => {
   it("preserves verbose system instructions when prompt compaction is off", async () => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const configModule = await import("./src/config.js");
-    loadConfig.mockReturnValueOnce({
+    mockLoadConfig.mockReturnValueOnce({
       ...loadConfig(),
       signature_emulation: {
         ...loadConfig().signature_emulation,
@@ -1166,8 +1234,8 @@ describe("file-id account pinning", () => {
         expires: Date.now() + 3600_000,
       },
     ]);
-    loadAccounts.mockResolvedValue(data);
-    saveAccounts.mockResolvedValue(undefined);
+    mockLoadAccounts.mockResolvedValue(data);
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
 
@@ -1266,8 +1334,8 @@ describe("file-id account pinning", () => {
         expires: Date.now() + 3600_000,
       },
     ]);
-    loadAccounts.mockResolvedValue(data);
-    saveAccounts.mockResolvedValue(undefined);
+    mockLoadAccounts.mockResolvedValue(data);
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -1338,8 +1406,8 @@ describe("file-id account pinning", () => {
         expires: Date.now() + 3600_000,
       },
     ]);
-    loadAccounts.mockResolvedValue(data);
-    saveAccounts.mockResolvedValue(undefined);
+    mockLoadAccounts.mockResolvedValue(data);
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -1439,7 +1507,7 @@ describe("system prompt transform", () => {
   it("keeps legacy prefix behavior when emulation is disabled", async () => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const configModule = await import("./src/config.js");
-    loadConfig.mockReturnValueOnce({
+    mockLoadConfig.mockReturnValueOnce({
       ...loadConfig(),
       signature_emulation: {
         enabled: false,
@@ -1464,18 +1532,18 @@ describe("system prompt transform", () => {
 // ---------------------------------------------------------------------------
 
 describe("fetch interceptor — token refresh", () => {
-  let client;
+  let client: ReturnType<typeof makeClient>;
 
   beforeEach(() => {
     vi.resetAllMocks();
     client = makeClient();
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
   });
 
   it("refreshes expired account token before making API request", async () => {
     // Set up one account with an EXPIRED token
-    loadAccounts.mockResolvedValue(makeAccountsData());
-    saveAccounts.mockResolvedValue(undefined);
+    mockLoadAccounts.mockResolvedValue(makeAccountsData());
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -1522,8 +1590,8 @@ describe("fetch interceptor — token refresh", () => {
   });
 
   it("continues request flow when auth.json persistence fails after successful refresh", async () => {
-    loadAccounts.mockResolvedValue(makeAccountsData());
-    saveAccounts.mockResolvedValue(undefined);
+    mockLoadAccounts.mockResolvedValue(makeAccountsData());
+    mockSaveAccounts.mockResolvedValue(undefined);
     client.auth.set.mockRejectedValueOnce(new Error("disk temporarily unavailable"));
 
     const plugin = await AnthropicAuthPlugin({ client });
@@ -1550,8 +1618,8 @@ describe("fetch interceptor — token refresh", () => {
   });
 
   it("coalesces concurrent refreshes for the same account", async () => {
-    loadAccounts.mockResolvedValue(makeAccountsData());
-    saveAccounts.mockResolvedValue(undefined);
+    mockLoadAccounts.mockResolvedValue(makeAccountsData());
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -1562,14 +1630,14 @@ describe("fetch interceptor — token refresh", () => {
     });
     const result = await plugin.auth.loader(getAuth, makeProvider());
 
-    let resolveRefresh;
+    let resolveRefresh: () => void;
     const refreshPromise = new Promise((resolve) => {
       resolveRefresh = resolve;
     });
 
     let refreshCallCount = 0;
     /** @type {() => void} */
-    let markRefreshInFlight;
+    let markRefreshInFlight: () => void;
     const refreshInFlight = new Promise((resolve) => {
       markRefreshInFlight = resolve;
     });
@@ -1619,7 +1687,7 @@ describe("fetch interceptor — token refresh", () => {
     const rotatedAccess = "access-from-other-process";
     const accountId = "stable-id-1";
 
-    loadAccounts.mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([
         {
           id: accountId,
@@ -1630,9 +1698,9 @@ describe("fetch interceptor — token refresh", () => {
         },
       ]),
     );
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
 
-    acquireRefreshLock.mockResolvedValue({ acquired: false, lockPath: null });
+    mockAcquireRefreshLock.mockResolvedValue({ acquired: false, lockPath: null });
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -1683,7 +1751,7 @@ describe("fetch interceptor — token refresh", () => {
   });
 
   it("refreshes near-expiry idle account in background while serving active account", async () => {
-    loadConfig.mockReturnValue({
+    mockLoadConfig.mockReturnValue({
       ...DEFAULT_CONFIG,
       signature_emulation: {
         ...DEFAULT_CONFIG.signature_emulation,
@@ -1693,7 +1761,7 @@ describe("fetch interceptor — token refresh", () => {
       idle_refresh: { ...DEFAULT_CONFIG.idle_refresh, enabled: true },
     });
 
-    loadAccounts.mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([
         { access: "access-1", expires: Date.now() + 2 * 3600_000 },
         {
@@ -1703,7 +1771,7 @@ describe("fetch interceptor — token refresh", () => {
         },
       ]),
     );
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -1739,7 +1807,7 @@ describe("fetch interceptor — token refresh", () => {
   });
 
   it("does not disable idle account on background refresh failure", async () => {
-    loadConfig.mockReturnValue({
+    mockLoadConfig.mockReturnValue({
       ...DEFAULT_CONFIG,
       signature_emulation: {
         ...DEFAULT_CONFIG.signature_emulation,
@@ -1749,7 +1817,7 @@ describe("fetch interceptor — token refresh", () => {
       idle_refresh: { ...DEFAULT_CONFIG.idle_refresh, enabled: true },
     });
 
-    loadAccounts.mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([
         { access: "access-1", expires: Date.now() + 2 * 3600_000 },
         {
@@ -1759,7 +1827,7 @@ describe("fetch interceptor — token refresh", () => {
         },
       ]),
     );
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -1800,13 +1868,13 @@ describe("fetch interceptor — token refresh", () => {
     );
     expect(disabledToasts).toHaveLength(0);
 
-    for (const [storage] of saveAccounts.mock.calls) {
+    for (const [storage] of mockSaveAccounts.mock.calls) {
       expect(storage.accounts[1]?.enabled).not.toBe(false);
     }
   });
 
   it("foreground refresh does not inherit an in-flight idle refresh failure", async () => {
-    loadConfig.mockReturnValue({
+    mockLoadConfig.mockReturnValue({
       ...DEFAULT_CONFIG,
       signature_emulation: {
         ...DEFAULT_CONFIG.signature_emulation,
@@ -1816,7 +1884,7 @@ describe("fetch interceptor — token refresh", () => {
       idle_refresh: { ...DEFAULT_CONFIG.idle_refresh, enabled: true },
     });
 
-    loadAccounts.mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([
         { access: "access-1", expires: Date.now() + 2 * 3600_000 },
         {
@@ -1826,7 +1894,7 @@ describe("fetch interceptor — token refresh", () => {
         },
       ]),
     );
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -1838,7 +1906,7 @@ describe("fetch interceptor — token refresh", () => {
     const result = await plugin.auth.loader(getAuth, makeProvider());
 
     /** @type {(error: Error) => void} */
-    let rejectIdleRefresh;
+    let rejectIdleRefresh: (error: Error) => void;
     const idleRefreshPromise = new Promise((_, reject) => {
       rejectIdleRefresh = reject;
     });
@@ -1886,10 +1954,10 @@ describe("fetch interceptor — token refresh", () => {
 
   it("disables account on 401 token refresh failure and retries with next account", async () => {
     // Two accounts — first will fail refresh, second will succeed
-    loadAccounts.mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([{ refreshToken: "revoked-refresh" }, { refreshToken: "good-refresh" }]),
     );
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -1922,10 +1990,10 @@ describe("fetch interceptor — token refresh", () => {
   });
 
   it("disables account on 400 invalid_grant refresh failure and retries with next account", async () => {
-    loadAccounts.mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([{ refreshToken: "bad-refresh" }, { refreshToken: "good-refresh" }]),
     );
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -1957,10 +2025,10 @@ describe("fetch interceptor — token refresh", () => {
   });
 
   it("fails over to next account on transient refresh failure", async () => {
-    loadAccounts.mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([{ refreshToken: "transient-refresh" }, { refreshToken: "good-refresh" }]),
     );
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -1999,8 +2067,8 @@ describe("fetch interceptor — token refresh", () => {
     const accountId = "stable-id-1";
 
     // First loadAccounts call (plugin init) — stale token
-    loadAccounts.mockResolvedValue(makeAccountsData([{ id: accountId, refreshToken: staleToken }]));
-    saveAccounts.mockResolvedValue(undefined);
+    mockLoadAccounts.mockResolvedValue(makeAccountsData([{ id: accountId, refreshToken: staleToken }]));
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -2012,7 +2080,7 @@ describe("fetch interceptor — token refresh", () => {
     const result = await plugin.auth.loader(getAuth, makeProvider());
 
     // Subsequent loadAccounts calls (readDiskRefreshToken) — return the rotated token
-    loadAccounts.mockResolvedValue(makeAccountsData([{ id: accountId, refreshToken: rotatedToken }]));
+    mockLoadAccounts.mockResolvedValue(makeAccountsData([{ id: accountId, refreshToken: rotatedToken }]));
 
     // Refresh with rotated token succeeds
     mockFetch.mockResolvedValueOnce(mockTokenRefresh("new-access", "new-refresh"));
@@ -2043,8 +2111,8 @@ describe("fetch interceptor — token refresh", () => {
     const accountId = "stable-id-1";
 
     // Default: return old token for all loadAccounts calls (init, saveToDisk merge, Option A)
-    loadAccounts.mockResolvedValue(makeAccountsData([{ id: accountId, refreshToken: oldToken }]));
-    saveAccounts.mockResolvedValue(undefined);
+    mockLoadAccounts.mockResolvedValue(makeAccountsData([{ id: accountId, refreshToken: oldToken }]));
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -2102,8 +2170,8 @@ describe("fetch interceptor — token refresh", () => {
     const accountId = "stable-id-1";
     const oldToken = "pre-rotation-refresh";
 
-    loadAccounts.mockResolvedValue(makeAccountsData([{ id: accountId, refreshToken: oldToken }]));
-    saveAccounts.mockResolvedValue(undefined);
+    mockLoadAccounts.mockResolvedValue(makeAccountsData([{ id: accountId, refreshToken: oldToken }]));
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -2115,7 +2183,7 @@ describe("fetch interceptor — token refresh", () => {
     const result = await plugin.auth.loader(getAuth, makeProvider());
 
     // Disk reads during request: syncActiveIndexFromDisk
-    loadAccounts.mockResolvedValue(makeAccountsData([{ id: accountId, refreshToken: oldToken }]));
+    mockLoadAccounts.mockResolvedValue(makeAccountsData([{ id: accountId, refreshToken: oldToken }]));
 
     // Token refresh succeeds — returns a rotated refresh token
     mockFetch.mockResolvedValueOnce(mockTokenRefresh("new-access", "rotated-refresh"));
@@ -2147,7 +2215,7 @@ describe("fetch interceptor — token refresh", () => {
     expect(saveIdx).toBeLessThan(unlockIdx);
 
     // Verify the saved data contains the rotated token
-    const savedData = saveAccounts.mock.calls.find(
+    const savedData = mockSaveAccounts.mock.calls.find(
       (call) => call[0]?.accounts?.[0]?.refreshToken === "rotated-refresh",
     );
     expect(savedData).toBeTruthy();
@@ -2157,8 +2225,8 @@ describe("fetch interceptor — token refresh", () => {
     const oldToken = "doomed-refresh";
     const accountId = "stable-id-1";
 
-    loadAccounts.mockResolvedValue(makeAccountsData([{ id: accountId, refreshToken: oldToken }]));
-    saveAccounts.mockResolvedValue(undefined);
+    mockLoadAccounts.mockResolvedValue(makeAccountsData([{ id: accountId, refreshToken: oldToken }]));
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -2207,6 +2275,100 @@ describe("fetch interceptor — token refresh", () => {
     expect(firstRefreshBody.refresh_token).toBe(oldToken);
     expect(secondRefreshBody.refresh_token).toBe("also-bad-token");
   });
+
+  it("triggers refresh when token expires within 5-minute buffer (4 min remaining)", async () => {
+    mockLoadAccounts.mockResolvedValue(makeAccountsData());
+    mockSaveAccounts.mockResolvedValue(undefined);
+
+    const plugin = await AnthropicAuthPlugin({ client });
+    const getAuth = vi.fn().mockResolvedValue({
+      type: "oauth",
+      refresh: "refresh-1",
+      access: "access-1",
+      expires: Date.now() + 4 * 60 * 1000, // 4 minutes — within 5-min buffer
+    });
+    const result = await plugin.auth.loader(getAuth, makeProvider());
+
+    // Token refresh call
+    mockFetch.mockResolvedValueOnce(mockTokenRefresh("fresh-access", "refresh-1-rotated"));
+    // Actual API call
+    mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
+
+    const response = await result.fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      body: JSON.stringify({ messages: [] }),
+    });
+
+    expect(response.status).toBe(200);
+    // 2 calls: token refresh + API request
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+
+    // First call should be the token refresh
+    const [refreshUrl] = mockFetch.mock.calls[0];
+    expect(String(refreshUrl)).toBe("https://platform.claude.com/v1/oauth/token");
+  });
+
+  it("does NOT trigger refresh when token expires outside 5-minute buffer (6 min remaining)", async () => {
+    mockLoadAccounts.mockResolvedValue(makeAccountsData());
+    mockSaveAccounts.mockResolvedValue(undefined);
+
+    const plugin = await AnthropicAuthPlugin({ client });
+    const getAuth = vi.fn().mockResolvedValue({
+      type: "oauth",
+      refresh: "refresh-1",
+      access: "access-1",
+      expires: Date.now() + 6 * 60 * 1000, // 6 minutes — outside 5-min buffer
+    });
+    const result = await plugin.auth.loader(getAuth, makeProvider());
+
+    // No token refresh — only API call
+    mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
+
+    const response = await result.fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      body: JSON.stringify({ messages: [] }),
+    });
+
+    expect(response.status).toBe(200);
+    // 1 call: API request only (no refresh needed)
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    // The single call should be the API request, not a token refresh
+    const [url] = mockFetch.mock.calls[0];
+    expect(String(url)).toBe("https://api.anthropic.com/v1/messages?beta=true");
+  });
+
+  it("triggers refresh when token is already expired", async () => {
+    mockLoadAccounts.mockResolvedValue(makeAccountsData());
+    mockSaveAccounts.mockResolvedValue(undefined);
+
+    const plugin = await AnthropicAuthPlugin({ client });
+    const getAuth = vi.fn().mockResolvedValue({
+      type: "oauth",
+      refresh: "refresh-1",
+      access: "expired-access",
+      expires: Date.now() - 1000, // already expired
+    });
+    const result = await plugin.auth.loader(getAuth, makeProvider());
+
+    // Token refresh call
+    mockFetch.mockResolvedValueOnce(mockTokenRefresh("fresh-access", "refresh-1-rotated"));
+    // Actual API call
+    mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
+
+    const response = await result.fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      body: JSON.stringify({ messages: [] }),
+    });
+
+    expect(response.status).toBe(200);
+    // 2 calls: token refresh + API request
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+
+    // First call should be the token refresh
+    const [refreshUrl] = mockFetch.mock.calls[0];
+    expect(String(refreshUrl)).toBe("https://platform.claude.com/v1/oauth/token");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -2214,16 +2376,16 @@ describe("fetch interceptor — token refresh", () => {
 // ---------------------------------------------------------------------------
 
 describe("fetch interceptor — edge conditions", () => {
-  let client;
+  let client: ReturnType<typeof makeClient>;
 
   beforeEach(() => {
     vi.resetAllMocks();
     client = makeClient();
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
   });
 
   it("fails fast when all accounts are disabled", async () => {
-    loadAccounts.mockResolvedValue(makeAccountsData([{ refreshToken: "disabled-refresh", enabled: false }]));
+    mockLoadAccounts.mockResolvedValue(makeAccountsData([{ refreshToken: "disabled-refresh", enabled: false }]));
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -2250,17 +2412,17 @@ describe("fetch interceptor — edge conditions", () => {
 // ---------------------------------------------------------------------------
 
 describe("fetch interceptor — account exhaustion", () => {
-  let client;
+  let client: ReturnType<typeof makeClient>;
 
   beforeEach(() => {
     vi.resetAllMocks();
     client = makeClient();
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
   });
 
   it("throws when single account fails token refresh (transient skip, no more accounts)", async () => {
     // Single account that fails token refresh with a transient error
-    loadAccounts.mockResolvedValue(makeAccountsData([{ refreshToken: "bad-refresh" }]));
+    mockLoadAccounts.mockResolvedValue(makeAccountsData([{ refreshToken: "bad-refresh" }]));
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -2313,36 +2475,166 @@ describe("fetch interceptor — account exhaustion", () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
-  it.each([
-    {
-      status: 529,
-      errorType: "overloaded_error",
-      errorMsg: "Server is overloaded",
-    },
-    {
-      status: 503,
-      errorType: "service_unavailable",
-      errorMsg: "temporarily unavailable",
-    },
-    {
-      status: 500,
-      errorType: "internal_error",
-      errorMsg: "internal server error",
-    },
-  ])("returns $status directly without switching accounts", async ({ status, errorType, errorMsg }) => {
-    const fetchFn = await setupFetchFn(client, [{}, {}]);
+  it("retries a service-wide 529 once and succeeds on the same account", async () => {
+    vi.useFakeTimers();
+    const markRateLimitedSpy = vi.spyOn(AccountManager.prototype, "markRateLimited");
+    const markFailureSpy = vi.spyOn(AccountManager.prototype, "markFailure");
 
-    mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ error: { type: errorType, message: errorMsg } }), { status }),
-    );
+    try {
+      const fetchFn = await setupFetchFn(
+        client,
+        [
+          { access: "access-1", expires: Date.now() + 3600_000 },
+          { access: "access-2", expires: Date.now() + 3600_000 },
+        ],
+        { access: "access-1", expires: Date.now() + 3600_000 },
+      );
 
-    const response = await fetchFn("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      body: JSON.stringify({ messages: [] }),
-    });
+      mockFetch
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ error: { type: "overloaded_error", message: "Server is overloaded" } }), {
+            status: 529,
+            headers: { "retry-after-ms": "1" },
+          }),
+        )
+        .mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
 
-    expect(response.status).toBe(status);
-    expect(mockFetch).toHaveBeenCalledTimes(1);
+      const responsePromise = fetchFn("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        body: JSON.stringify({ messages: [] }),
+      });
+
+      await vi.advanceTimersByTimeAsync(5);
+      const response = await responsePromise;
+
+      expect(response.status).toBe(200);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(getFetchHeaders(0)?.get("authorization")).toBe("Bearer access-1");
+      expect(getFetchHeaders(1)?.get("authorization")).toBe("Bearer access-1");
+      expect(getFetchHeaders(0)?.get("x-stainless-retry-count")).toBe("0");
+      expect(getFetchHeaders(1)?.get("x-stainless-retry-count")).toBe("1");
+      expect(markRateLimitedSpy).not.toHaveBeenCalled();
+      expect(markFailureSpy).not.toHaveBeenCalled();
+    } finally {
+      markRateLimitedSpy.mockRestore();
+      markFailureSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("retries a service-wide 529 twice and succeeds on the same account", async () => {
+    vi.useFakeTimers();
+    const markRateLimitedSpy = vi.spyOn(AccountManager.prototype, "markRateLimited");
+    const markFailureSpy = vi.spyOn(AccountManager.prototype, "markFailure");
+
+    try {
+      const fetchFn = await setupFetchFn(
+        client,
+        [
+          { access: "access-1", expires: Date.now() + 3600_000 },
+          { access: "access-2", expires: Date.now() + 3600_000 },
+        ],
+        { access: "access-1", expires: Date.now() + 3600_000 },
+      );
+
+      mockFetch
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ error: { type: "overloaded_error", message: "Server is overloaded" } }), {
+            status: 529,
+            headers: { "retry-after-ms": "1" },
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ error: { type: "overloaded_error", message: "Still overloaded" } }), {
+            status: 529,
+            headers: { "retry-after-ms": "1" },
+          }),
+        )
+        .mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
+
+      const responsePromise = fetchFn("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        body: JSON.stringify({ messages: [] }),
+      });
+
+      await vi.advanceTimersByTimeAsync(10);
+      const response = await responsePromise;
+
+      expect(response.status).toBe(200);
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+      expect(getFetchHeaders(0)?.get("authorization")).toBe("Bearer access-1");
+      expect(getFetchHeaders(1)?.get("authorization")).toBe("Bearer access-1");
+      expect(getFetchHeaders(2)?.get("authorization")).toBe("Bearer access-1");
+      expect(getFetchHeaders(0)?.get("x-stainless-retry-count")).toBe("0");
+      expect(getFetchHeaders(1)?.get("x-stainless-retry-count")).toBe("1");
+      expect(getFetchHeaders(2)?.get("x-stainless-retry-count")).toBe("2");
+      expect(markRateLimitedSpy).not.toHaveBeenCalled();
+      expect(markFailureSpy).not.toHaveBeenCalled();
+    } finally {
+      markRateLimitedSpy.mockRestore();
+      markFailureSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("returns the final 529 after exhausting same-account retries", async () => {
+    vi.useFakeTimers();
+    const markRateLimitedSpy = vi.spyOn(AccountManager.prototype, "markRateLimited");
+    const markFailureSpy = vi.spyOn(AccountManager.prototype, "markFailure");
+
+    try {
+      const fetchFn = await setupFetchFn(
+        client,
+        [
+          { access: "access-1", expires: Date.now() + 3600_000 },
+          { access: "access-2", expires: Date.now() + 3600_000 },
+        ],
+        { access: "access-1", expires: Date.now() + 3600_000 },
+      );
+
+      mockFetch
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ error: { type: "overloaded_error", message: "Server is overloaded" } }), {
+            status: 529,
+            headers: { "retry-after-ms": "1" },
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ error: { type: "overloaded_error", message: "Still overloaded" } }), {
+            status: 529,
+            headers: { "retry-after-ms": "1" },
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ error: { type: "overloaded_error", message: "Still overloaded" } }), {
+            status: 529,
+            headers: { "retry-after-ms": "1" },
+          }),
+        );
+
+      const responsePromise = fetchFn("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        body: JSON.stringify({ messages: [] }),
+      });
+
+      await vi.advanceTimersByTimeAsync(10);
+      const response = await responsePromise;
+
+      expect(response.status).toBe(529);
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+      expect(getFetchHeaders(0)?.get("authorization")).toBe("Bearer access-1");
+      expect(getFetchHeaders(1)?.get("authorization")).toBe("Bearer access-1");
+      expect(getFetchHeaders(2)?.get("authorization")).toBe("Bearer access-1");
+      expect(getFetchHeaders(0)?.get("x-stainless-retry-count")).toBe("0");
+      expect(getFetchHeaders(1)?.get("x-stainless-retry-count")).toBe("1");
+      expect(getFetchHeaders(2)?.get("x-stainless-retry-count")).toBe("2");
+      expect(markRateLimitedSpy).not.toHaveBeenCalled();
+      expect(markFailureSpy).not.toHaveBeenCalled();
+    } finally {
+      markRateLimitedSpy.mockRestore();
+      markFailureSpy.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   it("handles 400 account-specific error (billing) by switching accounts", async () => {
@@ -2442,8 +2734,10 @@ describe("fetch interceptor — account exhaustion", () => {
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
 
     try {
-      loadAccounts.mockResolvedValue(makeAccountsData([{ access: "stale-access", expires: Date.now() + 3600_000 }]));
-      saveAccounts.mockResolvedValue(undefined);
+      mockLoadAccounts.mockResolvedValue(
+        makeAccountsData([{ access: "stale-access", expires: Date.now() + 3600_000 }]),
+      );
+      mockSaveAccounts.mockResolvedValue(undefined);
 
       const plugin = await AnthropicAuthPlugin({ client });
       const getAuth = vi.fn().mockResolvedValue({
@@ -2496,13 +2790,13 @@ describe("fetch interceptor — account exhaustion", () => {
   });
 
   it("tries next account when fetch throws a network error", async () => {
-    loadAccounts.mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([
         { access: "access-1", expires: Date.now() + 3600_000 },
         { access: "access-2", expires: Date.now() + 3600_000 },
       ]),
     );
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -2528,14 +2822,14 @@ describe("fetch interceptor — account exhaustion", () => {
   });
 
   it("handles mixed account-specific failures across three accounts", async () => {
-    loadAccounts.mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([
         { access: "access-1", expires: Date.now() + 3600_000 },
         { access: "access-2", expires: Date.now() + 3600_000 },
         { access: "access-3", expires: Date.now() + 3600_000 },
       ]),
     );
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -2581,14 +2875,14 @@ describe("fetch interceptor — account exhaustion", () => {
   });
 
   it("debounces rapid account-switch warning toasts", async () => {
-    loadAccounts.mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([
         { access: "access-1", expires: Date.now() + 3600_000 },
         { access: "access-2", expires: Date.now() + 3600_000 },
         { access: "access-3", expires: Date.now() + 3600_000 },
       ]),
     );
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -2641,13 +2935,13 @@ describe("fetch interceptor — account exhaustion", () => {
 // ---------------------------------------------------------------------------
 
 describe("OAuth exchange failure", () => {
-  let client;
+  let client: ReturnType<typeof makeClient>;
 
   beforeEach(() => {
     vi.resetAllMocks();
     client = makeClient();
-    loadAccounts.mockResolvedValue(null);
-    saveAccounts.mockResolvedValue(undefined);
+    mockLoadAccounts.mockResolvedValue(null);
+    mockSaveAccounts.mockResolvedValue(undefined);
   });
 
   it("propagates exchange failure without saving accounts", async () => {
@@ -2679,12 +2973,12 @@ describe("OAuth exchange failure", () => {
 // ---------------------------------------------------------------------------
 
 describe("auth menu actions", () => {
-  let client;
+  let client: ReturnType<typeof makeClient>;
 
   beforeEach(() => {
     vi.resetAllMocks();
     client = makeClient();
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
   });
 
   /**
@@ -2692,7 +2986,7 @@ describe("auth menu actions", () => {
    * then configure readline to return a specific menu choice.
    */
   async function setupWithMenuChoice(menuChoice) {
-    loadAccounts.mockResolvedValue({
+    mockLoadAccounts.mockResolvedValue({
       version: 1,
       accounts: [
         {
@@ -2727,7 +3021,7 @@ describe("auth menu actions", () => {
     });
 
     // Reset saveAccounts tracking after loader's save
-    saveAccounts.mockClear();
+    mockSaveAccounts.mockClear();
 
     return plugin;
   }
@@ -2779,7 +3073,7 @@ describe("auth menu actions", () => {
 
   it("manage action saves and returns about:blank", async () => {
     // For manage, readline returns "m" for menu, then "b" for back in manage submenu
-    loadAccounts.mockResolvedValue({
+    mockLoadAccounts.mockResolvedValue({
       version: 1,
       accounts: [
         {
@@ -2818,7 +3112,7 @@ describe("auth menu actions", () => {
       close: vi.fn(),
     });
 
-    saveAccounts.mockClear();
+    mockSaveAccounts.mockClear();
 
     const method = plugin.auth.methods[0];
     const authResult = await method.authorize();
@@ -2840,8 +3134,8 @@ describe("auth menu actions", () => {
 // ---------------------------------------------------------------------------
 
 describe("header handling", () => {
-  let client;
-  let fetchFn;
+  let client: ReturnType<typeof makeClient>;
+  let fetchFn: typeof fetch;
 
   beforeEach(async () => {
     vi.resetAllMocks();
@@ -2853,8 +3147,8 @@ describe("header handling", () => {
     delete process.env.ANTHROPIC_BETAS;
 
     client = makeClient();
-    loadAccounts.mockResolvedValue(null);
-    saveAccounts.mockResolvedValue(undefined);
+    mockLoadAccounts.mockResolvedValue(null);
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -3138,13 +3432,13 @@ describe("header handling", () => {
 
   it("excludes prompt-caching-scope beta in round-robin strategy", async () => {
     // Override config with round-robin strategy for a fresh plugin
-    loadConfig.mockReturnValueOnce({
+    mockLoadConfig.mockReturnValueOnce({
       ...loadConfig(),
       account_selection_strategy: "round-robin",
     });
 
     const rrClient = makeClient();
-    loadAccounts.mockResolvedValue(null);
+    mockLoadAccounts.mockResolvedValue(null);
 
     const plugin = await AnthropicAuthPlugin({ client: rrClient });
     const result = await plugin.auth.loader(
@@ -3261,7 +3555,7 @@ describe("header handling", () => {
     expect(parsed.system[1]).toEqual({
       type: "text",
       text: "You are Claude Code, Anthropic's official CLI for Claude.",
-      cache_control: { type: "ephemeral" },
+      cache_control: { type: "ephemeral", ttl: "1h" },
     });
     expect(parsed.system[2].text).toBe("Use Claude Code defaults");
   });
@@ -3314,7 +3608,7 @@ describe("header handling", () => {
     expect(parsed.system[0]).toEqual({
       type: "text",
       text: "You are Claude Code, Anthropic's official CLI for Claude.",
-      cache_control: { type: "ephemeral" },
+      cache_control: { type: "ephemeral", ttl: "1h" },
     });
     expect(parsed.system.some((item) => item.text.startsWith("x-anthropic-billing-header:"))).toBe(false);
   });
@@ -3562,8 +3856,8 @@ describe("OPENCODE_ANTHROPIC_INITIAL_ACCOUNT", () => {
         expires: Date.now() + 3600_000,
       },
     ]);
-    loadAccounts.mockResolvedValue(data);
-    saveAccounts.mockResolvedValue(undefined);
+    mockLoadAccounts.mockResolvedValue(data);
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -3605,8 +3899,8 @@ describe("OPENCODE_ANTHROPIC_INITIAL_ACCOUNT", () => {
         expires: Date.now() + 3600_000,
       },
     ]);
-    loadAccounts.mockResolvedValue(data);
-    saveAccounts.mockResolvedValue(undefined);
+    mockLoadAccounts.mockResolvedValue(data);
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -3633,7 +3927,7 @@ describe("OPENCODE_ANTHROPIC_INITIAL_ACCOUNT", () => {
     process.env.OPENCODE_ANTHROPIC_SIGNATURE_USER_ID = "test-signature-user";
 
     // Config says round-robin, but pinning should override to sticky
-    loadConfig.mockReturnValueOnce({
+    mockLoadConfig.mockReturnValueOnce({
       ...loadConfig(),
       account_selection_strategy: "round-robin",
     });
@@ -3653,8 +3947,8 @@ describe("OPENCODE_ANTHROPIC_INITIAL_ACCOUNT", () => {
         expires: Date.now() + 3600_000,
       },
     ]);
-    loadAccounts.mockResolvedValue(data);
-    saveAccounts.mockResolvedValue(undefined);
+    mockLoadAccounts.mockResolvedValue(data);
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -3698,8 +3992,8 @@ describe("OPENCODE_ANTHROPIC_INITIAL_ACCOUNT", () => {
         expires: Date.now() + 3600_000,
       },
     ]);
-    loadAccounts.mockResolvedValue(data);
-    saveAccounts.mockResolvedValue(undefined);
+    mockLoadAccounts.mockResolvedValue(data);
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -3732,8 +4026,10 @@ describe("markSuccess wiring", () => {
     const client = makeClient();
 
     // Account with prior failures
-    loadAccounts.mockResolvedValue(makeAccountsData([{ consecutiveFailures: 3, lastFailureTime: Date.now() - 5000 }]));
-    saveAccounts.mockResolvedValue(undefined);
+    mockLoadAccounts.mockResolvedValue(
+      makeAccountsData([{ consecutiveFailures: 3, lastFailureTime: Date.now() - 5000 }]),
+    );
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -3808,7 +4104,7 @@ describe("markSuccess wiring", () => {
       await vi.advanceTimersByTimeAsync(1500);
 
       // Verify usage was recorded: the stats should reflect the message_delta usage
-      const saveCalls = saveAccounts.mock.calls;
+      const saveCalls = mockSaveAccounts.mock.calls;
       expect(saveCalls.length).toBeGreaterThan(0);
       const lastSave = saveCalls[saveCalls.length - 1][0];
       const acc = lastSave.accounts[0];
@@ -3824,13 +4120,13 @@ describe("markSuccess wiring", () => {
     vi.resetAllMocks();
     const client = makeClient();
 
-    loadAccounts.mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([
         { access: "access-1", expires: Date.now() + 3600_000 },
         { access: "access-2", expires: Date.now() + 3600_000 },
       ]),
     );
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -3876,13 +4172,13 @@ describe("markSuccess wiring", () => {
     vi.resetAllMocks();
     const client = makeClient();
 
-    loadAccounts.mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([
         { access: "access-1", expires: Date.now() + 3600_000 },
         { access: "access-2", expires: Date.now() + 3600_000 },
       ]),
     );
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -3933,13 +4229,13 @@ describe("markSuccess wiring", () => {
     vi.resetAllMocks();
     const client = makeClient();
 
-    loadAccounts.mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([
         { access: "access-1", expires: Date.now() + 3600_000 },
         { access: "access-2", expires: Date.now() + 3600_000 },
       ]),
     );
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -3985,13 +4281,13 @@ describe("markSuccess wiring", () => {
     vi.resetAllMocks();
     const client = makeClient();
 
-    loadAccounts.mockResolvedValue(
+    mockLoadAccounts.mockResolvedValue(
       makeAccountsData([
         { access: "access-1", expires: Date.now() + 3600_000 },
         { access: "access-2", expires: Date.now() + 3600_000 },
       ]),
     );
-    saveAccounts.mockResolvedValue(undefined);
+    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -4043,8 +4339,10 @@ describe("markSuccess wiring", () => {
       vi.resetAllMocks();
       const client = makeClient();
 
-      loadAccounts.mockResolvedValue(makeAccountsData([{ access: "stale-access", expires: Date.now() + 3600_000 }]));
-      saveAccounts.mockResolvedValue(undefined);
+      mockLoadAccounts.mockResolvedValue(
+        makeAccountsData([{ access: "stale-access", expires: Date.now() + 3600_000 }]),
+      );
+      mockSaveAccounts.mockResolvedValue(undefined);
 
       const plugin = await AnthropicAuthPlugin({ client });
       const getAuth = vi.fn().mockResolvedValue({
@@ -4106,8 +4404,8 @@ describe("markSuccess wiring", () => {
       vi.resetAllMocks();
       const client = makeClient();
 
-      loadAccounts.mockResolvedValue(makeAccountsData([{ access: "access-1", expires: Date.now() + 3600_000 }]));
-      saveAccounts.mockResolvedValue(undefined);
+      mockLoadAccounts.mockResolvedValue(makeAccountsData([{ access: "access-1", expires: Date.now() + 3600_000 }]));
+      mockSaveAccounts.mockResolvedValue(undefined);
 
       const plugin = await AnthropicAuthPlugin({ client });
       const getAuth = vi.fn().mockResolvedValue({
@@ -4161,12 +4459,12 @@ describe("markSuccess wiring", () => {
 // override_model_limits — uses setupFetchFn which wires auth.loader via makeProvider()
 // ---------------------------------------------------------------------------
 describe("override_model_limits", () => {
-  let client;
+  let client: ReturnType<typeof makeClient>;
 
   beforeEach(async () => {
     client = makeClient();
-    loadAccounts.mockResolvedValue(makeAccountsData());
-    saveAccounts.mockResolvedValue(undefined);
+    mockLoadAccounts.mockResolvedValue(makeAccountsData());
+    mockSaveAccounts.mockResolvedValue(undefined);
     mockFetch.mockResolvedValue(new Response("", { status: 200 }));
     delete process.env.OPENCODE_ANTHROPIC_OVERRIDE_MODEL_LIMITS;
   });
@@ -4188,9 +4486,8 @@ describe("override_model_limits", () => {
   });
 
   it("overrides context limit to 1M when override_model_limits.enabled is true", async () => {
-    const configModule = await import("./src/config.js");
-    configModule.loadConfig.mockReturnValueOnce({
-      ...configModule.loadConfig(),
+    mockLoadConfig.mockReturnValueOnce({
+      ...loadConfig(),
       override_model_limits: { enabled: true, context: 1_000_000, output: 0 },
     });
     const provider = makeProvider();
@@ -4210,9 +4507,8 @@ describe("override_model_limits", () => {
 
   it("does not override 1M context when CLAUDE_CODE_DISABLE_1M_CONTEXT is set", async () => {
     process.env.CLAUDE_CODE_DISABLE_1M_CONTEXT = "1";
-    const configModule = await import("./src/config.js");
-    configModule.loadConfig.mockReturnValueOnce({
-      ...configModule.loadConfig(),
+    mockLoadConfig.mockReturnValueOnce({
+      ...loadConfig(),
       override_model_limits: { enabled: true, context: 1_000_000, output: 0 },
     });
     const provider = makeProvider();
@@ -4256,9 +4552,8 @@ describe("override_model_limits", () => {
   });
 
   it("does not override limits when override_model_limits.enabled is false in config", async () => {
-    const configModule = await import("./src/config.js");
-    configModule.loadConfig.mockReturnValueOnce({
-      ...configModule.loadConfig(),
+    mockLoadConfig.mockReturnValueOnce({
+      ...loadConfig(),
       override_model_limits: { enabled: false, context: 1_000_000, output: 0 },
     });
     const provider = makeProvider();
