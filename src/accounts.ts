@@ -21,6 +21,7 @@ export interface ManagedAccount {
   lastFailureTime: number | null;
   lastSwitchReason?: string;
   stats: import("./storage.js").AccountStats;
+  source?: "cc-keychain" | "cc-file" | "oauth";
 }
 
 export interface StatsDelta {
@@ -86,6 +87,7 @@ export class AccountManager {
         lastFailureTime: acc.lastFailureTime,
         lastSwitchReason: acc.lastSwitchReason,
         stats: acc.stats ?? createDefaultStats(acc.addedAt),
+        source: acc.source || "oauth",
       }));
 
       manager.#currentIndex =
@@ -503,6 +505,7 @@ export class AccountManager {
           lastFailureTime: acc.lastFailureTime,
           lastSwitchReason: acc.lastSwitchReason,
           stats: mergedStats,
+          source: acc.source,
         };
       }),
       activeIndex: Math.max(0, this.#currentIndex),

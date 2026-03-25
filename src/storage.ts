@@ -27,6 +27,7 @@ export interface AccountMetadata {
   lastFailureTime: number | null;
   lastSwitchReason?: string;
   stats: AccountStats;
+  source?: "cc-keychain" | "cc-file" | "oauth";
 }
 
 export interface AccountStorage {
