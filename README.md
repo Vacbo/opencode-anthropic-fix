@@ -51,6 +51,77 @@ The [original plugin](https://github.com/anomalyco/opencode-anthropic-auth) prov
 - **Files API integration** &mdash; upload, list, download, and manage files via `/anthropic files` with endpoint/content-scoped `files-api-2025-04-14` beta injection
 - **Code execution support** &mdash; available via explicit custom beta opt-in (`code-execution-2025-08-25`), not auto-enabled
 
+## Claude Code Credential Reuse
+
+When Claude Code is installed and authenticated on the same machine, this plugin can reuse its OAuth credentials instead of creating separate tokens. This means:
+
+- **Same token**: Anthropic sees exactly one client — Claude Code — with no second login event
+- **Zero detection surface**: No duplicate token, no correlation between separate OAuth flows
+- **Automatic**: Credentials are detected and loaded on plugin startup
+
+### Prerequisites
+
+- Claude Code must be installed (`claude` command available)
+- Claude Code must be authenticated (`claude login` has been run)
+- On macOS: credentials stored in Keychain (automatic)
+- On Linux: credentials stored in `~/.claude/.credentials.json`
+
+### Platform Support
+
+| Platform | Keychain | File | Notes                              |
+| -------- | -------- | ---- | ---------------------------------- |
+| macOS    | ✓        | ✓    | Primary: Keychain, Fallback: file  |
+| Linux    | ✗        | ✓    | File only                          |
+| Windows  | ✗        | ✗    | Not supported (use standard OAuth) |
+
+### Configuration
+
+Control the feature via `~/.config/opencode/anthropic-auth.json`:
+
+```jsonc
+{
+  "cc_credential_reuse": {
+    "enabled": true, // Enable/disable the feature (default: true)
+    "auto_detect": true, // Auto-load on plugin startup (default: true)
+    "prefer_over_oauth": true, // Use CC credentials first when available (default: true)
+  },
+}
+```
+
+### How to Disable
+
+If you prefer to use separate OAuth tokens:
+
+```bash
+# Via config file
+echo '{"cc_credential_reuse":{"enabled":false}}' > ~/.config/opencode/anthropic-auth.json
+```
+
+Or set via environment variable (disables auto-detection):
+
+```bash
+export OPENCODE_ANTHROPIC_CC_REUSE_ENABLED=false
+```
+
+### Troubleshooting
+
+**"No Claude Code credentials found"**
+
+- Claude Code is not installed or not authenticated
+- Run `claude login` first, then retry
+
+**Keychain permission prompts**
+
+- First read may trigger macOS Allow/Deny dialog
+- Click "Allow" to grant access
+- If denied, credentials will fall back to file reading
+
+**Token expiry**
+
+- CC credentials are refreshed by invoking `claude -p . --model haiku`
+- This triggers CC's own token refresh mechanism
+- If Claude Code is not in PATH, refresh will fail and account rotation will occur
+
 ## Installation
 
 ### From npm (recommended)
