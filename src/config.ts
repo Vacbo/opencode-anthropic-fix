@@ -68,6 +68,11 @@ export interface AnthropicAuthConfig {
   toasts: ToastConfig;
   headers: HeaderConfig;
   idle_refresh: IdleRefreshConfig;
+  cc_credential_reuse: {
+    enabled: boolean;
+    auto_detect: boolean;
+    prefer_over_oauth: boolean;
+  };
 }
 
 export const DEFAULT_CONFIG: AnthropicAuthConfig = {
@@ -109,6 +114,11 @@ export const DEFAULT_CONFIG: AnthropicAuthConfig = {
     window_minutes: 60,
     min_interval_minutes: 30,
   },
+  cc_credential_reuse: {
+    enabled: true,
+    auto_detect: true,
+    prefer_over_oauth: true,
+  },
 };
 
 export const VALID_STRATEGIES: AccountSelectionStrategy[] = ["sticky", "round-robin", "hybrid"];
@@ -127,6 +137,7 @@ function createDefaultConfig(): AnthropicAuthConfig {
     toasts: { ...DEFAULT_CONFIG.toasts },
     headers: {},
     idle_refresh: { ...DEFAULT_CONFIG.idle_refresh },
+    cc_credential_reuse: { ...DEFAULT_CONFIG.cc_credential_reuse },
   };
 }
 
@@ -281,6 +292,19 @@ function validateConfig(raw: Record<string, unknown>): AnthropicAuthConfig {
         24 * 60,
         DEFAULT_CONFIG.idle_refresh.min_interval_minutes,
       ),
+    };
+  }
+
+  if (raw.cc_credential_reuse && typeof raw.cc_credential_reuse === "object") {
+    const ccr = raw.cc_credential_reuse as Record<string, unknown>;
+    config.cc_credential_reuse = {
+      enabled: typeof ccr.enabled === "boolean" ? ccr.enabled : DEFAULT_CONFIG.cc_credential_reuse.enabled,
+      auto_detect:
+        typeof ccr.auto_detect === "boolean" ? ccr.auto_detect : DEFAULT_CONFIG.cc_credential_reuse.auto_detect,
+      prefer_over_oauth:
+        typeof ccr.prefer_over_oauth === "boolean"
+          ? ccr.prefer_over_oauth
+          : DEFAULT_CONFIG.cc_credential_reuse.prefer_over_oauth,
     };
   }
 

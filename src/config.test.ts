@@ -307,4 +307,63 @@ describe("loadConfig", () => {
     const config = loadConfig();
     expect(config.toasts.quiet).toBe(false);
   });
+
+  // cc_credential_reuse config
+  it("has cc_credential_reuse defaults", () => {
+    mockExistsSync.mockReturnValue(false);
+    const config = loadConfig();
+    expect(config.cc_credential_reuse.enabled).toBe(true);
+    expect(config.cc_credential_reuse.auto_detect).toBe(true);
+    expect(config.cc_credential_reuse.prefer_over_oauth).toBe(true);
+  });
+
+  it("merges cc_credential_reuse sub-config", () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
+      JSON.stringify({
+        cc_credential_reuse: {
+          enabled: false,
+          auto_detect: false,
+          prefer_over_oauth: false,
+        },
+      }),
+    );
+    const config = loadConfig();
+    expect(config.cc_credential_reuse.enabled).toBe(false);
+    expect(config.cc_credential_reuse.auto_detect).toBe(false);
+    expect(config.cc_credential_reuse.prefer_over_oauth).toBe(false);
+  });
+
+  it("merges partial cc_credential_reuse sub-config", () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
+      JSON.stringify({
+        cc_credential_reuse: {
+          enabled: false,
+        },
+      }),
+    );
+    const config = loadConfig();
+    expect(config.cc_credential_reuse.enabled).toBe(false);
+    // Other fields should be defaults
+    expect(config.cc_credential_reuse.auto_detect).toBe(true);
+    expect(config.cc_credential_reuse.prefer_over_oauth).toBe(true);
+  });
+
+  it("respects explicit true values in cc_credential_reuse", () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
+      JSON.stringify({
+        cc_credential_reuse: {
+          enabled: true,
+          auto_detect: true,
+          prefer_over_oauth: true,
+        },
+      }),
+    );
+    const config = loadConfig();
+    expect(config.cc_credential_reuse.enabled).toBe(true);
+    expect(config.cc_credential_reuse.auto_detect).toBe(true);
+    expect(config.cc_credential_reuse.prefer_over_oauth).toBe(true);
+  });
 });
