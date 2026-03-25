@@ -2,7 +2,7 @@
 // Environment variable helpers extracted from index.mjs
 // ---------------------------------------------------------------------------
 
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getConfigDir } from "./config.js";
@@ -65,13 +65,16 @@ export function getOrCreateSignatureUserId(): string {
   try {
     if (existsSync(userIdPath)) {
       const existing = readFileSync(userIdPath, "utf-8").trim();
-      if (existing) return existing;
+      // CC uses 64-char hex (32 random bytes). Accept existing hex IDs;
+      // regenerate if we find an old UUID-format ID.
+      if (existing && /^[0-9a-f]{64}$/.test(existing)) return existing;
     }
   } catch {
     // fall through and generate a new id
   }
 
-  const generated = randomUUID();
+  // CC generates device_id as randomBytes(32).toString("hex") → 64-char hex
+  const generated = randomBytes(32).toString("hex");
   try {
     mkdirSync(configDir, { recursive: true });
     writeFileSync(userIdPath, `${generated}\n`, {

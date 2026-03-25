@@ -767,7 +767,7 @@ describe("fetch interceptor", () => {
     expect(headers.get("authorization")).toBe("Bearer test-access");
     expect(headers.get("anthropic-beta")).toContain("oauth-2025-04-20");
     expect(headers.get("anthropic-beta")).toContain("claude-code-20250219");
-    expect(headers.get("user-agent")).toContain("claude-cli/2.1.81");
+    expect(headers.get("user-agent")).toContain("claude-cli/2.1.83");
     expect(headers.get("x-app")).toBe("cli");
     expect(headers.get("x-stainless-lang")).toBe("js");
     expect(headers.has("x-api-key")).toBe(false);
@@ -3628,9 +3628,10 @@ describe("header handling", () => {
 
     const [, init] = mockFetch.mock.calls[0];
     const parsed = JSON.parse(init.body);
-    expect(parsed.metadata.user_id).toMatch(
-      /^user_test-signature-user_account_[^_]+_session_[0-9a-f]{8}-[0-9a-f-]{27}$/,
-    );
+    const userId = JSON.parse(parsed.metadata.user_id);
+    expect(userId.device_id).toBe("test-signature-user");
+    expect(userId.account_uuid).toBeTruthy();
+    expect(userId.session_id).toMatch(/^[0-9a-f]{8}-[0-9a-f-]{27}$/);
     expect(parsed.betas).toBeUndefined();
   });
 
@@ -3651,7 +3652,8 @@ describe("header handling", () => {
 
     const [, init] = mockFetch.mock.calls[0];
     const parsed = JSON.parse(init.body);
-    expect(parsed.metadata.user_id).toContain("_account_acct-uuid-123_");
+    const userId2 = JSON.parse(parsed.metadata.user_id);
+    expect(userId2.account_uuid).toBe("acct-uuid-123");
     expect(parsed.metadata.organization_uuid).toBe("org-uuid-456");
     expect(parsed.metadata.user_email).toBe("dev@example.com");
   });

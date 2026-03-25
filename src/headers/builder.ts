@@ -127,7 +127,6 @@ export function buildRequestHeaders(
     requestHeaders.set("x-stainless-package-version", "0.74.0");
     requestHeaders.set("x-stainless-runtime", "node");
     requestHeaders.set("x-stainless-runtime-version", process.version);
-    requestHeaders.set("x-stainless-helper-method", "stream");
     // CC's SDK default timeout is 600s (600000ms)
     requestHeaders.set("x-stainless-timeout", "600");
     const incomingRetryCount = requestHeaders.get("x-stainless-retry-count");

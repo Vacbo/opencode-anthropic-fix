@@ -74,10 +74,13 @@ export function buildRequestMetadata(input: {
   sessionId: string;
 }): RequestMetadata {
   const metadata: RequestMetadata = {
-    user_id: `user_${input.persistentUserId}_account_${input.accountId}_session_${input.sessionId}`,
+    user_id: JSON.stringify({
+      device_id: input.persistentUserId,
+      account_uuid: input.accountId,
+      session_id: input.sessionId,
+    }),
   };
 
-  // v2.1.51: pass through SDK caller metadata when available
   const orgUuid = process.env.CLAUDE_CODE_ORGANIZATION_UUID?.trim();
   if (orgUuid) metadata.organization_uuid = orgUuid;
   const userEmail = process.env.CLAUDE_CODE_USER_EMAIL?.trim();
