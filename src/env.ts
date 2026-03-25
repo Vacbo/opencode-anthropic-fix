@@ -2,7 +2,7 @@
 // Environment variable helpers extracted from index.mjs
 // ---------------------------------------------------------------------------
 
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getConfigDir } from "./config.js";
