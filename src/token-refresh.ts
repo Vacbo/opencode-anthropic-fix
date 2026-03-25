@@ -2,8 +2,11 @@
 // Token refresh (per-account)
 // ---------------------------------------------------------------------------
 
+import { execSync } from "node:child_process";
 import type { ManagedAccount } from "./accounts.js";
 import type { RateLimitReason } from "./backoff.js";
+import type { CCCredential } from "./cc-credentials.js";
+import { readCCCredentials, readCCCredentialsFromFile } from "./cc-credentials.js";
 import { FOREGROUND_EXPIRY_BUFFER_MS } from "./constants.js";
 import { refreshToken } from "./oauth.js";
 import { acquireRefreshLock, releaseRefreshLock } from "./refresh-lock.js";
@@ -89,6 +92,88 @@ export interface OpenCodeClient {
   };
 }
 
+function claudeBinaryPath(): string | null {
+  try {
+    return execSync("which claude", { encoding: "utf-8", timeout: 5000 }).trim();
+  } catch {
+    return null;
+  }
+}
+
+function isFreshCCCredential(credential: CCCredential | null): boolean {
+  return Boolean(credential && credential.expiresAt > Date.now() + FOREGROUND_EXPIRY_BUFFER_MS);
+}
+
+function selectCCCredential(
+  account: ManagedAccount,
+  credentials: CCCredential[],
+  preferredLabel?: string,
+): CCCredential | null {
+  if (credentials.length === 0) return null;
+  if (preferredLabel) {
+    const byLabel = credentials.find((credential) => credential.label === preferredLabel);
+    if (byLabel) return byLabel;
+  }
+
+  const byRefreshToken = credentials.find((credential) => credential.refreshToken === account.refreshToken);
+  if (byRefreshToken) return byRefreshToken;
+
+  if (account.access) {
+    const byAccessToken = credentials.find((credential) => credential.accessToken === account.access);
+    if (byAccessToken) return byAccessToken;
+  }
+
+  return credentials.length === 1 ? credentials[0] : null;
+}
+
+function readCredentialForAccount(account: ManagedAccount, preferredLabel?: string): CCCredential | null {
+  if (account.source === "cc-file") {
+    return readCCCredentialsFromFile();
+  }
+
+  if (account.source !== "cc-keychain") {
+    return null;
+  }
+
+  const keychainCredentials = readCCCredentials().filter((credential) => credential.source === "cc-keychain");
+  return selectCCCredential(account, keychainCredentials, preferredLabel);
+}
+
+async function refreshCCAccount(account: ManagedAccount): Promise<string | null> {
+  const initialCredential = readCredentialForAccount(account);
+  if (!initialCredential) return null;
+
+  if (isFreshCCCredential(initialCredential)) {
+    account.access = initialCredential.accessToken;
+    account.refreshToken = initialCredential.refreshToken;
+    account.expires = initialCredential.expiresAt;
+    markTokenStateUpdated(account);
+    return initialCredential.accessToken;
+  }
+
+  const claudePath = claudeBinaryPath();
+  if (!claudePath) return null;
+
+  try {
+    execSync(`${claudePath} -p . --model haiku`, {
+      encoding: "utf-8",
+      timeout: 60000,
+    });
+  } catch {
+    return null;
+  }
+
+  const refreshedCredential = readCredentialForAccount(account, initialCredential.label);
+  if (!isFreshCCCredential(refreshedCredential)) return null;
+  if (!refreshedCredential) return null;
+
+  account.access = refreshedCredential.accessToken;
+  account.refreshToken = refreshedCredential.refreshToken;
+  account.expires = refreshedCredential.expiresAt;
+  markTokenStateUpdated(account);
+  return refreshedCredential.accessToken;
+}
+
 /**
  * Refresh an account's access token.
  *
@@ -142,6 +227,29 @@ export async function refreshAccountToken(
       account.expires > Date.now() + FOREGROUND_EXPIRY_BUFFER_MS
     ) {
       return account.access;
+    }
+
+    if (account.source === "cc-keychain" || account.source === "cc-file") {
+      const accessToken = await refreshCCAccount(account);
+      if (accessToken) {
+        if (onTokensUpdated) {
+          await onTokensUpdated().catch(() => undefined);
+        }
+
+        await client.auth
+          ?.set({
+            path: { id: "anthropic" },
+            body: {
+              type: "oauth",
+              refresh: account.refreshToken,
+              access: account.access,
+              expires: account.expires,
+            },
+          })
+          .catch(() => undefined);
+        return accessToken;
+      }
+      throw new Error("CC credential refresh failed");
     }
 
     const json = await refreshToken(account.refreshToken, {

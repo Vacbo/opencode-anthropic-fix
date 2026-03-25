@@ -101,3 +101,37 @@ Added `src/cc-credentials.ts` with read-only Claude Code credential discovery fr
 
 - `bun test src/__tests__/cc-credentials.test.ts` -> 16 passed, 0 failed
 - `npm run build` -> passed
+
+---
+
+## Task 4: Token Refresh Source Gating
+
+### Summary
+
+Added CC-aware refresh gating in `src/token-refresh.ts` so `refreshAccountToken()` never sends CC-issued refresh tokens through the plugin's OAuth HTTP refresh path.
+
+### Key Patterns
+
+- Use `account.source` as the hard gate: only `"oauth" | undefined` accounts call `oauth.refreshToken()`.
+- Re-read CC credentials from their original source before doing anything else: `readCCCredentials()` for keychain-backed accounts, `readCCCredentialsFromFile()` for file-backed accounts.
+- Treat a CC credential as usable only when `expiresAt > Date.now() + FOREGROUND_EXPIRY_BUFFER_MS`, matching the existing foreground refresh buffer.
+- When a CC credential is still stale, trigger Claude Code's own refresh flow with `claude -p . --model haiku` after resolving the binary via `which claude`, both guarded by `execSync` timeouts.
+- Preserve the existing cross-process refresh lock and persist refreshed CC tokens through `onTokensUpdated()` plus OpenCode `auth.json` best-effort sync.
+
+### Tests Added
+
+- `src/token-refresh.test.ts` covers:
+  - CC keychain re-read without HTTP refresh
+  - CC file refresh via CLI-triggered re-read
+  - OAuth accounts keeping the existing HTTP refresh path
+  - Missing `claude` binary failing cleanly
+
+### Verification
+
+- `bun test src/token-refresh.test.ts` -> 4 passed, 0 failed
+- `npm test` -> 581 passed, 0 failed
+- `npm run build` -> passed
+
+### Notes
+
+- `bun test` (the Bun native runner) still hits pre-existing repo-wide incompatibilities with Vitest-specific APIs like `vi.setSystemTime`; the supported full-suite command here remains `npm test`.
