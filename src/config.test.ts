@@ -366,4 +366,28 @@ describe("loadConfig", () => {
     expect(config.cc_credential_reuse.auto_detect).toBe(true);
     expect(config.cc_credential_reuse.prefer_over_oauth).toBe(true);
   });
+
+  it("disables cc_credential_reuse from OPENCODE_ANTHROPIC_CC_REUSE_ENABLED=0", () => {
+    mockExistsSync.mockReturnValue(false);
+    process.env.OPENCODE_ANTHROPIC_CC_REUSE_ENABLED = "0";
+    const config = loadConfig();
+    expect(config.cc_credential_reuse.enabled).toBe(false);
+    expect(config.cc_credential_reuse.auto_detect).toBe(false);
+  });
+
+  it("disables cc_credential_reuse from OPENCODE_ANTHROPIC_CC_REUSE_ENABLED=false", () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
+      JSON.stringify({
+        cc_credential_reuse: {
+          enabled: true,
+          auto_detect: true,
+        },
+      }),
+    );
+    process.env.OPENCODE_ANTHROPIC_CC_REUSE_ENABLED = "false";
+    const config = loadConfig();
+    expect(config.cc_credential_reuse.enabled).toBe(false);
+    expect(config.cc_credential_reuse.auto_detect).toBe(false);
+  });
 });

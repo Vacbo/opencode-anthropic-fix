@@ -378,6 +378,11 @@ function applyEnvOverrides(config: AnthropicAuthConfig): AnthropicAuthConfig {
     config.override_model_limits.enabled = false;
   }
 
+  if (env.OPENCODE_ANTHROPIC_CC_REUSE_ENABLED === "0" || env.OPENCODE_ANTHROPIC_CC_REUSE_ENABLED === "false") {
+    config.cc_credential_reuse.enabled = false;
+    config.cc_credential_reuse.auto_detect = false;
+  }
+
   return config;
 }
 
