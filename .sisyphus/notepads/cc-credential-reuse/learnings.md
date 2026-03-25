@@ -1,0 +1,103 @@
+# CC Credential Reuse - Learnings
+
+## Task 1: Add source field to ManagedAccount
+
+### Summary
+
+Added `source?: "cc-keychain" | "cc-file" | "oauth"` field to both `ManagedAccount` interface (src/accounts.ts) and `AccountMetadata` interface (src/storage.ts).
+
+### Changes Made
+
+1. **src/accounts.ts** - Added `source` field to `ManagedAccount` interface (line 24)
+2. **src/storage.ts** - Added `source` field to `AccountMetadata` interface (line 30)
+3. **src/accounts.ts** - Updated `AccountManager.load()` to set default `source: "oauth"` on loaded accounts (line 90)
+4. **src/accounts.ts** - Updated `saveToDisk()` to persist `source` field (line 508)
+
+### Test Results
+
+- All 557 tests pass
+- TypeScript compilation passes with no errors
+
+### Key Decisions
+
+- Default to `"oauth"` for backward compatibility with existing accounts
+- Made field optional to handle legacy data that may not have the field
+
+### Notes
+
+- The test failures seen when running `bun test` directly are pre-existing environment issues (vi.setSystemTime not available in this vitest setup), not related to these changes
+- The npm test script runs all 557 tests and they all pass
+
+---
+
+## Task 3: Config Section Implementation
+
+### Summary
+
+Added `cc_credential_reuse` configuration section to the plugin config schema.
+
+### Files Modified
+
+- `src/config.ts` - Added interface, defaults, and validation
+- `src/config.test.ts` - Added 4 new tests
+
+### Implementation Details
+
+1. **Interface Addition** (src/config.ts:69-74):
+   - Added `cc_credential_reuse` section to `AnthropicAuthConfig` interface
+   - Three boolean fields: `enabled`, `auto_detect`, `prefer_over_oauth`
+   - All default to `true`
+
+2. **DEFAULT_CONFIG** (src/config.ts:113-118):
+   - Added defaults matching interface
+
+3. **createDefaultConfig()** (src/config.ts:140):
+   - Added spread of `cc_credential_reuse` from DEFAULT_CONFIG
+
+4. **validateConfig()** (src/config.ts:297-308):
+   - Added validation block for cc_credential_reuse
+   - Pattern follows existing sub-configs (signature_emulation, health_score, etc.)
+   - Uses type checks and defaults fallback
+
+### Tests Added
+
+- `has cc_credential_reuse defaults` - Verifies default values
+- `merges cc_credential_reuse sub-config` - Tests full override
+- `merges partial cc_credential_reuse sub-config` - Tests partial override preserves defaults
+- `respects explicit true values in cc_credential_reuse` - Tests explicit true values
+
+### Test Results
+
+- Config tests: 39 pass, 0 fail
+- Full test suite: Pre-existing failures unrelated to changes
+
+### Key Pattern
+
+When adding new sub-config sections:
+
+1. Add to interface
+2. Add to DEFAULT_CONFIG
+3. Add to createDefaultConfig()
+4. Add validation in validateConfig()
+5. Add tests following existing patterns
+
+---
+
+## Task 2: Claude Code Credential Reader
+
+### Summary
+
+Added `src/cc-credentials.ts` with read-only Claude Code credential discovery from macOS Keychain and `~/.claude/.credentials.json`, plus focused tests in `src/__tests__/cc-credentials.test.ts`.
+
+### Key Patterns
+
+- Use `security dump-keychain` first, then extract `"svce"<blob>="Claude Code-credentials..."` entries before calling `security find-generic-password -s <service> -w` per service.
+- Treat Keychain exit codes `44`, `36`, and `128` as soft failures and return `null` rather than surfacing errors.
+- Handle timeout failures from `execSync` as another soft failure path for Keychain reads.
+- Parse both wrapped (`claudeAiOauth`) and flat credential JSON shapes, while rejecting MCP-only payloads that lack top-level Claude access tokens.
+- Keep file reads unconditional in the top-level aggregator so Linux can still reuse `~/.claude/.credentials.json` even though Keychain is macOS-only.
+
+### Verification
+
+- `bun test src/__tests__/cc-credentials.test.ts` -> 16 passed, 0 failed
+- `npm run build` -> passed
