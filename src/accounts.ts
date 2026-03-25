@@ -1,5 +1,6 @@
 import type { RateLimitReason } from "./backoff.js";
 import { calculateBackoffMs } from "./backoff.js";
+import { readCCCredentials } from "./cc-credentials.js";
 import type { AnthropicAuthConfig } from "./config.js";
 import { HealthScoreTracker, selectAccount, TokenBucketTracker } from "./rotation.js";
 import type { AccountMetadata, AccountStorage } from "./storage.js";
@@ -110,11 +111,8 @@ export class AccountManager {
         }
       }
 
-      return manager;
-    }
-
-    // No stored accounts — bootstrap from fallback if available
-    if (authFallback && authFallback.refresh) {
+      // No stored accounts — bootstrap from fallback if available
+    } else if (authFallback && authFallback.refresh) {
       const now = Date.now();
       manager.#accounts = [
         {
@@ -136,6 +134,67 @@ export class AccountManager {
         },
       ];
       manager.#currentIndex = 0;
+    }
+
+    if (config.cc_credential_reuse?.enabled && config.cc_credential_reuse?.auto_detect) {
+      const currentAccountId = manager.#accounts[manager.#currentIndex]?.id ?? null;
+      const ccCredentials: ReturnType<typeof readCCCredentials> = (() => {
+        try {
+          return readCCCredentials();
+        } catch {
+          return [];
+        }
+      })();
+
+      for (const ccCredential of ccCredentials) {
+        const exists = manager.#accounts.some((account) => account.refreshToken === ccCredential.refreshToken);
+        if (exists) continue;
+
+        const emailCollision = manager
+          .getOAuthAccounts()
+          .find((account) => account.email && ccCredential.label.includes(account.email));
+        if (emailCollision?.email) {
+          console.log(`[accounts] CC credential may duplicate existing account: ${emailCollision.email}`);
+        }
+
+        const now = Date.now();
+        const ccAccount: ManagedAccount = {
+          id: `cc-${ccCredential.source}-${now}:${ccCredential.refreshToken.slice(0, 12)}`,
+          index: manager.#accounts.length,
+          email: undefined,
+          refreshToken: ccCredential.refreshToken,
+          access: ccCredential.accessToken,
+          expires: ccCredential.expiresAt,
+          tokenUpdatedAt: now,
+          addedAt: now,
+          lastUsed: 0,
+          enabled: true,
+          rateLimitResetTimes: {},
+          consecutiveFailures: 0,
+          lastFailureTime: null,
+          lastSwitchReason: "cc-auto-detected",
+          stats: createDefaultStats(now),
+          source: ccCredential.source,
+        };
+
+        manager.#accounts.push(ccAccount);
+      }
+
+      if (config.cc_credential_reuse.prefer_over_oauth && manager.getCCAccounts().length > 0) {
+        manager.#accounts = [...manager.getCCAccounts(), ...manager.getOAuthAccounts()];
+      }
+
+      manager.#accounts.forEach((account, index) => {
+        account.index = index;
+      });
+
+      if (config.cc_credential_reuse.prefer_over_oauth && manager.getCCAccounts().length > 0) {
+        manager.#currentIndex = 0;
+      } else if (currentAccountId) {
+        manager.#currentIndex = manager.#accounts.findIndex((account) => account.id === currentAccountId);
+      } else if (manager.#currentIndex < 0 && manager.#accounts.length > 0) {
+        manager.#currentIndex = 0;
+      }
     }
 
     return manager;
@@ -186,6 +245,14 @@ export class AccountManager {
    */
   getEnabledAccounts(excludedIndices?: Set<number>): ManagedAccount[] {
     return this.#accounts.filter((acc) => acc.enabled && !excludedIndices?.has(acc.index));
+  }
+
+  getCCAccounts(): ManagedAccount[] {
+    return this.#accounts.filter((acc) => acc.source === "cc-keychain" || acc.source === "cc-file");
+  }
+
+  getOAuthAccounts(): ManagedAccount[] {
+    return this.#accounts.filter((acc) => !acc.source || acc.source === "oauth");
   }
 
   #clearExpiredRateLimits(account: ManagedAccount): void {

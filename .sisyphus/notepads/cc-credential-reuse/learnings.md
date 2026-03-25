@@ -135,3 +135,25 @@ Added CC-aware refresh gating in `src/token-refresh.ts` so `refreshAccountToken(
 ### Notes
 
 - `bun test` (the Bun native runner) still hits pre-existing repo-wide incompatibilities with Vitest-specific APIs like `vi.setSystemTime`; the supported full-suite command here remains `npm test`.
+
+---
+
+## Task 5: AccountManager CC Credential Integration
+
+### Summary
+
+Integrated Claude Code credential auto-detection into `AccountManager.load()` so CC credentials join the in-memory account pool alongside OAuth accounts.
+
+### Key Patterns
+
+- Run CC auto-detection after disk/fallback account hydration so existing OAuth loading stays unchanged and CC accounts remain additive.
+- Deduplicate CC imports by `refreshToken`, but keep likely email collisions side-by-side and emit a notice when the CC label references an existing OAuth email.
+- Use `prefer_over_oauth` by reordering the in-memory pool with `getCCAccounts()` and `getOAuthAccounts()`, then reindexing accounts and resetting `currentIndex` to the first CC account.
+- Default `readCCCredentials()` to an empty list in tests because `vi.resetAllMocks()` clears the mocked implementation between suites.
+
+### Verification
+
+- `npm test -- src/accounts.test.ts` -> 54 passed, 0 failed
+- `npm test` -> 585 passed, 0 failed
+- `npm run build` -> passed
+- `bun test src/accounts.test.ts` and `bun test` still hit pre-existing Bun/Vitest incompatibilities plus unrelated Bun-only suite failures; the repo's supported verification remains `npm test`

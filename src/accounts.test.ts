@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { AccountManager } from "./accounts.js";
 import { DEFAULT_CONFIG } from "./config.js";
@@ -16,10 +16,16 @@ vi.mock("./storage.js", () => ({
   saveAccounts: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("./cc-credentials.js", () => ({
+  readCCCredentials: vi.fn(),
+}));
+
 import { createDefaultStats, loadAccounts, saveAccounts } from "./storage.js";
+import { readCCCredentials } from "./cc-credentials.js";
 
 const mockLoadAccounts = loadAccounts as Mock;
 const mockSaveAccounts = saveAccounts as Mock;
+const mockReadCCredentials = readCCCredentials as Mock;
 
 function expectAccount(account: import("./accounts.js").ManagedAccount | null): import("./accounts.js").ManagedAccount {
   expect(account).not.toBeNull();
@@ -59,6 +65,17 @@ function makeAccountsData(overrides = [{}], extra = {}) {
   };
 }
 
+function makeCCCredential(overrides: Record<string, unknown> = {}) {
+  return {
+    accessToken: "cc-access-token",
+    refreshToken: "cc-refresh-token",
+    expiresAt: Date.now() + 3600_000,
+    source: "cc-keychain" as const,
+    label: "Claude Code-credentials:user@example.com",
+    ...overrides,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // AccountManager.load
 // ---------------------------------------------------------------------------
@@ -68,6 +85,7 @@ describe("AccountManager.load", () => {
     vi.resetAllMocks();
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-15T12:00:00Z"));
+    mockReadCCredentials.mockReturnValue([]);
   });
 
   it("creates empty manager when no stored accounts and no fallback", async () => {
@@ -110,6 +128,91 @@ describe("AccountManager.load", () => {
     const manager = await AccountManager.load(DEFAULT_CONFIG, null);
     expect(manager.getAccountCount()).toBe(2);
     expect(manager.getCurrentIndex()).toBe(1);
+  });
+
+  it("auto-loads CC credentials on startup and keeps OAuth accounts available", async () => {
+    mockLoadAccounts.mockResolvedValue(makeAccountsData([{ email: "oauth@example.com", source: "oauth" }]));
+    mockReadCCredentials.mockReturnValue([
+      makeCCCredential({
+        refreshToken: "cc-refresh-1",
+        accessToken: "cc-access-1",
+        source: "cc-keychain",
+        label: "Claude Code-credentials:oauth@example.com",
+      }),
+      makeCCCredential({
+        refreshToken: "cc-refresh-2",
+        accessToken: "cc-access-2",
+        source: "cc-file",
+        label: "/Users/test/.claude/.credentials.json",
+      }),
+    ]);
+
+    const config = {
+      ...DEFAULT_CONFIG,
+      cc_credential_reuse: {
+        ...DEFAULT_CONFIG.cc_credential_reuse,
+        prefer_over_oauth: false,
+      },
+    };
+
+    const noticeSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const manager = await AccountManager.load(config, null);
+    const snapshot = manager.getAccountsSnapshot();
+
+    expect(mockReadCCredentials).toHaveBeenCalledTimes(1);
+    expect(snapshot).toHaveLength(3);
+    expect(snapshot.map((account) => account.refreshToken)).toEqual(["token1", "cc-refresh-1", "cc-refresh-2"]);
+    expect(manager.getOAuthAccounts()).toHaveLength(1);
+    expect(manager.getCCAccounts().map((account) => account.source)).toEqual(["cc-keychain", "cc-file"]);
+    expect(noticeSpy).toHaveBeenCalledWith(
+      "[accounts] CC credential may duplicate existing account: oauth@example.com",
+    );
+  });
+
+  it("prefers CC accounts over OAuth when configured", async () => {
+    mockLoadAccounts.mockResolvedValue(makeAccountsData([{ email: "oauth@example.com", source: "oauth" }]));
+    mockReadCCredentials.mockReturnValue([
+      makeCCCredential({
+        refreshToken: "cc-refresh-1",
+        accessToken: "cc-access-1",
+        source: "cc-keychain",
+      }),
+    ]);
+
+    const manager = await AccountManager.load(DEFAULT_CONFIG, null);
+    const snapshot = manager.getAccountsSnapshot();
+
+    expect(snapshot.map((account) => account.source)).toEqual(["cc-keychain", "oauth"]);
+    expect(snapshot.map((account) => account.index)).toEqual([0, 1]);
+    expect(manager.getCurrentAccount()?.source).toBe("cc-keychain");
+  });
+
+  it("stays graceful when CC credentials are unavailable", async () => {
+    mockLoadAccounts.mockResolvedValue(makeAccountsData([{ email: "oauth@example.com", source: "oauth" }]));
+    mockReadCCredentials.mockReturnValue([]);
+
+    const manager = await AccountManager.load(DEFAULT_CONFIG, null);
+
+    expect(manager.getTotalAccountCount()).toBe(1);
+    expect(manager.getAccountsSnapshot()[0]?.refreshToken).toBe("token1");
+  });
+
+  it("skips CC detection when CC credential reuse is disabled", async () => {
+    mockLoadAccounts.mockResolvedValue(makeAccountsData([{ email: "oauth@example.com", source: "oauth" }]));
+
+    const config = {
+      ...DEFAULT_CONFIG,
+      cc_credential_reuse: {
+        ...DEFAULT_CONFIG.cc_credential_reuse,
+        enabled: false,
+      },
+    };
+
+    const manager = await AccountManager.load(config, null);
+
+    expect(mockReadCCredentials).not.toHaveBeenCalled();
+    expect(manager.getTotalAccountCount()).toBe(1);
+    expect(manager.getCCAccounts()).toEqual([]);
   });
 
   it("matches auth fallback to existing stored account", async () => {
@@ -163,6 +266,7 @@ describe("AccountManager account management", () => {
 
   beforeEach(async () => {
     vi.resetAllMocks();
+    mockReadCCredentials.mockReturnValue([]);
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-15T12:00:00Z"));
     mockLoadAccounts.mockResolvedValue(null);
@@ -259,6 +363,7 @@ describe("AccountManager account selection", () => {
 
   beforeEach(async () => {
     vi.resetAllMocks();
+    mockReadCCredentials.mockReturnValue([]);
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-15T12:00:00Z"));
     mockLoadAccounts.mockResolvedValue(null);
@@ -299,6 +404,7 @@ describe("AccountManager rate limiting", () => {
 
   beforeEach(async () => {
     vi.resetAllMocks();
+    mockReadCCredentials.mockReturnValue([]);
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-15T12:00:00Z"));
     mockLoadAccounts.mockResolvedValue(null);
@@ -364,6 +470,7 @@ describe("AccountManager persistence", () => {
 
   beforeEach(async () => {
     vi.resetAllMocks();
+    mockReadCCredentials.mockReturnValue([]);
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-15T12:00:00Z"));
     mockLoadAccounts.mockResolvedValue(null);
