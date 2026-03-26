@@ -36,6 +36,10 @@ vi.mock("./src/storage.js", () => ({
   clearAccounts: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("./src/cc-credentials.js", () => ({
+  readCCCredentials: vi.fn(() => []),
+}));
+
 vi.mock("./src/refresh-lock.js", () => ({
   acquireRefreshLock: vi.fn().mockResolvedValue({ acquired: true, lockPath: "/tmp/opencode-test.lock" }),
   releaseRefreshLock: vi.fn().mockResolvedValue(undefined),
@@ -82,6 +86,11 @@ vi.mock("./src/config.js", () => {
       window_minutes: 60,
       min_interval_minutes: 30,
     },
+    cc_credential_reuse: {
+      enabled: true,
+      auto_detect: true,
+      prefer_over_oauth: true,
+    },
   };
 
   const createBaseConfig = () => ({
@@ -100,6 +109,7 @@ vi.mock("./src/config.js", () => {
     toasts: { ...DEFAULT_CONFIG.toasts },
     headers: { ...DEFAULT_CONFIG.headers },
     idle_refresh: { ...DEFAULT_CONFIG.idle_refresh, enabled: false },
+    cc_credential_reuse: { ...DEFAULT_CONFIG.cc_credential_reuse },
   });
 
   return {
@@ -121,8 +131,10 @@ import { DEFAULT_CONFIG, loadConfig, loadConfigFresh, saveConfig as saveRuntimeC
 import { AccountManager } from "./src/accounts.js";
 import { AnthropicAuthPlugin } from "./src/index.js";
 import { acquireRefreshLock, releaseRefreshLock } from "./src/refresh-lock.js";
+import { readCCCredentials } from "./src/cc-credentials.js";
 import { clearAccounts, loadAccounts, saveAccounts } from "./src/storage.js";
 
+const mockReadCCCredentials = readCCCredentials as Mock;
 const mockLoadConfig = loadConfig as Mock;
 const mockLoadConfigFresh = loadConfigFresh as Mock;
 const _mockSaveRuntimeConfig = saveRuntimeConfig as Mock;
@@ -325,7 +337,7 @@ describe("plugin lifecycle", () => {
     });
 
     const plugin = await AnthropicAuthPlugin({ client });
-    const method = plugin.auth.methods[0]; // "Claude Pro/Max (multi-account)"
+    const method = plugin.auth.methods[1]; // "Claude Pro/Max (multi-account)"
 
     // Step 1: authorize() — returns URL + callback
     const authResult = await method.authorize();
@@ -424,7 +436,7 @@ describe("plugin lifecycle", () => {
       }),
     });
 
-    const method = plugin.auth.methods[0];
+    const method = plugin.auth.methods[1];
     const authResult = await method.authorize();
     const authState2 = new URL(authResult.url).searchParams.get("state");
     const credentials = await authResult.callback(`second-code#${authState2}`);
@@ -2952,7 +2964,7 @@ describe("OAuth exchange failure", () => {
     });
 
     const plugin = await AnthropicAuthPlugin({ client });
-    const method = plugin.auth.methods[0];
+    const method = plugin.auth.methods[1];
 
     const authResult = await method.authorize();
     const badState = new URL(authResult.url).searchParams.get("state");
@@ -3027,7 +3039,7 @@ describe("auth menu actions", () => {
 
   it("cancel action returns about:blank with failed callback", async () => {
     const plugin = await setupWithMenuChoice("c");
-    const method = plugin.auth.methods[0];
+    const method = plugin.auth.methods[1];
 
     const authResult = await method.authorize();
 
@@ -3043,7 +3055,7 @@ describe("auth menu actions", () => {
 
   it("fresh action clears accounts and proceeds to OAuth", async () => {
     const plugin = await setupWithMenuChoice("f");
-    const method = plugin.auth.methods[0];
+    const method = plugin.auth.methods[1];
 
     const authResult = await method.authorize();
 
@@ -3113,7 +3125,7 @@ describe("auth menu actions", () => {
 
     mockSaveAccounts.mockClear();
 
-    const method = plugin.auth.methods[0];
+    const method = plugin.auth.methods[1];
     const authResult = await method.authorize();
 
     expect(authResult.url).toBe("about:blank");
@@ -4569,5 +4581,93 @@ describe("override_model_limits", () => {
 
     expect(provider.models["claude-opus-4-6"].limit.context).toBe(200_000);
     expect(provider.models["claude-sonnet-4-1m"].limit.context).toBe(200_000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CC Credentials auth method
+// ---------------------------------------------------------------------------
+
+describe("CC Credentials auth method", () => {
+  let client: ReturnType<typeof makeClient>;
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    client = makeClient();
+    mockLoadAccounts.mockResolvedValue(null);
+    mockSaveAccounts.mockResolvedValue(undefined);
+    mockReadCCCredentials.mockReturnValue([]);
+  });
+
+  it("CC method is first in auth.methods with correct label", async () => {
+    const plugin = await AnthropicAuthPlugin({ client });
+    expect(plugin.auth.methods[0].label).toBe("Claude Code Credentials (auto-detected)");
+    expect(plugin.auth.methods[1].label).toBe("Claude Pro/Max (multi-account)");
+  });
+
+  it("returns success with correct tokens when CC credentials found", async () => {
+    const ccCred = {
+      accessToken: "cc-access-123",
+      refreshToken: "cc-refresh-456",
+      expiresAt: Date.now() + 3_600_000,
+      source: "cc-keychain" as const,
+      label: "Claude Code-credentials-test",
+    };
+    mockReadCCCredentials.mockReturnValue([ccCred]);
+
+    const plugin = await AnthropicAuthPlugin({ client });
+    const method = plugin.auth.methods[0];
+    const result = await method.authorize!();
+
+    expect(result.type).toBe("success");
+    expect((result as any).refresh).toBe("cc-refresh-456");
+    expect((result as any).access).toBe("cc-access-123");
+    expect((result as any).expires).toBe(ccCred.expiresAt);
+  });
+
+  it("returns failed instructions when CC not installed", async () => {
+    mockReadCCCredentials.mockReturnValue([]);
+
+    const plugin = await AnthropicAuthPlugin({ client });
+    const method = plugin.auth.methods[0];
+    const result = await method.authorize!();
+
+    expect(result.url).toBe("about:blank");
+    expect(result.instructions).toContain("No Claude Code credentials found");
+    expect(result.method).toBe("code");
+
+    const cbResult = await result.callback!("ignored");
+    expect(cbResult.type).toBe("failed");
+  });
+
+  it("loader logs CC credential status when auto_detect enabled", async () => {
+    const ccCred = {
+      accessToken: "cc-access-loader",
+      refreshToken: "cc-refresh-loader",
+      expiresAt: Date.now() + 3_600_000,
+      source: "cc-keychain" as const,
+      label: "Claude Code-credentials-loader",
+    };
+    mockReadCCCredentials.mockReturnValue([ccCred]);
+
+    const plugin = await AnthropicAuthPlugin({ client });
+    const getAuth = vi.fn().mockResolvedValue({
+      type: "oauth",
+      refresh: "refresh-oauth",
+      access: "access-oauth",
+      expires: Date.now() + 3_600_000,
+    });
+
+    await plugin.auth.loader(getAuth, makeProvider());
+    expect(mockSaveAccounts).toHaveBeenCalled();
+  });
+
+  it("existing OAuth methods remain unchanged after CC insertion", async () => {
+    const plugin = await AnthropicAuthPlugin({ client });
+    expect(plugin.auth.methods).toHaveLength(4);
+    expect(plugin.auth.methods[0].label).toBe("Claude Code Credentials (auto-detected)");
+    expect(plugin.auth.methods[1].label).toBe("Claude Pro/Max (multi-account)");
+    expect(plugin.auth.methods[2].label).toBe("Create an API Key");
+    expect(plugin.auth.methods[3].label).toBe("Manually enter API Key");
   });
 });

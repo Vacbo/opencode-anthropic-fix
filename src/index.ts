@@ -23,6 +23,7 @@ import { extractFileIds, getAccountIdentifier } from "./request/metadata.js";
 import { fetchWithRetry } from "./request/retry.js";
 import { transformRequestUrl } from "./request/url.js";
 import { isEventStreamResponse, transformResponse } from "./response/streaming.js";
+import { readCCCredentials } from "./cc-credentials.js";
 import { clearAccounts, loadAccounts } from "./storage.js";
 import type { OpenCodeClient } from "./token-refresh.js";
 import {
@@ -354,6 +355,15 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient &
           });
           if (accountManager.getAccountCount() > 0) {
             await accountManager.saveToDisk();
+          }
+
+          if (config.cc_credential_reuse?.enabled && config.cc_credential_reuse?.auto_detect) {
+            const ccCount = accountManager.getCCAccounts().length;
+            if (ccCount > 0) {
+              debugLog(`Found ${ccCount} Claude Code credential(s)`);
+            } else {
+              debugLog("No Claude Code credentials found, using OAuth");
+            }
           }
 
           // OPENCODE_ANTHROPIC_INITIAL_ACCOUNT: pin to a specific account
@@ -704,6 +714,52 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient &
       },
 
       methods: [
+        {
+          label: "Claude Code Credentials (auto-detected)",
+          type: "oauth" as const,
+          authorize: async () => {
+            const ccCredentials = readCCCredentials();
+
+            if (ccCredentials.length === 0) {
+              return {
+                url: "about:blank",
+                instructions:
+                  "No Claude Code credentials found. Please install Claude Code and run 'claude login' first, then return here to use those credentials.",
+                method: "code" as const,
+                callback: async () => ({
+                  type: "failed" as const,
+                  reason: "Claude Code not installed or not authenticated",
+                }),
+              };
+            }
+
+            const ccCred = ccCredentials[0];
+
+            if (!accountManager) {
+              accountManager = await AccountManager.load(config, null);
+            }
+
+            const exists = accountManager
+              .getAccountsSnapshot()
+              .some((acc: ManagedAccount) => acc.refreshToken === ccCred.refreshToken);
+
+            if (!exists) {
+              const added = accountManager.addAccount(ccCred.refreshToken, ccCred.accessToken, ccCred.expiresAt);
+              if (added) {
+                added.source = ccCred.source;
+              }
+              await accountManager.saveToDisk();
+              await toast("Added Claude Code credentials", "success");
+            }
+
+            return {
+              type: "success" as const,
+              refresh: ccCred.refreshToken,
+              access: ccCred.accessToken,
+              expires: ccCred.expiresAt,
+            };
+          },
+        },
         {
           label: "Claude Pro/Max (multi-account)",
           type: "oauth" as const,
