@@ -157,3 +157,96 @@ Integrated Claude Code credential auto-detection into `AccountManager.load()` so
 - `npm test` -> 585 passed, 0 failed
 - `npm run build` -> passed
 - `bun test src/accounts.test.ts` and `bun test` still hit pre-existing Bun/Vitest incompatibilities plus unrelated Bun-only suite failures; the repo's supported verification remains `npm test`
+
+---
+
+## Task 6: CC Credentials Auth Method + Auto-Detection
+
+### Summary
+
+Added "Claude Code Credentials (auto-detected)" auth method at position 0 in `auth.methods` array and CC credential status logging in `auth.loader`.
+
+### Files Modified
+
+- `src/index.ts` — Added import, new auth method, and loader logging
+- `index.test.ts` — Added cc-credentials mock, cc_credential_reuse config, 4 tests, updated methods[0] → methods[1] references
+
+### Implementation Details
+
+1. **Import** (src/index.ts:27): Added `import { readCCCredentials } from "./cc-credentials.js"`
+
+2. **New Auth Method** (src/index.ts:707-756): Inserted at position 0 before "Claude Pro/Max":
+   - Calls `readCCCredentials()` to check for CC credentials
+   - If none found: returns `about:blank` with installation instructions
+   - If found: creates AccountManager if needed, checks for duplicate by refreshToken, adds account with `source` set after `addAccount()`, returns success
+
+3. **Loader Logging** (src/index.ts:359-365): After `AccountManager.load()`, checks `cc_credential_reuse.enabled && auto_detect` and logs CC credential count via `debugLog`
+
+4. **`addAccount` does NOT accept `source` parameter** — set `added.source = ccCred.source` after the call returns the ManagedAccount
+
+### Key Patterns
+
+- `addAccount(refreshToken, accessToken, expires, email?)` returns `ManagedAccount | null` — no options param, set source on the returned object
+- `getAccountsSnapshot()` is the method for getting all accounts (not `getAllAccounts`)
+- `vi.fn(() => [])` survives `vi.resetAllMocks()` because constructor implementations persist; `vi.fn().mockReturnValue([])` does NOT survive resets
+- When CC credentials are auto-detected by `AccountManager.load()` (Task 5), the authorize flow's duplicate check finds them already present, so `addAccount` is not called again
+- Inserting at methods[0] shifts all existing method references — 6 test locations needed updating from `methods[0]` to `methods[1]`
+
+### Tests Added (4)
+
+- `CC method is first in auth.methods with correct label`
+- `returns success with correct tokens when CC credentials found`
+- `returns failed instructions when CC not installed`
+- `loader logs CC credential status when auto_detect enabled`
+- `existing OAuth methods remain unchanged after CC insertion`
+
+### Verification
+
+- `npm test -- index.test.ts` → 131 passed, 0 failed
+- `npm test` → 590 passed, 0 failed
+- `npm run build` → passed
+
+## Task 7: README Documentation Update (COMPLETED)
+
+**Date:** 2026-03-25
+**File Modified:** README.md
+
+### Summary
+
+Added comprehensive user-facing documentation for the Claude Code Credential Reuse feature to README.md.
+
+### Section Added
+
+- **Location:** After "What This Fork Adds", before "Installation"
+- **Content:** Full "Claude Code Credential Reuse" section including:
+  - How it works (same token, zero detection, automatic)
+  - Prerequisites (Claude Code installed/authenticated)
+  - Platform support table (macOS Keychain + file, Linux file, Windows not supported)
+  - Configuration options (`cc_credential_reuse` in anthropic-auth.json)
+  - How to disable (config file and environment variable)
+  - Troubleshooting section (credentials not found, keychain prompts, token expiry)
+
+### Verification Results
+
+All 6 required grep checks passed:
+
+- "Claude Code Credential Reuse": 1 occurrence
+- "macOS": 3 occurrences
+- "Linux": 2 occurrences
+- "cc_credential_reuse": 2 occurrences
+- "Troubleshooting": 2 occurrences
+- "Keychain": 4 occurrences
+
+Existing documentation preserved:
+
+- "Claude Pro/Max": 2 occurrences
+- "OAuth": 21 occurrences
+- "anthropic-auth.json": 7 occurrences
+
+### Commit
+
+`docs: document CC credential reuse feature`
+
+### Tests
+
+All 590 tests passed during pre-commit hook.

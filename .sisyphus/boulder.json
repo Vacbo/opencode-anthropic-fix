@@ -1,26 +1,75 @@
 {
-  "active_plan": "/Users/vacbo/Documents/Projects/opencode-anthropic-fix/.sisyphus/plans/cc-fingerprint-parity.md",
-  "started_at": "2026-03-21T22:39:46.905Z",
+  "active_plan": "/Users/vacbo/Documents/Projects/opencode-anthropic-fix/.sisyphus/plans/cc-credential-reuse.md",
+  "started_at": "2026-03-25T22:13:13.515Z",
   "session_ids": [
-    "ses_2ed72479cffekkYfB4o4n8qBhk",
-    "ses_2ed71a7d4ffe940mAKJ8Do6yzX",
-    "ses_2ed71b3d5ffe5Vchwmd1q5J5B0",
-    "ses_2ed6ef84bffemqg2mr6Y0w5qJl",
-    "ses_2ed6f0dd0ffek21OHLOi7JBS38",
-    "ses_2ed6f2266ffeD2tz8nCpT5HTuY",
-    "ses_2ed6a3e6effezcZK4bFSFHU4hp",
-    "ses_2ed696102ffed6i5I7dK6y5kTg",
-    "ses_2ed603ee7ffeWL1mNXapxVBA0M",
-    "ses_2ed60255cffeRiDKhI5Ih12lPX",
-    "ses_2ed596a3bffe0st53IuFYwfe5N",
-    "ses_2ed597600ffeNbV47bHQ2xUtOC",
-    "ses_2ed594d7bfferglgQpqjwoF9EL",
-    "ses_2ed541f6fffeJP27jqzWV9NE87",
-    "ses_2ed527d59ffeOWRjNk12Fg0V7K",
-    "ses_2ed526b3fffeheTyAKzv88KzVC",
-    "ses_2ed5259acffeS6ctDKFndOIaS6",
-    "ses_2ed3a5105ffeMiVpBFNCFd5wrs"
+    "ses_2d8f10dc0ffeXpkI9pI7h6r9fc",
+    "ses_2d8f0aae5fferdNtDG3aekObv8",
+    "ses_2d8f07de1ffeC7rJy4L77s5x5X",
+    "ses_2d8f08f77ffeoqHHChzoOCoIwV",
+    "ses_2d8defcecffeQFCogKZTfb4UHB",
+    "ses_2d8d49b86ffeSEFncvDfbsQ2rN",
+    "ses_2d8ccc9a6ffe6o3vkSb6moUNA4",
+    "ses_2d8cc174cffepWybZ675LMEYSC",
+    "ses_2d8cbf38cffe5YdWe4WtCRIFUj",
+    "ses_2d8cbdd1affe5yqGJ4jhsUcLeM",
+    "ses_2d8cc0601ffefI8HGweSLlFr8m"
   ],
-  "plan_name": "cc-fingerprint-parity",
-  "agent": "atlas"
+  "plan_name": "cc-credential-reuse",
+  "agent": "atlas",
+  "task_sessions": {
+    "todo:1": {
+      "task_key": "todo:1",
+      "task_label": "1",
+      "task_title": "Add credential source field to ManagedAccount",
+      "session_id": "ses_2d8f0aae5fferdNtDG3aekObv8",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-03-25T22:14:44.952Z"
+    },
+    "todo:4": {
+      "task_key": "todo:4",
+      "task_label": "4",
+      "task_title": "Gate token refresh by credential source",
+      "session_id": "ses_2d8e92f8bffeIdJw6RnkP6cAJ5",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-03-25T22:32:25.379Z"
+    },
+    "todo:5": {
+      "task_key": "todo:5",
+      "task_label": "5",
+      "task_title": "Integrate CC credentials into AccountManager.load",
+      "session_id": "ses_2d8defcecffeQFCogKZTfb4UHB",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-03-25T22:43:42.744Z"
+    },
+    "todo:6": {
+      "task_key": "todo:6",
+      "task_label": "6",
+      "task_title": "Add CC Credentials auth method + loader auto-detection",
+      "session_id": "ses_2d8d49b86ffeSEFncvDfbsQ2rN",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "updated_at": "2026-03-25T22:52:23.694Z"
+    },
+    "todo:7": {
+      "task_key": "todo:7",
+      "task_label": "7",
+      "task_title": "Documentation update",
+      "session_id": "ses_2d8ccc9a6ffe6o3vkSb6moUNA4",
+      "agent": "Sisyphus-Junior",
+      "category": "writing",
+      "updated_at": "2026-03-25T22:53:09.140Z"
+    },
+    "final-wave:f1": {
+      "task_key": "final-wave:f1",
+      "task_label": "F1",
+      "task_title": "**Plan Compliance Audit** — `oracle`",
+      "session_id": "ses_2d8cc174cffepWybZ675LMEYSC",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "updated_at": "2026-03-25T22:55:03.113Z"
+    }
+  }
 }
