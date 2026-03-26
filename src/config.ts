@@ -85,7 +85,7 @@ export const DEFAULT_CONFIG: AnthropicAuthConfig = {
     prompt_compaction: "minimal",
   },
   override_model_limits: {
-    enabled: false,
+    enabled: true,
     context: 1_000_000,
     output: 0,
   },
