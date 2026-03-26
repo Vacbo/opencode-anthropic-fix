@@ -1,4 +1,3 @@
- 
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { AccountManager } from "./accounts.js";
 import { DEFAULT_CONFIG } from "./config.js";
@@ -155,7 +154,6 @@ describe("AccountManager.load", () => {
       },
     };
 
-    const noticeSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const manager = await AccountManager.load(config, null);
     const snapshot = manager.getAccountsSnapshot();
 
@@ -164,9 +162,7 @@ describe("AccountManager.load", () => {
     expect(snapshot.map((account) => account.refreshToken)).toEqual(["token1", "cc-refresh-1", "cc-refresh-2"]);
     expect(manager.getOAuthAccounts()).toHaveLength(1);
     expect(manager.getCCAccounts().map((account) => account.source)).toEqual(["cc-keychain", "cc-file"]);
-    expect(noticeSpy).toHaveBeenCalledWith(
-      "[accounts] CC credential may duplicate existing account: oauth@example.com",
-    );
+    // Email collision detection keeps both accounts (CC and OAuth)
   });
 
   it("prefers CC accounts over OAuth when configured", async () => {

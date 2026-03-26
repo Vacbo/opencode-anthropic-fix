@@ -154,7 +154,8 @@ export class AccountManager {
           .getOAuthAccounts()
           .find((account) => account.email && ccCredential.label.includes(account.email));
         if (emailCollision?.email) {
-          console.log(`[accounts] CC credential may duplicate existing account: ${emailCollision.email}`);
+          // Duplicate detection: CC credential may match existing OAuth account
+          // This is informational only - both accounts are kept
         }
 
         const now = Date.now();
