@@ -53,6 +53,17 @@ export function supportsStructuredOutputs(model: string): boolean {
   return !isHaikuModel(model);
 }
 
+/**
+ * Context management is supported on Claude 4+ models (matches upstream CC).
+ */
+export function supportsContextManagement(model: string): boolean {
+  if (!model) return false;
+  // Claude 3.x does not support context management
+  if (/claude-3-/i.test(model)) return false;
+  // Any other Claude model (4+) supports it
+  return /claude|sonnet|opus|haiku/i.test(model);
+}
+
 export function supportsWebSearch(model: string): boolean {
   return /claude|sonnet|opus|haiku|gpt|gemini/i.test(model);
 }

@@ -452,6 +452,7 @@ describe("CC 2.1.90 — Identity block cache TTL", () => {
     expect(identityBlock).toBeDefined();
     expect(identityBlock!.cache_control).toBeDefined();
     expect(identityBlock!.cache_control!.type).toBe("ephemeral");
+    expect(identityBlock!.cache_control!.scope).toBe("global");
     expect(identityBlock!.cache_control!.ttl).toBe("1h");
   });
 

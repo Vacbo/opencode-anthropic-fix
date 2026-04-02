@@ -3566,7 +3566,7 @@ describe("header handling", () => {
     expect(parsed.system[1]).toEqual({
       type: "text",
       text: "You are Claude Code, Anthropic's official CLI for Claude.",
-      cache_control: { type: "ephemeral", ttl: "1h" },
+      cache_control: { type: "ephemeral", scope: "global", ttl: "1h" },
     });
     expect(parsed.system[2].text).toBe("Use Claude Code defaults");
   });
@@ -3619,7 +3619,7 @@ describe("header handling", () => {
     expect(parsed.system[0]).toEqual({
       type: "text",
       text: "You are Claude Code, Anthropic's official CLI for Claude.",
-      cache_control: { type: "ephemeral", ttl: "1h" },
+      cache_control: { type: "ephemeral", scope: "global", ttl: "1h" },
     });
     expect(parsed.system.some((item) => item.text.startsWith("x-anthropic-billing-header:"))).toBe(false);
   });

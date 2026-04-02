@@ -47,7 +47,7 @@ export function buildSystemPromptBlocks(
   blocks.push({
     type: "text",
     text: CLAUDE_CODE_IDENTITY_STRING,
-    cache_control: { type: "ephemeral", ttl: "1h" },
+    cache_control: { type: "ephemeral", scope: "global", ttl: "1h" },
   });
   blocks.push(...filtered);
 

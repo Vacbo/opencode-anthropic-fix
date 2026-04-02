@@ -13,16 +13,12 @@ import {
   hasOneMillionContext,
   isAdaptiveThinkingModel,
   isHaikuModel,
+  supportsContextManagement,
   supportsStructuredOutputs,
   supportsThinking,
   supportsWebSearch,
 } from "./models.js";
 import type { AccountSelectionStrategy, Provider } from "./types.js";
-
-function isNonInteractiveMode(): boolean {
-  if (isTruthyEnv(process.env.CI)) return true;
-  return !process.stdout.isTTY;
-}
 
 export function buildAnthropicBetaHeader(
   incomingBeta: string,
@@ -56,7 +52,6 @@ export function buildAnthropicBetaHeader(
     return mergedBetas.join(",");
   }
 
-  const nonInteractive = isNonInteractiveMode();
   const haiku = isHaikuModel(model);
   const isRoundRobin = strategy === "round-robin";
 
@@ -100,11 +95,9 @@ export function buildAnthropicBetaHeader(
     betas.push("context-1m-2025-08-07");
   }
 
-  if (
-    !disableExperimentalBetas &&
-    nonInteractive &&
-    (isTruthyEnv(process.env.USE_API_CONTEXT_MANAGEMENT) || isTruthyEnv(process.env.TENGU_MARBLE_ANVIL))
-  ) {
+  // Context management: upstream CC adds this for Claude 4+ models (thinking
+  // preservation) or when ant users opt in via USE_API_CONTEXT_MANAGEMENT.
+  if (!disableExperimentalBetas && supportsContextManagement(model)) {
     betas.push("context-management-2025-06-27");
   }
 
@@ -116,9 +109,9 @@ export function buildAnthropicBetaHeader(
     betas.push("web-search-2025-03-05");
   }
 
-  // Prompt caching is per-workspace (since Feb 2026); round-robin across accounts
-  // means zero cache hits and doubled token costs. Skip in round-robin.
-  if (!disableExperimentalBetas && nonInteractive && !isRoundRobin) {
+  // Upstream CC always sends prompt-caching-scope for firstParty providers.
+  // Skip in round-robin (zero cache hits, doubled costs).
+  if (!disableExperimentalBetas && !isRoundRobin) {
     betas.push("prompt-caching-scope-2026-01-05");
   }
 
