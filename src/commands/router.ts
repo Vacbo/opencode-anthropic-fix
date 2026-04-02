@@ -271,7 +271,7 @@ export async function handleAnthropicSlashCommand(
         "Toggleable presets:",
         "  /anthropic betas add structured-outputs-2025-12-15",
         "  /anthropic betas add context-management-2025-06-27",
-        "  /anthropic betas add tool-examples-2025-10-29",
+        "  /anthropic betas add task-budgets-2026-03-13",
         "  /anthropic betas add web-search-2025-03-05",
         "  /anthropic betas add compact-2026-01-12",
         "  /anthropic betas add mcp-servers-2025-12-04",

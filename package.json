@@ -1,6 +1,6 @@
 {
   "name": "@vacbo/opencode-anthropic-fix",
-  "version": "0.0.31",
+  "version": "0.0.32",
   "main": "./dist/opencode-anthropic-auth-plugin.js",
   "bin": {
     "opencode-anthropic-auth": "./dist/opencode-anthropic-auth-cli.mjs"

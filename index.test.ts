@@ -779,7 +779,7 @@ describe("fetch interceptor", () => {
     expect(headers.get("authorization")).toBe("Bearer test-access");
     expect(headers.get("anthropic-beta")).toContain("oauth-2025-04-20");
     expect(headers.get("anthropic-beta")).toContain("claude-code-20250219");
-    expect(headers.get("user-agent")).toContain("claude-cli/2.1.83");
+    expect(headers.get("user-agent")).toContain("claude-cli/2.1.90");
     expect(headers.get("x-app")).toBe("cli");
     expect(headers.get("x-stainless-lang")).toBe("js");
     expect(headers.has("x-api-key")).toBe(false);
@@ -3500,7 +3500,7 @@ describe("header handling", () => {
 
   it("disables experimental betas when CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1", async () => {
     process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS = "1";
-    process.env.ANTHROPIC_BETAS = "custom-stable-beta,tool-examples-2025-10-29";
+    process.env.ANTHROPIC_BETAS = "custom-stable-beta,task-budgets-2026-03-13";
     mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
 
     await fetchFn("https://api.anthropic.com/v1/messages", {
@@ -3516,7 +3516,7 @@ describe("header handling", () => {
     expect(betaHeader).toContain("custom-stable-beta");
     expect(betaHeader).not.toContain("interleaved-thinking-2025-05-14");
     expect(betaHeader).not.toContain("prompt-caching-scope-2026-01-05");
-    expect(betaHeader).not.toContain("tool-examples-2025-10-29");
+    expect(betaHeader).not.toContain("task-budgets-2026-03-13");
     expect(betaHeader).not.toContain("redact-thinking-2026-02-12");
     expect(betaHeader).not.toContain("advanced-tool-use-2025-11-20");
     expect(betaHeader).not.toContain("fast-mode-2026-02-01");
@@ -3798,7 +3798,6 @@ describe("header handling", () => {
     const [, init] = mockFetch.mock.calls[0];
     const betaHeader = init.headers.get("anthropic-beta");
     expect(betaHeader).not.toContain("context-1m-2025-08-07");
-    expect(betaHeader).not.toContain("tool-examples-2025-10-29");
     expect(betaHeader).not.toContain("code-execution-2025-08-25");
     expect(betaHeader).not.toContain("files-api-2025-04-14");
     expect(betaHeader).toContain("claude-code-20250219");

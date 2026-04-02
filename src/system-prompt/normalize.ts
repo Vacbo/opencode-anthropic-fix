@@ -72,12 +72,10 @@ export function normalizeSystemTextBlocks(system: unknown[] | undefined): System
       text: obj.text,
     };
 
-    if (obj.cache_control && typeof obj.cache_control === "object" && !Array.isArray(obj.cache_control)) {
-      normalized.cache_control = obj.cache_control as { type: string };
-    } else if (typeof obj.cacheScope === "string" && obj.cacheScope) {
-      // Backward compatibility for older shape used by this plugin.
-      normalized.cache_control = { type: "ephemeral" };
-    }
+    // Intentionally strip cache_control from incoming system blocks.
+    // The plugin controls cache placement: only the identity block gets
+    // cache_control (added in buildSystemPromptBlocks). Passing through
+    // upstream markers causes "maximum of 4 blocks with cache_control" errors.
 
     output.push(normalized);
   }

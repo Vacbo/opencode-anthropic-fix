@@ -2,12 +2,14 @@
 // Shared constants extracted from index.mjs
 // ---------------------------------------------------------------------------
 
-export const FALLBACK_CLAUDE_CLI_VERSION = "2.1.83";
+export const FALLBACK_CLAUDE_CLI_VERSION = "2.1.90";
 export const CLAUDE_CODE_NPM_LATEST_URL = "https://registry.npmjs.org/@anthropic-ai/claude-code/latest";
 export const CLAUDE_CODE_BETA_FLAG = "claude-code-20250219";
 export const EFFORT_BETA_FLAG = "effort-2025-11-24";
 export const ADVANCED_TOOL_USE_BETA_FLAG = "advanced-tool-use-2025-11-20";
 export const FAST_MODE_BETA_FLAG = "fast-mode-2026-02-01";
+export const TASK_BUDGETS_BETA_FLAG = "task-budgets-2026-03-13";
+export const TOKEN_EFFICIENT_TOOLS_BETA_FLAG = "token-efficient-tools-2026-03-28";
 export const TOKEN_COUNTING_BETA_FLAG = "token-counting-2024-11-01";
 export const CLAUDE_CODE_IDENTITY_STRING = "You are Claude Code, Anthropic's official CLI for Claude.";
 
@@ -21,7 +23,6 @@ export const BEDROCK_UNSUPPORTED_BETAS = new Set([
   "interleaved-thinking-2025-05-14",
   "context-1m-2025-08-07",
   "tool-search-tool-2025-10-19",
-  "tool-examples-2025-10-29",
 ]);
 
 export const EXPERIMENTAL_BETA_FLAGS = new Set([
@@ -44,7 +45,8 @@ export const EXPERIMENTAL_BETA_FLAGS = new Set([
   "redact-thinking-2026-02-12",
   "skills-2025-10-02",
   "structured-outputs-2025-12-15",
-  "tool-examples-2025-10-29",
+  "task-budgets-2026-03-13",
+  "token-efficient-tools-2026-03-28",
   "tool-search-tool-2025-10-19",
   "web-search-2025-03-05",
 ]);

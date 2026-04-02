@@ -112,10 +112,6 @@ export function buildAnthropicBetaHeader(
     betas.push("structured-outputs-2025-12-15");
   }
 
-  if (!disableExperimentalBetas && nonInteractive && isTruthyEnv(process.env.TENGU_SCARF_COFFEE)) {
-    betas.push("tool-examples-2025-10-29");
-  }
-
   if (!disableExperimentalBetas && (provider === "vertex" || provider === "foundry") && supportsWebSearch(model)) {
     betas.push("web-search-2025-03-05");
   }
