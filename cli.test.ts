@@ -1900,16 +1900,16 @@ describe("cmdRemove active account", () => {
 // ---------------------------------------------------------------------------
 
 describe("cmdStats", () => {
-  let output: ReturnType<typeof captureOutput>;
-
   beforeEach(() => {
-    output = captureOutput();
     vi.clearAllMocks();
   });
 
-  afterEach(() => {
-    output.restore();
-  });
+  function statsMessages() {
+    return (log.message as Mock).mock.calls
+      .map((call) => String(call[0]))
+      .join("\n")
+      .replace(ANSI_REGEX, "");
+  }
 
   function makeStatsStorage() {
     const storage = makeStorage();
@@ -1937,7 +1937,7 @@ describe("cmdStats", () => {
     mockLoadAccounts.mockResolvedValue(makeStatsStorage());
     const code = await cmdStats();
     expect(code).toBe(0);
-    const text = output.text();
+    const text = statsMessages();
     expect(text).toContain("alice@example.com");
     expect(text).toContain("bob@example.com");
     expect(text).toContain("142");
@@ -1950,8 +1950,7 @@ describe("cmdStats", () => {
     mockLoadAccounts.mockResolvedValue(null);
     const code = await cmdStats();
     expect(code).toBe(1);
-    const text = output.text();
-    expect(text).toContain("No accounts");
+    expect(log.warn).toHaveBeenCalledWith("No accounts configured.");
   });
 
   it("handles accounts with no stats (defaults)", async () => {
@@ -1960,7 +1959,7 @@ describe("cmdStats", () => {
     mockLoadAccounts.mockResolvedValue(storage);
     const code = await cmdStats();
     expect(code).toBe(0);
-    const text = output.text();
+    const text = statsMessages();
     expect(text).toContain("alice@example.com");
     expect(text).toContain("0");
   });
@@ -1971,16 +1970,9 @@ describe("cmdStats", () => {
 // ---------------------------------------------------------------------------
 
 describe("cmdResetStats", () => {
-  let output: ReturnType<typeof captureOutput>;
-
   beforeEach(() => {
-    output = captureOutput();
     vi.clearAllMocks();
     mockSaveAccounts.mockResolvedValue(undefined);
-  });
-
-  afterEach(() => {
-    output.restore();
   });
 
   it("resets stats for all accounts", async () => {
@@ -1998,8 +1990,7 @@ describe("cmdResetStats", () => {
 
     const code = await cmdResetStats("all");
     expect(code).toBe(0);
-    const text = output.text();
-    expect(text).toContain("Reset usage statistics for all");
+    expect(log.success).toHaveBeenCalledWith("Reset usage statistics for all accounts.");
 
     const saved = mockSaveAccounts.mock.calls[0][0];
     expect(saved.accounts[0].stats.requests).toBe(0);
@@ -2021,8 +2012,7 @@ describe("cmdResetStats", () => {
 
     const code = await cmdResetStats("1");
     expect(code).toBe(0);
-    const text = output.text();
-    expect(text).toContain("Reset usage statistics for alice@example.com");
+    expect(log.success).toHaveBeenCalledWith("Reset usage statistics for alice@example.com.");
   });
 
   it("returns 1 for invalid account number", async () => {
@@ -2032,6 +2022,7 @@ describe("cmdResetStats", () => {
 
     const code = await cmdResetStats("99");
     expect(code).toBe(1);
+    expect(log.error).toHaveBeenCalledWith("Invalid account number. Use 1-1 or 'all'.");
   });
 
   it("resets all accounts when no argument given", async () => {
@@ -2049,8 +2040,7 @@ describe("cmdResetStats", () => {
 
     const code = await cmdResetStats();
     expect(code).toBe(0);
-    const text = output.text();
-    expect(text).toContain("Reset usage statistics for all");
+    expect(log.success).toHaveBeenCalledWith("Reset usage statistics for all accounts.");
 
     const saved = mockSaveAccounts.mock.calls[0][0];
     expect(saved.accounts[0].stats.requests).toBe(0);
@@ -2060,5 +2050,6 @@ describe("cmdResetStats", () => {
     mockLoadAccounts.mockResolvedValue(null);
     const code = await cmdResetStats("all");
     expect(code).toBe(1);
+    expect(log.warn).toHaveBeenCalledWith("No accounts configured.");
   });
 });

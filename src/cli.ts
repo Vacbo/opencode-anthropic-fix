@@ -1250,7 +1250,7 @@ function fmtTokens(n: number) {
 export async function cmdStats() {
   const stored = await loadAccounts();
   if (!stored || stored.accounts.length === 0) {
-    console.log(c.yellow("No accounts configured."));
+    log.warn("No accounts configured.");
     return 1;
   }
 
@@ -1259,8 +1259,8 @@ export async function cmdStats() {
 
   const RULE = c.dim("  " + "─".repeat(74));
 
-  console.log(c.bold("Anthropic Account Usage"));
-  console.log(
+  log.message(c.bold("Anthropic Account Usage"));
+  log.message(
     "  " +
       pad(c.dim("#"), W.num) +
       pad(c.dim("Account"), W.name) +
@@ -1270,7 +1270,7 @@ export async function cmdStats() {
       rpad(c.dim("Cache R"), W.val) +
       rpad(c.dim("Cache W"), W.val),
   );
-  console.log(RULE);
+  log.message(RULE);
 
   let totReq = 0,
     totIn = 0,
@@ -1287,7 +1287,7 @@ export async function cmdStats() {
     const num = `${marker} ${i + 1}`;
     const name = acc.email || `Account ${i + 1}`;
 
-    console.log(
+    log.message(
       "  " +
         pad(num, W.num) +
         pad(name, W.name) +
@@ -1307,8 +1307,8 @@ export async function cmdStats() {
   }
 
   if (stored.accounts.length > 1) {
-    console.log(RULE);
-    console.log(
+    log.message(RULE);
+    log.message(
       c.bold(
         "  " +
           pad("", W.num) +
@@ -1322,9 +1322,8 @@ export async function cmdStats() {
     );
   }
 
-  console.log("");
   if (oldestReset < Infinity) {
-    console.log(c.dim(`Tracking since: ${new Date(oldestReset).toLocaleString()} (${formatTimeAgo(oldestReset)})`));
+    log.message(c.dim(`Tracking since: ${new Date(oldestReset).toLocaleString()} (${formatTimeAgo(oldestReset)})`));
   }
 
   return 0;
@@ -1338,7 +1337,7 @@ export async function cmdStats() {
 export async function cmdResetStats(arg?: string) {
   const stored = await loadAccounts();
   if (!stored || stored.accounts.length === 0) {
-    console.log(c.yellow("No accounts configured."));
+    log.warn("No accounts configured.");
     return 1;
   }
 
@@ -1349,20 +1348,20 @@ export async function cmdResetStats(arg?: string) {
       acc.stats = createDefaultStats(now);
     }
     await saveAccounts(stored);
-    console.log(c.green("Reset usage statistics for all accounts."));
+    log.success("Reset usage statistics for all accounts.");
     return 0;
   }
 
   const idx = parseInt(arg, 10) - 1;
   if (isNaN(idx) || idx < 0 || idx >= stored.accounts.length) {
-    console.log(c.red(`Invalid account number. Use 1-${stored.accounts.length} or 'all'.`));
+    log.error(`Invalid account number. Use 1-${stored.accounts.length} or 'all'.`);
     return 1;
   }
 
   stored.accounts[idx].stats = createDefaultStats(now);
   await saveAccounts(stored);
   const name = stored.accounts[idx].email || `Account ${idx + 1}`;
-  console.log(c.green(`Reset usage statistics for ${name}.`));
+  log.success(`Reset usage statistics for ${name}.`);
   return 0;
 }
 
