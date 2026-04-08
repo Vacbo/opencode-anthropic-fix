@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Tests for the CLI account management tool.
  *
@@ -151,7 +150,7 @@ vi.mock("@clack/prompts", () => {
 });
 
 import { exec } from "node:child_process";
-import { text, confirm, select, spinner, intro, outro, isCancel, log, note, cancel } from "@clack/prompts";
+import { text, confirm, select, spinner, isCancel, log, note } from "@clack/prompts";
 import {
   cmdConfig,
   cmdDisable,
@@ -160,6 +159,7 @@ import {
   cmdList,
   cmdLogin,
   cmdLogout,
+  cmdManage,
   cmdReauth,
   cmdRefresh,
   cmdRemove,
@@ -261,7 +261,7 @@ function mockConfirmAnswer(value: boolean) {
   mockConfirm.mockResolvedValueOnce(value);
 }
 
-function mockSelectAnswer(value: string) {
+function _mockSelectAnswer(value: string) {
   mockSelect.mockResolvedValueOnce(value);
 }
 
@@ -2051,5 +2051,203 @@ describe("cmdResetStats", () => {
     const code = await cmdResetStats("all");
     expect(code).toBe(1);
     expect(log.warn).toHaveBeenCalledWith("No accounts configured.");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cmdManage
+// ---------------------------------------------------------------------------
+
+describe("cmdManage", () => {
+  let output: ReturnType<typeof captureOutput>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    output = captureOutput();
+    mockSaveAccounts.mockResolvedValue(undefined);
+    mockLoadAccounts.mockResolvedValue(makeStorage());
+    mockSelect.mockResolvedValue("quit");
+  });
+
+  afterEach(() => {
+    output.restore();
+  });
+
+  it("returns 1 when no accounts configured", async () => {
+    mockLoadAccounts.mockResolvedValue(null);
+    const code = await cmdManage();
+    expect(code).toBe(1);
+    expect(output.text()).toContain("No accounts configured");
+  });
+
+  it("returns 1 when accounts array is empty", async () => {
+    mockLoadAccounts.mockResolvedValue({ version: 1, accounts: [], activeIndex: 0 });
+    const code = await cmdManage();
+    expect(code).toBe(1);
+    expect(output.text()).toContain("No accounts configured");
+  });
+
+  it("rejects non-interactive terminals", async () => {
+    const restoreTTY = setStdinTTY(false);
+    try {
+      const code = await cmdManage();
+      expect(code).toBe(1);
+      expect(output.errorText()).toContain("requires an interactive terminal");
+    } finally {
+      restoreTTY();
+    }
+  });
+
+  it("displays account list with active/disabled status", async () => {
+    const restoreTTY = setStdinTTY(true);
+    mockSelect.mockResolvedValueOnce("quit");
+    try {
+      const code = await cmdManage();
+      expect(code).toBe(0);
+      expect(output.text()).toContain("alice@example.com");
+      expect(output.text()).toContain("charlie@example.com");
+    } finally {
+      restoreTTY();
+    }
+  });
+
+  it("switches active account via manage menu", async () => {
+    const restoreTTY = setStdinTTY(true);
+    mockSelect
+      .mockResolvedValueOnce("switch")
+      .mockResolvedValueOnce("1") // select account index 1 (bob)
+      .mockResolvedValueOnce("quit");
+    try {
+      const code = await cmdManage();
+      expect(code).toBe(0);
+      expect(saveAccounts).toHaveBeenCalledWith(expect.objectContaining({ activeIndex: 1 }));
+    } finally {
+      restoreTTY();
+    }
+  });
+
+  it("enables disabled account via manage menu", async () => {
+    const restoreTTY = setStdinTTY(true);
+    mockSelect
+      .mockResolvedValueOnce("enable")
+      .mockResolvedValueOnce("2") // select account index 2 (charlie, disabled)
+      .mockResolvedValueOnce("quit");
+    try {
+      const code = await cmdManage();
+      expect(code).toBe(0);
+      const saved = mockSaveAccounts.mock.calls[0][0];
+      expect(saved.accounts[2].enabled).toBe(true);
+    } finally {
+      restoreTTY();
+    }
+  });
+
+  it("disables enabled account via manage menu", async () => {
+    const restoreTTY = setStdinTTY(true);
+    mockSelect
+      .mockResolvedValueOnce("disable")
+      .mockResolvedValueOnce("1") // select account index 1 (bob, enabled)
+      .mockResolvedValueOnce("quit");
+    try {
+      const code = await cmdManage();
+      expect(code).toBe(0);
+      const saved = mockSaveAccounts.mock.calls[0][0];
+      expect(saved.accounts[1].enabled).toBe(false);
+    } finally {
+      restoreTTY();
+    }
+  });
+
+  it("prevents disabling last enabled account", async () => {
+    const storage = makeStorage();
+    storage.accounts = [storage.accounts[0]]; // only one account
+    mockLoadAccounts.mockResolvedValue(storage);
+    const restoreTTY = setStdinTTY(true);
+    mockSelect.mockResolvedValueOnce("disable").mockResolvedValueOnce("0").mockResolvedValueOnce("quit");
+    try {
+      const code = await cmdManage();
+      expect(code).toBe(0);
+      // Should not save since we can't disable the last enabled account
+      expect(saveAccounts).not.toHaveBeenCalled();
+      expect(output.text()).toContain("Cannot disable the last enabled account");
+    } finally {
+      restoreTTY();
+    }
+  });
+
+  it("removes account with confirmation via manage menu", async () => {
+    const restoreTTY = setStdinTTY(true);
+    mockConfirm.mockResolvedValueOnce(true);
+    mockSelect
+      .mockResolvedValueOnce("remove")
+      .mockResolvedValueOnce("1") // select account index 1 (bob)
+      .mockResolvedValueOnce("quit");
+    try {
+      const code = await cmdManage();
+      expect(code).toBe(0);
+      const saved = mockSaveAccounts.mock.calls[0][0];
+      expect(saved.accounts).toHaveLength(2);
+      expect(saved.accounts.find((a) => a.refreshToken === "refresh-bob")).toBeUndefined();
+    } finally {
+      restoreTTY();
+    }
+  });
+
+  it("resets account tracking via manage menu", async () => {
+    const storage = makeStorage();
+    storage.accounts[0].consecutiveFailures = 5;
+    storage.accounts[0].lastFailureTime = Date.now();
+    storage.accounts[0].rateLimitResetTimes = { anthropic: Date.now() + 60_000 };
+    mockLoadAccounts.mockResolvedValue(storage);
+    const restoreTTY = setStdinTTY(true);
+    mockSelect
+      .mockResolvedValueOnce("reset")
+      .mockResolvedValueOnce("0") // select account index 0 (alice)
+      .mockResolvedValueOnce("quit");
+    try {
+      const code = await cmdManage();
+      expect(code).toBe(0);
+      const saved = mockSaveAccounts.mock.calls[0][0];
+      expect(saved.accounts[0].consecutiveFailures).toBe(0);
+      expect(saved.accounts[0].lastFailureTime).toBeNull();
+      expect(saved.accounts[0].rateLimitResetTimes).toEqual({});
+    } finally {
+      restoreTTY();
+    }
+  });
+
+  it("changes strategy via manage menu", async () => {
+    const restoreTTY = setStdinTTY(true);
+    mockSelect.mockResolvedValueOnce("strategy").mockResolvedValueOnce("round-robin").mockResolvedValueOnce("quit");
+    try {
+      const code = await cmdManage();
+      expect(code).toBe(0);
+      expect(output.text()).toContain("Strategy changed to 'round-robin'");
+    } finally {
+      restoreTTY();
+    }
+  });
+
+  it("exits when user selects quit", async () => {
+    const restoreTTY = setStdinTTY(true);
+    mockSelect.mockResolvedValueOnce("quit");
+    try {
+      const code = await cmdManage();
+      expect(code).toBe(0);
+    } finally {
+      restoreTTY();
+    }
+  });
+
+  it("exits when user cancels action selection", async () => {
+    const restoreTTY = setStdinTTY(true);
+    mockIsCancel.mockReturnValueOnce(true);
+    mockSelect.mockResolvedValueOnce(undefined);
+    try {
+      const code = await cmdManage();
+      expect(code).toBe(0);
+    } finally {
+      restoreTTY();
+    }
   });
 });

@@ -107,6 +107,25 @@ describe("isAccountSpecificError", () => {
     expect(isAccountSpecificError(400, "RATE LIMIT exceeded")).toBe(true);
     expect(isAccountSpecificError(400, "QUOTA Exhausted")).toBe(true);
   });
+
+  it("returns true for 403 with 'membership benefits' message (JSON body)", () => {
+    const body = JSON.stringify({
+      error: { message: "We're unable to verify your membership benefits" },
+    });
+    expect(isAccountSpecificError(403, body)).toBe(true);
+  });
+
+  it("returns true for 403 with 'membership benefits' message (string body)", () => {
+    expect(isAccountSpecificError(403, "We're unable to verify your membership benefits")).toBe(true);
+  });
+
+  it("returns true for 403 with 'unable to verify' message", () => {
+    expect(isAccountSpecificError(403, "unable to verify your account")).toBe(true);
+  });
+
+  it("returns false for 403 with unrelated error message (negative test)", () => {
+    expect(isAccountSpecificError(403, "Some other error occurred")).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -206,6 +225,13 @@ describe("parseRateLimitReason", () => {
   it("handles body as object (not string)", () => {
     const body = { error: { type: "quota_exceeded", message: "quota" } };
     expect(parseRateLimitReason(429, body)).toBe("QUOTA_EXHAUSTED");
+  });
+
+  it("returns AUTH_FAILED for membership benefits message", () => {
+    const body = JSON.stringify({
+      error: { message: "We're unable to verify your membership benefits" },
+    });
+    expect(parseRateLimitReason(403, body)).toBe("AUTH_FAILED");
   });
 });
 

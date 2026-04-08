@@ -5,6 +5,7 @@
  * Usage:
  *   opencode-anthropic-auth [group] [command] [args]
  *   opencode-anthropic-auth [command] [args] (legacy format, still supported)
+ *   oaa [group] [command] [args] (short alias)
  *
  * Command Groups:
  *   auth              Authentication: login, logout, reauth, refresh
@@ -34,26 +35,27 @@
  *   status            Compact one-liner for scripts/prompts
  *
  * Config Commands:
- *   show              Show current configuration and file paths
+ *   config            Show current configuration and file paths
  *   strategy [name]   Show or change account selection strategy
+ *
+ * Manage Commands:
+ *   manage            Interactive account management menu
+ *   help              Show this help message
  *
  * Group Help:
  *   auth help         Show auth commands
  *   account help      Show account commands
  *   usage help        Show usage commands
  *   config help       Show config commands
- *   help              Show this help message
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import { exec } from "node:child_process";
-import { stdin, stdout } from "node:process";
-import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
 import { CLIENT_ID, getConfigPath, loadConfig, saveConfig, VALID_STRATEGIES } from "./config.js";
 import { authorize, exchange, revoke } from "./oauth.js";
 import { createDefaultStats, getStoragePath, loadAccounts, saveAccounts } from "./storage.js";
-import { text, confirm, select, spinner, intro, outro, isCancel, log, note } from "@clack/prompts";
+import { text, confirm, select, spinner, intro, isCancel, log, note } from "@clack/prompts";
 
 // ---------------------------------------------------------------------------
 // Color helpers — zero dependencies, respects NO_COLOR / TTY
@@ -127,7 +129,8 @@ function shortPath(p: string) {
  * @returns {string}
  */
 function stripAnsi(str: string) {
-  return str.replace(new RegExp("\\u001b\\[[0-9;]*m", "g"), "");
+  // eslint-disable-next-line no-control-regex
+  return str.replace(new RegExp("\x1b\\[[0-9;]*m", "g"), "");
 }
 
 /**
@@ -1550,6 +1553,7 @@ ${c.bold("Anthropic Multi-Account Auth CLI")}
 ${c.dim("Usage:")}
   ${bin} [group] [command] [args]
   ${bin} [command] [args] ${c.dim("(legacy format, still supported)")}
+  oaa [group] [command] [args] ${c.dim("(short alias)")}
 
 ${c.dim("Command Groups:")}
   ${pad(c.cyan("auth"), 22)}Authentication: login, logout, reauth, refresh
@@ -1558,23 +1562,31 @@ ${c.dim("Command Groups:")}
   ${pad(c.cyan("config"), 22)}Configuration: show, strategy
   ${pad(c.cyan("manage"), 22)}Interactive account management menu
 
-${c.dim("Quick Commands (Legacy Format):")}
+${c.dim("Auth Commands:")}
   ${pad(c.cyan("login"), 22)}Add a new account via browser OAuth (alias: ln)
   ${pad(c.cyan("logout") + " <N>", 22)}Revoke tokens and remove account N (alias: lo)
   ${pad(c.cyan("logout") + " --all", 22)}Revoke all tokens and clear all accounts
   ${pad(c.cyan("reauth") + " <N>", 22)}Re-authenticate account N (alias: ra)
   ${pad(c.cyan("refresh") + " <N>", 22)}Attempt token refresh (alias: rf)
+
+${c.dim("Account Commands:")}
   ${pad(c.cyan("list"), 22)}Show all accounts with status ${c.dim("(default, alias: ls)")}
-  ${pad(c.cyan("status"), 22)}Compact one-liner for scripts/prompts (alias: st)
   ${pad(c.cyan("switch") + " <N>", 22)}Set account N as active (alias: sw)
   ${pad(c.cyan("enable") + " <N>", 22)}Enable a disabled account (alias: en)
   ${pad(c.cyan("disable") + " <N>", 22)}Disable an account (alias: dis)
   ${pad(c.cyan("remove") + " <N>", 22)}Remove an account permanently (alias: rm)
   ${pad(c.cyan("reset") + " <N|all>", 22)}Clear rate-limit / failure tracking
+
+${c.dim("Usage Commands:")}
   ${pad(c.cyan("stats"), 22)}Show per-account usage statistics
   ${pad(c.cyan("reset-stats") + " [N|all]", 22)}Reset usage statistics
-  ${pad(c.cyan("strategy") + " [name]", 22)}Show or change selection strategy (alias: strat)
+  ${pad(c.cyan("status"), 22)}Compact one-liner for scripts/prompts (alias: st)
+
+${c.dim("Config Commands:")}
   ${pad(c.cyan("config"), 22)}Show configuration and file paths (alias: cfg)
+  ${pad(c.cyan("strategy") + " [name]", 22)}Show or change selection strategy (alias: strat)
+
+${c.dim("Manage Commands:")}
   ${pad(c.cyan("manage"), 22)}Interactive account management menu (alias: mg)
   ${pad(c.cyan("help"), 22)}Show this help message
 
@@ -1592,6 +1604,7 @@ ${c.dim("Options:")}
 ${c.dim("Examples:")}
   ${bin} login             ${c.dim("# Add a new account via browser")}
   ${bin} auth login        ${c.dim("# Same as above (group format)")}
+  oaa login             ${c.dim("# Same as above (short alias)")}
   ${bin} logout 2          ${c.dim("# Revoke tokens & remove account 2")}
   ${bin} auth logout 2     ${c.dim("# Same as above (group format)")}
   ${bin} list              ${c.dim("# Show all accounts (default)")}

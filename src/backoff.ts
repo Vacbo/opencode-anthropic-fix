@@ -120,6 +120,9 @@ function bodyHasAccountError(body: string | object | null | undefined): boolean 
     "unauthorized",
     "authentication",
     "not authorized",
+    // Anthropic returns "We're unable to verify your membership benefits" on 403 when access token is stale
+    "membership",
+    "unable to verify",
   ];
 
   return (
@@ -163,6 +166,7 @@ export function parseRateLimitReason(status: number, body?: string | object | nu
     "unauthorized",
     "invalid access token",
     "expired token",
+    "membership",
   ];
 
   const isAuthFailure =

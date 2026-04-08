@@ -34,11 +34,35 @@ vi.mock("./src/storage.js", () => ({
   loadAccounts: vi.fn().mockResolvedValue(null),
   saveAccounts: vi.fn().mockResolvedValue(undefined),
   clearAccounts: vi.fn().mockResolvedValue(undefined),
+  getStoragePath: vi.fn(() => "/home/user/.config/opencode/anthropic-accounts.json"),
 }));
 
 vi.mock("./src/cc-credentials.js", () => ({
   readCCCredentials: vi.fn(() => []),
 }));
+
+vi.mock("@clack/prompts", () => {
+  const noop = vi.fn();
+  return {
+    text: vi.fn().mockResolvedValue(""),
+    confirm: vi.fn().mockResolvedValue(false),
+    select: vi.fn().mockResolvedValue("cancel"),
+    spinner: vi.fn(() => ({ start: noop, stop: noop, message: noop })),
+    intro: noop,
+    outro: noop,
+    isCancel: vi.fn().mockReturnValue(false),
+    log: {
+      info: vi.fn((...args: any[]) => console.log(...args)),
+      success: vi.fn((...args: any[]) => console.log(...args)),
+      warn: vi.fn((...args: any[]) => console.log(...args)),
+      error: vi.fn((...args: any[]) => console.error(...args)),
+      message: vi.fn((...args: any[]) => console.log(...args)),
+      step: noop,
+    },
+    note: noop,
+    cancel: noop,
+  };
+});
 
 vi.mock("./src/refresh-lock.js", () => ({
   acquireRefreshLock: vi.fn().mockResolvedValue({ acquired: true, lockPath: "/tmp/opencode-test.lock" }),
@@ -1217,6 +1241,39 @@ describe("fetch interceptor", () => {
 
     expect(response.status).toBe(200);
     // 3 calls: first API (429), token refresh for account 2, retry API (200)
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
+
+  it("retries on 403 membership error with a different account", async () => {
+    // Set up two accounts — the auth fallback provides access token for account 1.
+    // Account 2 will need a token refresh before it can be used.
+    vi.resetAllMocks();
+    const fetchFn = await setupFetchFn(client, [{}, {}]);
+
+    // First API request: 403 with membership benefits error (account 1 has access token from auth fallback)
+    mockFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          error: { message: "We're unable to verify your membership benefits" },
+        }),
+        {
+          status: 403,
+          headers: { "retry-after": "0" },
+        },
+      ),
+    );
+    // Token refresh for account 2 (no access token yet)
+    mockFetch.mockResolvedValueOnce(mockTokenRefresh("access-2", "refresh-2"));
+    // Retry API request with account 2: 200
+    mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
+
+    const response = await fetchFn("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      body: JSON.stringify({ messages: [] }),
+    });
+
+    expect(response.status).toBe(200);
+    // 3 calls: first API (403), token refresh for account 2, retry API (200)
     expect(mockFetch).toHaveBeenCalledTimes(3);
   });
 });
