@@ -1,0 +1,138 @@
+bun test v1.3.11 (af24e281)
+
+cli.test.ts:
+[1mAnthropic Auth Configuration[0m
+General
+Strategy:          [36msticky[0m
+Failure TTL:       3600s
+Debug:             off
+Health Score
+Initial:         70
+Success reward:  +1
+Rate limit:      -10
+Failure:         -20
+Recovery/hour:   +2
+Min usable:      50
+Token Bucket
+Max tokens:      50
+Regen/min:       6
+Initial:         50
+Files
+Config:          /home/user/.config/opencode/anthropic-auth.json
+Accounts:        /home/user/.config/opencode/anthropic-accounts.json
+Accounts total:  3 (2 enabled)
+[1mAnthropic Auth Configuration[0m
+General
+Strategy:          [36msticky[0m
+Failure TTL:       3600s
+Debug:             off
+Health Score
+Initial:         70
+Success reward:  +1
+Rate limit:      -10
+Failure:         -20
+Recovery/hour:   +2
+Min usable:      50
+Token Bucket
+Max tokens:      50
+Regen/min:       6
+Initial:         50
+Files
+Config:          /home/user/.config/opencode/anthropic-auth.json
+Accounts:        /home/user/.config/opencode/anthropic-accounts.json
+Accounts total:  none
+[1mAnthropic Auth Configuration[0m
+General
+Strategy:          [36msticky[0m
+Failure TTL:       3600s
+Debug:             off
+Health Score
+Initial:         70
+Success reward:  +1
+Rate limit:      -10
+Failure:         -20
+Recovery/hour:   +2
+Min usable:      50
+Token Bucket
+Max tokens:      50
+Regen/min:       6
+Initial:         50
+Files
+Config:          /home/user/.config/opencode/anthropic-auth.json
+Accounts:        /home/user/.config/opencode/anthropic-accounts.json
+Accounts total:  none
+[1mAnthropic Auth Configuration[0m
+General
+Strategy:          [36msticky[0m
+Failure TTL:       3600s
+Debug:             off
+Health Score
+Initial:         70
+Success reward:  +1
+Rate limit:      -10
+Failure:         -20
+Recovery/hour:   +2
+Min usable:      50
+Token Bucket
+Max tokens:      50
+Regen/min:       6
+Initial:         50
+Files
+Config:          /home/user/.config/opencode/anthropic-auth.json
+Accounts:        /home/user/.config/opencode/anthropic-accounts.json
+Accounts total:  none
+[1mAnthropic Auth Configuration[0m
+General
+Strategy:          [36msticky[0m
+Failure TTL:       3600s
+Debug:             off
+Health Score
+Initial:         70
+Success reward:  +1
+Rate limit:      -10
+Failure:         -20
+Recovery/hour:   +2
+Min usable:      50
+Token Bucket
+Max tokens:      50
+Regen/min:       6
+Initial:         50
+Files
+Config:          /home/user/.config/opencode/anthropic-auth.json
+Accounts:        /home/user/.config/opencode/anthropic-accounts.json
+Accounts total:  3 (2 enabled)
+[1mAnthropic Auth Configuration[0m
+General
+Strategy:          [36msticky[0m
+Failure TTL:       3600s
+Debug:             off
+Health Score
+Initial:         70
+Success reward:  +1
+Rate limit:      -10
+Failure:         -20
+Recovery/hour:   +2
+Min usable:      50
+Token Bucket
+Max tokens:      50
+Regen/min:       6
+Initial:         50
+Files
+Config:          /home/user/.config/opencode/anthropic-auth.json
+Accounts:        /home/user/.config/opencode/anthropic-accounts.json
+Accounts total:  none
+[1mAccount Selection Strategy[0m
+[32m▸ [0m[1m[36msticky[0m[0m          Stay on one account until it fails or is rate-limited
+  [2mround-robin[0m     [2mRotate through accounts on every request[0m
+  [2mhybrid[0m          [2mPrefer healthy accounts, rotate when degraded[0m
+[2mChange with: opencode-anthropic-auth strategy <sticky|round-robin|hybrid>[0m
+Strategy changed to 'round-robin'.
+Invalid strategy 'invalid-strategy'. Valid strategies: sticky, round-robin, hybrid
+[2mStrategy is already 'sticky'.[0m
+Strategy changed to 'round-robin'.
+
+ 11 pass
+ 106 filtered out
+ 0 fail
+ 32 expect() calls
+Ran 11 tests across 1 file. [20.00ms]
