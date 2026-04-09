@@ -1,11 +1,9 @@
 import {
-  ADVANCED_TOOL_USE_BETA_FLAG,
   BEDROCK_UNSUPPORTED_BETAS,
   BETA_SHORTCUTS,
   CLAUDE_CODE_BETA_FLAG,
   EFFORT_BETA_FLAG,
   EXPERIMENTAL_BETA_FLAGS,
-  FAST_MODE_BETA_FLAG,
   TOKEN_COUNTING_BETA_FLAG,
 } from "./constants.js";
 import { isTruthyEnv } from "./env.js";
@@ -68,15 +66,12 @@ export function buildAnthropicBetaHeader(
   // intentionally NOT auto-included here — OpenCode users benefit from seeing
   // thinking blocks. Available via /anthropic betas add redact-thinking-2026-02-12.
 
-  // Advanced tool use improvements — in upstream 2.1.79+ base profile.
-  if (!disableExperimentalBetas) {
-    betas.push(ADVANCED_TOOL_USE_BETA_FLAG);
-  }
+  // CC 2.1.98 Proxyman capture shows these are NOT in the actual request headers
+  // even though they're in the source. Only include when explicitly requested.
+  // advanced-tool-use and fast-mode were causing fingerprint mismatch.
 
-  // Fast mode — in upstream 2.1.79+ base profile.
-  if (!disableExperimentalBetas) {
-    betas.push(FAST_MODE_BETA_FLAG);
-  }
+  // Advisor tool — CC 2.1.98 always includes this.
+  betas.push("advisor-tool-2026-03-01");
 
   if (isAdaptiveThinkingModel(model)) {
     // Adaptive thinking models (Opus 4.6, Sonnet 4.6) use effort-based thinking controls.

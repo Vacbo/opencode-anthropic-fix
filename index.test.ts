@@ -3249,8 +3249,9 @@ describe("header handling", () => {
     expect(betaHeader).toContain("oauth-2025-04-20");
     expect(betaHeader).toContain("interleaved-thinking-2025-05-14");
     expect(betaHeader).toContain("claude-code-20250219");
-    expect(betaHeader).toContain("advanced-tool-use-2025-11-20");
-    expect(betaHeader).toContain("fast-mode-2026-02-01");
+    expect(betaHeader).toContain("advisor-tool-2026-03-01");
+    expect(betaHeader).not.toContain("advanced-tool-use-2025-11-20");
+    expect(betaHeader).not.toContain("fast-mode-2026-02-01");
     expect(betaHeader).not.toContain("redact-thinking-2026-02-12");
     expect(betaHeader).not.toContain("fine-grained-tool-streaming-2025-05-14");
     expect(betaHeader).not.toContain("code-execution-2025-08-25");
@@ -3285,8 +3286,9 @@ describe("header handling", () => {
     const [, init] = mockFetch.mock.calls[0];
     const betaHeader = init.headers.get("anthropic-beta");
     expect(betaHeader).toContain("effort-2025-11-24");
-    expect(betaHeader).toContain("advanced-tool-use-2025-11-20");
-    expect(betaHeader).toContain("fast-mode-2026-02-01");
+    expect(betaHeader).toContain("advisor-tool-2026-03-01");
+    expect(betaHeader).not.toContain("advanced-tool-use-2025-11-20");
+    expect(betaHeader).not.toContain("fast-mode-2026-02-01");
     expect(betaHeader).not.toContain("redact-thinking-2026-02-12");
     expect(betaHeader).not.toContain("interleaved-thinking-2025-05-14");
   });
@@ -3623,7 +3625,7 @@ describe("header handling", () => {
     expect(parsed.system[1]).toEqual({
       type: "text",
       text: "You are Claude Code, Anthropic's official CLI for Claude.",
-      cache_control: { type: "ephemeral", scope: "global", ttl: "1h" },
+      cache_control: { type: "ephemeral" },
     });
     expect(parsed.system[2].text).toBe("Use Claude Code defaults");
   });
@@ -3676,7 +3678,7 @@ describe("header handling", () => {
     expect(parsed.system[0]).toEqual({
       type: "text",
       text: "You are Claude Code, Anthropic's official CLI for Claude.",
-      cache_control: { type: "ephemeral", scope: "global", ttl: "1h" },
+      cache_control: { type: "ephemeral" },
     });
     expect(parsed.system.some((item) => item.text.startsWith("x-anthropic-billing-header:"))).toBe(false);
   });

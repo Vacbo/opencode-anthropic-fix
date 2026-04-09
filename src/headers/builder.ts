@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { buildAnthropicBetaHeader } from "../betas.js";
 import { isFalsyEnv, isTruthyEnv } from "../env.js";
 import type { SignatureConfig } from "../types.js";
@@ -154,6 +155,8 @@ export function buildRequestHeaders(
     if (isTruthyEnv(process.env.CLAUDE_CODE_ADDITIONAL_PROTECTION)) {
       requestHeaders.set("x-anthropic-additional-protection", "true");
     }
+    // CC 2.1.98 sends a per-request UUID
+    requestHeaders.set("x-client-request-id", randomUUID());
   }
   requestHeaders.delete("x-api-key");
 

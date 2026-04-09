@@ -73,7 +73,7 @@ describe("CC 2.1.98 — Full request fingerprint comparison", () => {
     expect(CLAUDE_CODE_IDENTITY_STRING).toBe("You are Claude Code, Anthropic's official CLI for Claude.");
 
     const identityBlock = blocks.find((b) => b.text === CLAUDE_CODE_IDENTITY_STRING);
-    expect(identityBlock?.cache_control).toEqual({ type: "ephemeral", scope: "global", ttl: "1h" });
+    expect(identityBlock?.cache_control).toEqual({ type: "ephemeral" });
   });
 
   it("builds full request headers matching CC", () => {

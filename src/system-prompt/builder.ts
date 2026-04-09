@@ -44,10 +44,11 @@ export function buildSystemPromptBlocks(
     blocks.push({ type: "text", text: billingHeader });
   }
 
+  // CC 2.1.98 sends only {"type":"ephemeral"} — no scope or ttl fields.
   blocks.push({
     type: "text",
     text: CLAUDE_CODE_IDENTITY_STRING,
-    cache_control: { type: "ephemeral", scope: "global", ttl: "1h" },
+    cache_control: { type: "ephemeral" },
   });
   blocks.push(...filtered);
 

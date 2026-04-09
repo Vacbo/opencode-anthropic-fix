@@ -317,20 +317,14 @@ describe("CC 2.1.98 — Beta header composition (signature enabled)", () => {
     expect(betas.split(",")).toContain("claude-code-20250219");
   });
 
-  it("always includes advanced-tool-use-2025-11-20 when experimental enabled", () => {
+  it("always includes advisor-tool-2026-03-01 when experimental enabled", () => {
     process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS = "";
     const betas = callBuildBeta();
-    expect(betas.split(",")).toContain("advanced-tool-use-2025-11-20");
+    expect(betas.split(",")).toContain("advisor-tool-2026-03-01");
   });
 
-  it("always includes fast-mode-2026-02-01 when experimental enabled", () => {
+  it("does not auto-include advanced-tool-use or fast-mode (CC 2.1.98 doesn't send them)", () => {
     process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS = "";
-    const betas = callBuildBeta();
-    expect(betas.split(",")).toContain("fast-mode-2026-02-01");
-  });
-
-  it("excludes advanced-tool-use and fast-mode when experimental betas disabled", () => {
-    process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS = "1";
     const betas = callBuildBeta().split(",");
     expect(betas).not.toContain("advanced-tool-use-2025-11-20");
     expect(betas).not.toContain("fast-mode-2026-02-01");
@@ -453,8 +447,9 @@ describe("CC 2.1.98 — Identity block cache TTL", () => {
     expect(identityBlock).toBeDefined();
     expect(identityBlock!.cache_control).toBeDefined();
     expect(identityBlock!.cache_control!.type).toBe("ephemeral");
-    expect(identityBlock!.cache_control!.scope).toBe("global");
-    expect(identityBlock!.cache_control!.ttl).toBe("1h");
+    // CC 2.1.98 sends only {type:"ephemeral"} — no scope or ttl
+    expect(identityBlock!.cache_control!.scope).toBeUndefined();
+    expect(identityBlock!.cache_control!.ttl).toBeUndefined();
   });
 
   it("billing header block does NOT have cache_control", () => {
