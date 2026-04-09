@@ -1,11 +1,11 @@
 /**
- * Fingerprint regression tests for CC 2.1.90
+ * Fingerprint regression tests for CC 2.1.98
  *
  * These tests lock in the exact header values, beta flags, and identity strings
  * that must match the upstream Claude Code fingerprint. Any divergence here
  * means the plugin would be detectable as a non-CC client.
  *
- * Reference: docs/cc-versions/2.1.90.md
+ * Reference: docs/cc-versions/2.1.98.md
  */
 
 import { createHash } from "node:crypto";
@@ -32,10 +32,10 @@ import { transformRequestBody } from "../request/body.js";
 import { buildSystemPromptBlocks } from "../system-prompt/builder.js";
 
 // ---------------------------------------------------------------------------
-// CC 2.1.90 documented values
+// CC 2.1.98 documented values
 // ---------------------------------------------------------------------------
-const CC_VERSION = "2.1.90";
-const STAINLESS_PACKAGE_VERSION = "0.74.0";
+const CC_VERSION = "2.1.98";
+const STAINLESS_PACKAGE_VERSION = "0.81.0";
 
 type EnvKey =
   | "CLAUDE_AGENT_SDK_CLIENT_APP"
@@ -62,7 +62,7 @@ function restoreEnv(snapshot: Partial<Record<EnvKey, string | undefined>>) {
 // ---------------------------------------------------------------------------
 // User-Agent
 // ---------------------------------------------------------------------------
-describe("CC 2.1.90 — User-Agent format", () => {
+describe("CC 2.1.98 — User-Agent format", () => {
   let originalEnv: Partial<Record<EnvKey, string | undefined>>;
 
   beforeEach(() => {
@@ -81,13 +81,13 @@ describe("CC 2.1.90 — User-Agent format", () => {
     expect(ua).toBe(`claude-cli/${CC_VERSION} (external, cli)`);
   });
 
-  it("embeds the correct CC version (2.1.90)", () => {
+  it("embeds the correct CC version (2.1.98)", () => {
     const ua = buildUserAgent(CC_VERSION);
-    expect(ua).toMatch(/^claude-cli\/2\.1\.90 /);
+    expect(ua).toMatch(/^claude-cli\/2\.1\.98 /);
   });
 
-  it("FALLBACK_CLAUDE_CLI_VERSION constant is 2.1.90", () => {
-    expect(FALLBACK_CLAUDE_CLI_VERSION).toBe("2.1.90");
+  it("FALLBACK_CLAUDE_CLI_VERSION constant is 2.1.98", () => {
+    expect(FALLBACK_CLAUDE_CLI_VERSION).toBe("2.1.98");
   });
 
   it("appends agent-sdk suffix when CLAUDE_AGENT_SDK_VERSION is set", () => {
@@ -108,10 +108,10 @@ describe("CC 2.1.90 — User-Agent format", () => {
 // ---------------------------------------------------------------------------
 // Stainless headers
 // ---------------------------------------------------------------------------
-describe("CC 2.1.90 — Stainless headers", () => {
-  it("x-stainless-package-version is 0.74.0", () => {
+describe("CC 2.1.98 — Stainless headers", () => {
+  it("x-stainless-package-version is 0.81.0", () => {
     // The constant is hardcoded in builder.ts — verify the documented value
-    expect(STAINLESS_PACKAGE_VERSION).toBe("0.74.0");
+    expect(STAINLESS_PACKAGE_VERSION).toBe("0.81.0");
   });
 
   it("x-stainless-lang is js (documented)", () => {
@@ -163,7 +163,7 @@ describe("CC 2.1.90 — Stainless headers", () => {
 // ---------------------------------------------------------------------------
 // Billing header / cch
 // ---------------------------------------------------------------------------
-describe("CC 2.1.90 — Billing header", () => {
+describe("CC 2.1.98 — Billing header", () => {
   let originalEnv: Partial<Record<EnvKey, string | undefined>>;
 
   beforeEach(() => {
@@ -229,7 +229,7 @@ describe("CC 2.1.90 — Billing header", () => {
 // ---------------------------------------------------------------------------
 // Beta flags
 // ---------------------------------------------------------------------------
-describe("CC 2.1.90 — Beta constants", () => {
+describe("CC 2.1.98 — Beta constants", () => {
   it("CLAUDE_CODE_BETA_FLAG is claude-code-20250219", () => {
     expect(CLAUDE_CODE_BETA_FLAG).toBe("claude-code-20250219");
   });
@@ -258,8 +258,8 @@ describe("CC 2.1.90 — Beta constants", () => {
     expect(EXPERIMENTAL_BETA_FLAGS).toContain("advanced-tool-use-2025-11-20");
   });
 
-  it("EXPERIMENTAL_BETA_FLAGS includes CC v2.1.90 new betas", () => {
-    // CC Remote and feature betas from v2.1.90
+  it("EXPERIMENTAL_BETA_FLAGS includes CC v2.1.98 new betas", () => {
+    // CC Remote and feature betas from v2.1.98
     expect(EXPERIMENTAL_BETA_FLAGS).toContain("ccr-byoc-2025-07-29");
     expect(EXPERIMENTAL_BETA_FLAGS).toContain("ccr-triggers-2026-01-30");
     expect(EXPERIMENTAL_BETA_FLAGS).toContain("environments-2025-11-01");
@@ -268,7 +268,7 @@ describe("CC 2.1.90 — Beta constants", () => {
   });
 });
 
-describe("CC 2.1.90 — Beta header composition (signature enabled)", () => {
+describe("CC 2.1.98 — Beta header composition (signature enabled)", () => {
   let originalEnv: Partial<Record<EnvKey, string | undefined>>;
 
   beforeEach(() => {
@@ -380,12 +380,12 @@ describe("CC 2.1.90 — Beta header composition (signature enabled)", () => {
     expect(list).not.toContain("tool-search-tool-2025-10-19");
   });
 
-  it("does not auto-include redact-thinking-2026-02-12 (removed in 2.1.90)", () => {
+  it("does not auto-include redact-thinking-2026-02-12 (removed in 2.1.98)", () => {
     const betas = callBuildBeta().split(",");
     expect(betas).not.toContain("redact-thinking-2026-02-12");
   });
 
-  it("does not auto-include CC v2.1.90 new experimental betas", () => {
+  it("does not auto-include CC v2.1.98 new experimental betas", () => {
     const betas = callBuildBeta().split(",");
     expect(betas).not.toContain("ccr-byoc-2025-07-29");
     expect(betas).not.toContain("ccr-triggers-2026-01-30");
@@ -402,7 +402,7 @@ describe("CC 2.1.90 — Beta header composition (signature enabled)", () => {
   });
 });
 
-describe("CC 2.1.90 — Beta header composition (signature disabled / non-CC mode)", () => {
+describe("CC 2.1.98 — Beta header composition (signature disabled / non-CC mode)", () => {
   it("includes oauth-2025-04-20 and interleaved-thinking-2025-05-14", () => {
     const betas = buildAnthropicBetaHeader("", false, "", "anthropic", undefined, undefined, undefined, false).split(
       ",",
@@ -429,7 +429,7 @@ describe("CC 2.1.90 — Beta header composition (signature disabled / non-CC mod
 // ---------------------------------------------------------------------------
 // System prompt identity block
 // ---------------------------------------------------------------------------
-describe("CC 2.1.90 — System prompt identity string", () => {
+describe("CC 2.1.98 — System prompt identity string", () => {
   it("CLAUDE_CODE_IDENTITY_STRING is the documented value", () => {
     expect(CLAUDE_CODE_IDENTITY_STRING).toBe("You are Claude Code, Anthropic's official CLI for Claude.");
   });
@@ -440,11 +440,11 @@ describe("CC 2.1.90 — System prompt identity string", () => {
   });
 });
 
-describe("CC 2.1.90 — Identity block cache TTL", () => {
+describe("CC 2.1.98 — Identity block cache TTL", () => {
   it("identity block has cache_control with ttl: '1h'", () => {
     const blocks = buildSystemPromptBlocks(
       [],
-      { enabled: true, claudeCliVersion: "2.1.90", promptCompactionMode: "minimal" },
+      { enabled: true, claudeCliVersion: "2.1.98", promptCompactionMode: "minimal" },
       [],
     );
 
@@ -459,7 +459,7 @@ describe("CC 2.1.90 — Identity block cache TTL", () => {
   it("billing header block does NOT have cache_control", () => {
     const blocks = buildSystemPromptBlocks(
       [],
-      { enabled: true, claudeCliVersion: "2.1.90", promptCompactionMode: "minimal" },
+      { enabled: true, claudeCliVersion: "2.1.98", promptCompactionMode: "minimal" },
       [],
     );
 
@@ -471,7 +471,7 @@ describe("CC 2.1.90 — Identity block cache TTL", () => {
   it("user-provided system blocks do NOT have cache_control", () => {
     const blocks = buildSystemPromptBlocks(
       [{ type: "text", text: "Custom system prompt" }],
-      { enabled: true, claudeCliVersion: "2.1.90", promptCompactionMode: "minimal" },
+      { enabled: true, claudeCliVersion: "2.1.98", promptCompactionMode: "minimal" },
       [],
     );
 
@@ -482,7 +482,7 @@ describe("CC 2.1.90 — Identity block cache TTL", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Sonnet 4.6 adaptive thinking (CC 2.1.90)
+// Sonnet 4.6 adaptive thinking (CC 2.1.98)
 // ---------------------------------------------------------------------------
 describe("Sonnet 4.6 — Adaptive thinking model detection", () => {
   it("isSonnet46Model detects claude-sonnet-4-6", () => {
@@ -595,7 +595,7 @@ describe("Sonnet 4.6 — Thinking block normalization", () => {
 // Speed parameter passthrough (Opus 4.6 fast mode)
 // ---------------------------------------------------------------------------
 describe("Speed parameter passthrough", () => {
-  const mockSignature = { enabled: false, claudeCliVersion: "2.1.90", promptCompactionMode: "minimal" as const };
+  const mockSignature = { enabled: false, claudeCliVersion: "2.1.98", promptCompactionMode: "minimal" as const };
   const mockRuntime = { persistentUserId: "", accountId: "", sessionId: "" };
 
   it("preserves speed: 'fast' in request body", () => {
@@ -647,7 +647,7 @@ describe("Speed parameter passthrough", () => {
 });
 
 describe("Temperature normalization", () => {
-  const mockSignature = { enabled: false, claudeCliVersion: "2.1.90", promptCompactionMode: "minimal" as const };
+  const mockSignature = { enabled: false, claudeCliVersion: "2.1.98", promptCompactionMode: "minimal" as const };
   const mockRuntime = { persistentUserId: "", accountId: "", sessionId: "" };
 
   it("defaults temperature to 1 for non-thinking requests", () => {

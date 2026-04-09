@@ -123,8 +123,8 @@ export function buildRequestHeaders(
     requestHeaders.set("x-stainless-arch", getStainlessArch(process.arch));
     requestHeaders.set("x-stainless-lang", "js");
     requestHeaders.set("x-stainless-os", getStainlessOs(process.platform));
-    // CC's Stainless SDK reports its own package version (0.74.0), not the CLI version
-    requestHeaders.set("x-stainless-package-version", "0.74.0");
+    // CC's Stainless SDK reports its own package version (0.81.0), not the CLI version
+    requestHeaders.set("x-stainless-package-version", "0.81.0");
     requestHeaders.set("x-stainless-runtime", "node");
     requestHeaders.set("x-stainless-runtime-version", process.version);
     // CC's SDK default timeout is 600s (600000ms)

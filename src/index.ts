@@ -571,6 +571,36 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient &
                   strategy: config.account_selection_strategy,
                 });
 
+                // --- Debug: log the exact fingerprint being sent ---
+                if (config.debug) {
+                  const billingBlock = body
+                    ? (() => {
+                        try {
+                          const parsed = JSON.parse(body) as Record<string, unknown>;
+                          const sys = parsed.system;
+                          if (Array.isArray(sys)) {
+                            return (sys as Array<{ text?: string }>).find(
+                              (b) => typeof b.text === "string" && b.text.startsWith("x-anthropic-billing-header:"),
+                            )?.text;
+                          }
+                        } catch {
+                          // JSON parse failed — body is not valid JSON
+                        }
+                        return undefined;
+                      })()
+                    : undefined;
+
+                  debugLog("fingerprint snapshot", {
+                    billingHeader: billingBlock ?? "(not in system prompt)",
+                    userAgent: requestHeaders.get("user-agent"),
+                    anthropicBeta: requestHeaders.get("anthropic-beta"),
+                    stainlessPackageVersion: requestHeaders.get("x-stainless-package-version"),
+                    xApp: requestHeaders.get("x-app"),
+                    claudeCliVersion,
+                    signatureEnabled: signatureEmulationEnabled,
+                  });
+                }
+
                 let response: Response;
                 const fetchInput = requestInput as string | URL | Request;
                 try {
