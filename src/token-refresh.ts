@@ -76,6 +76,7 @@ export function applyDiskAuthIfFresher(
 
 export interface RefreshAccountTokenOptions {
   onTokensUpdated?: () => Promise<void>;
+  debugLog?: (...args: unknown[]) => void;
 }
 
 export interface OpenCodeClient {
@@ -188,7 +189,7 @@ export async function refreshAccountToken(
   account: ManagedAccount,
   client: OpenCodeClient,
   source: "foreground" | "idle" = "foreground",
-  { onTokensUpdated }: RefreshAccountTokenOptions = {},
+  { onTokensUpdated, debugLog }: RefreshAccountTokenOptions = {},
 ): Promise<string> {
   const lockResult = await acquireRefreshLock(account.id, {
     timeoutMs: 2_000,
@@ -233,7 +234,9 @@ export async function refreshAccountToken(
       const accessToken = await refreshCCAccount(account);
       if (accessToken) {
         if (onTokensUpdated) {
-          await onTokensUpdated().catch(() => undefined);
+          await onTokensUpdated().catch((err) => {
+            debugLog?.("onTokensUpdated failed:", (err as Error).message);
+          });
         }
 
         await client.auth
@@ -246,7 +249,9 @@ export async function refreshAccountToken(
               expires: account.expires,
             },
           })
-          .catch(() => undefined);
+          .catch((err) => {
+            debugLog?.("auth.set failed:", (err as Error).message);
+          });
         return accessToken;
       }
       throw new Error("CC credential refresh failed");

@@ -38,7 +38,10 @@ export function extractFileIds(parsed: unknown): string[] {
   return ids;
 }
 
-export function parseRequestBodyMetadata(body: string | undefined): RequestBodyMetadata {
+export function parseRequestBodyMetadata(
+  body: string | undefined,
+  debugLog?: (...args: unknown[]) => void,
+): RequestBodyMetadata {
   if (!body || typeof body !== "string") {
     return { model: "", tools: [], messages: [], hasFileReferences: false };
   }
@@ -50,7 +53,8 @@ export function parseRequestBodyMetadata(body: string | undefined): RequestBodyM
     const messages = Array.isArray(parsed?.messages) ? parsed.messages : [];
     const hasFileReferences = extractFileIds(parsed).length > 0;
     return { model, tools, messages, hasFileReferences };
-  } catch {
+  } catch (err) {
+    debugLog?.("extractFileIds failed:", (err as Error).message);
     return { model: "", tools: [], messages: [], hasFileReferences: false };
   }
 }

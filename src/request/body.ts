@@ -2,6 +2,7 @@
 // Request body transformation
 // ---------------------------------------------------------------------------
 
+import { CLAUDE_CODE_IDENTITY_STRING, KNOWN_IDENTITY_STRINGS } from "../constants.js";
 import { buildSystemPromptBlocks } from "../system-prompt/builder.js";
 import { normalizeSystemTextBlocks } from "../system-prompt/normalize.js";
 import { normalizeThinkingBlock } from "../thinking.js";
@@ -12,6 +13,9 @@ export function transformRequestBody(
   body: string | undefined,
   signature: SignatureConfig,
   runtime: RuntimeContext,
+  relocateThirdPartyPrompts = true,
+  sanitizeSystemPrompt = false,
+  debugLog?: (...args: unknown[]) => void,
 ): string | undefined {
   if (!body || typeof body !== "string") return body;
 
@@ -33,8 +37,57 @@ export function transformRequestBody(
       parsed.temperature = 1;
     }
 
-    // Sanitize system prompt and optionally inject Claude Code identity/billing blocks.
-    parsed.system = buildSystemPromptBlocks(normalizeSystemTextBlocks(parsed.system), signature, parsed.messages);
+    // Sanitize system prompt and inject Claude Code identity/billing blocks.
+    const allSystemBlocks = buildSystemPromptBlocks(
+      normalizeSystemTextBlocks(parsed.system),
+      signature,
+      parsed.messages,
+      sanitizeSystemPrompt,
+    );
+
+    if (signature.enabled && relocateThirdPartyPrompts) {
+      // Keep CC blocks in system. Move blocks with third-party identifiers
+      // into messages to avoid system prompt content detection.
+      const THIRD_PARTY_MARKERS =
+        /sisyphus|ohmyclaude|oh\s*my\s*claude|morph[_ ]|\.sisyphus\/|ultrawork|autopilot mode|ohmy|SwarmMode|\bomc\b|\bomo\b/i;
+
+      const ccBlocks: typeof allSystemBlocks = [];
+      const extraBlocks: typeof allSystemBlocks = [];
+      for (const block of allSystemBlocks) {
+        const isBilling = block.text.startsWith("x-anthropic-billing-header:");
+        const isIdentity = block.text === CLAUDE_CODE_IDENTITY_STRING || KNOWN_IDENTITY_STRINGS.has(block.text);
+        const hasThirdParty = THIRD_PARTY_MARKERS.test(block.text);
+
+        if (isBilling || isIdentity || !hasThirdParty) {
+          ccBlocks.push(block);
+        } else {
+          extraBlocks.push(block);
+        }
+      }
+      parsed.system = ccBlocks;
+
+      // Inject extra blocks as <system-instructions> in the first user message
+      if (extraBlocks.length > 0 && Array.isArray(parsed.messages) && parsed.messages.length > 0) {
+        const extraText = extraBlocks.map((b) => b.text).join("\n\n");
+        const wrapped = `<system-instructions>\n${extraText}\n</system-instructions>`;
+        const firstMsg = parsed.messages[0];
+        if (firstMsg && firstMsg.role === "user") {
+          if (typeof firstMsg.content === "string") {
+            firstMsg.content = `${wrapped}\n\n${firstMsg.content}`;
+          } else if (Array.isArray(firstMsg.content)) {
+            firstMsg.content.unshift({ type: "text", text: wrapped });
+          }
+        } else {
+          // No user message first — prepend a new user message
+          parsed.messages.unshift({
+            role: "user",
+            content: wrapped,
+          });
+        }
+      }
+    } else {
+      parsed.system = allSystemBlocks;
+    }
 
     if (signature.enabled) {
       const currentMetadata =
@@ -76,8 +129,8 @@ export function transformRequestBody(
       });
     }
     return JSON.stringify(parsed);
-  } catch {
-    // ignore parse errors
+  } catch (err) {
+    debugLog?.("body parse failed:", (err as Error).message);
     return body;
   }
 }

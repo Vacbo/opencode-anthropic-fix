@@ -126,8 +126,8 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient &
     }
     try {
       await client.tui?.showToast({ body: { message, variant } });
-    } catch {
-      // TUI may not be available
+    } catch (err) {
+      if (!(err instanceof TypeError)) debugLog("toast failed:", err);
     }
   }
 
@@ -148,7 +148,7 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient &
         claudeCliVersion = version;
         debugLog("resolved claude-code version from npm", version);
       })
-      .catch(() => {});
+      .catch((err) => debugLog("CC version fetch failed:", (err as Error).message));
   }
 
   // -- Refresh helpers -------------------------------------------------------
@@ -206,6 +206,7 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient &
               throw new Error("save failed, debounced retry scheduled");
             }
           },
+          debugLog,
         });
       } finally {
         if (refreshInFlight.get(key) === entry) refreshInFlight.delete(key);
@@ -563,6 +564,7 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient &
                   },
                   config.relocate_third_party_prompts,
                   config.sanitize_system_prompt,
+                  debugLog,
                 );
                 logTransformedSystemPrompt(body);
 
@@ -607,11 +609,15 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient &
                 let response: Response;
                 const fetchInput = requestInput as string | URL | Request;
                 try {
-                  response = await fetchViaBun(fetchInput, {
-                    ...requestInit,
-                    body,
-                    headers: requestHeaders,
-                  }, config.debug);
+                  response = await fetchViaBun(
+                    fetchInput,
+                    {
+                      ...requestInit,
+                      body,
+                      headers: requestHeaders,
+                    },
+                    config.debug,
+                  );
                 } catch (err) {
                   const fetchError = err instanceof Error ? err : new Error(String(err));
                   if (accountManager && account) {
@@ -679,11 +685,15 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient &
                         headersForRetry.set("x-stainless-retry-count", String(retryCount));
                         retryCount += 1;
                         const retryUrl = fetchInput instanceof Request ? fetchInput.url : fetchInput.toString();
-                        return fetchViaBun(retryUrl, {
-                          ...requestInit,
-                          body,
-                          headers: headersForRetry,
-                        }, config.debug);
+                        return fetchViaBun(
+                          retryUrl,
+                          {
+                            ...requestInit,
+                            body,
+                            headers: headersForRetry,
+                          },
+                          config.debug,
+                        );
                       },
                       { maxRetries: 2 },
                     );

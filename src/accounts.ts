@@ -147,8 +147,19 @@ export class AccountManager {
       })();
 
       for (const ccCredential of ccCredentials) {
-        const exists = manager.#accounts.some((account) => account.refreshToken === ccCredential.refreshToken);
-        if (exists) continue;
+        const existingMatch = manager.#accounts.find((account) => account.refreshToken === ccCredential.refreshToken);
+        if (existingMatch) {
+          // Adopt CC source tag so getCCAccounts() recognizes it
+          if (!existingMatch.source || existingMatch.source === "oauth") {
+            existingMatch.source = ccCredential.source;
+          }
+          // Adopt fresh access token from CC if available
+          if (ccCredential.accessToken && ccCredential.expiresAt > (existingMatch.expires ?? 0)) {
+            existingMatch.access = ccCredential.accessToken;
+            existingMatch.expires = ccCredential.expiresAt;
+          }
+          continue;
+        }
 
         const emailCollision = manager
           .getOAuthAccounts()
@@ -461,7 +472,9 @@ export class AccountManager {
     if (this.#saveTimeout) clearTimeout(this.#saveTimeout);
     this.#saveTimeout = setTimeout(() => {
       this.#saveTimeout = null;
-      this.saveToDisk().catch(() => {});
+      this.saveToDisk().catch((err) => {
+        if (this.#config.debug) console.error("[opencode-anthropic-auth] saveToDisk failed:", (err as Error).message);
+      });
     }, 1000);
   }
 
