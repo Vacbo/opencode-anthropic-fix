@@ -60,6 +60,7 @@ const server = Bun.serve({
         method: req.method,
         headers,
         body,
+        signal: AbortSignal.timeout(600_000), // 600s = 10 min, matches CC's x-stainless-timeout
       });
 
       const respHeaders = new Headers(resp.headers);
