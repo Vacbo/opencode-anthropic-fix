@@ -58,7 +58,7 @@ export interface CommandDeps {
  * Remove ANSI color/control codes from output text.
  */
 export function stripAnsi(value: string): string {
-  // eslint-disable-next-line no-control-regex
+  // eslint-disable-next-line no-control-regex -- ANSI escape sequences start with \x1b which is a control char
   return value.replace(/\x1b\[[0-9;]*m/g, "");
 }
 

@@ -129,7 +129,7 @@ function shortPath(p: string) {
  * @returns {string}
  */
 function stripAnsi(str: string) {
-  // eslint-disable-next-line no-control-regex
+  // eslint-disable-next-line no-control-regex -- ANSI escape sequences start with \x1b which is a control char
   return str.replace(new RegExp("\x1b\\[[0-9;]*m", "g"), "");
 }
 
@@ -732,7 +732,11 @@ export async function cmdList() {
     }
   }
   if (anyRefreshed) {
-    await saveAccounts(stored).catch(() => {});
+    // Best-effort persistence — if saveAccounts fails, the CLI continues to render the
+    // status view with the in-memory refreshed tokens. The next command run will retry persisting.
+    await saveAccounts(stored).catch((err) => {
+      console.error("[opencode-anthropic-auth] failed to persist refreshed tokens:", err);
+    });
   }
 
   log.message(c.bold("Anthropic Multi-Account Status"));
