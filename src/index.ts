@@ -9,7 +9,7 @@ import { isAccountSpecificError, parseRateLimitReason, parseRetryAfterHeader } f
 import type { PendingOAuthEntry } from "./commands/oauth-flow.js";
 import { promptAccountMenu, promptManageAccounts } from "./commands/prompts.js";
 import type { CommandDeps } from "./commands/router.js";
-import { ANTHROPIC_COMMAND_HANDLED, handleAnthropicSlashCommand, stripAnsi } from "./commands/router.js";
+import { ANTHROPIC_COMMAND_HANDLED, handleAnthropicSlashCommand } from "./commands/router.js";
 import type { AnthropicAuthConfig } from "./config.js";
 import { loadConfig } from "./config.js";
 import { CLAUDE_CODE_IDENTITY_STRING, FALLBACK_CLAUDE_CLI_VERSION, FOREGROUND_EXPIRY_BUFFER_MS } from "./constants.js";
@@ -29,6 +29,7 @@ import type { OpenCodeClient } from "./token-refresh.js";
 import { formatSwitchReason, markTokenStateUpdated, readDiskAccountAuth } from "./token-refresh.js";
 import type { UsageStats } from "./types.js";
 import { fetchViaBun } from "./bun-fetch.js";
+import { createPluginHelpers } from "./plugin-helpers.js";
 import { createRefreshHelpers } from "./refresh-helpers.js";
 
 // ---------------------------------------------------------------------------
@@ -47,7 +48,6 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient &
 
   // Track account usage toasts; show once per account change (including first use).
   let lastToastedIndex = -1;
-  const debouncedToastTimestamps = new Map<string, number>();
 
   let initialAccountPinned = false;
   const pendingSlashOAuth = new Map<string, PendingOAuthEntry>();
@@ -55,73 +55,21 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient &
 
   // -- Helpers ---------------------------------------------------------------
 
-  async function sendCommandMessage(sessionID: string, text: string) {
-    await client.session?.prompt({
-      path: { id: sessionID },
-      body: { noReply: true, parts: [{ type: "text", text, ignored: true }] },
-    });
-  }
-
-  async function reloadAccountManagerFromDisk() {
-    if (!accountManager) return;
-    accountManager = await AccountManager.load(config, null);
-  }
-
-  async function persistOpenCodeAuth(refresh: string, access: string | undefined, expires: number | undefined) {
-    await client.auth?.set({
-      path: { id: "anthropic" },
-      body: { type: "oauth", refresh, access, expires },
-    });
-  }
-
-  async function runCliCommand(argv: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
-    const logs: string[] = [];
-    const errors: string[] = [];
-    let code = 1;
-    try {
-      const { main: cliMain } = await import("./cli.js");
-      code = await cliMain(argv, {
-        io: {
-          log: (...args: unknown[]) => logs.push(args.map(String).join(" ")),
-          error: (...args: unknown[]) => errors.push(args.map(String).join(" ")),
-        },
-      });
-    } catch (err) {
-      errors.push(err instanceof Error ? err.message : String(err));
-    }
-    return {
-      code,
-      stdout: stripAnsi(logs.join("\n")).trim(),
-      stderr: stripAnsi(errors.join("\n")).trim(),
-    };
-  }
-
-  async function toast(
-    message: string,
-    variant: "info" | "success" | "warning" | "error" = "info",
-    options: { debounceKey?: string } = {},
-  ) {
-    if (config.toasts.quiet && variant !== "error") return;
-    if (variant !== "error" && options.debounceKey) {
-      const minGapMs = Math.max(0, config.toasts.debounce_seconds) * 1000;
-      if (minGapMs > 0) {
-        const now = Date.now();
-        const lastAt = debouncedToastTimestamps.get(options.debounceKey) ?? 0;
-        if (now - lastAt < minGapMs) return;
-        debouncedToastTimestamps.set(options.debounceKey, now);
-      }
-    }
-    try {
-      await client.tui?.showToast({ body: { message, variant } });
-    } catch (err) {
-      if (!(err instanceof TypeError)) debugLog("toast failed:", err);
-    }
-  }
-
   function debugLog(...args: unknown[]) {
     if (!config.debug) return;
     console.error("[opencode-anthropic-auth]", ...args);
   }
+
+  const { toast, sendCommandMessage, runCliCommand, reloadAccountManagerFromDisk, persistOpenCodeAuth } =
+    createPluginHelpers({
+      client,
+      config,
+      debugLog,
+      getAccountManager: () => accountManager,
+      setAccountManager: (nextAccountManager) => {
+        accountManager = nextAccountManager;
+      },
+    });
 
   const { parseRefreshFailure, refreshAccountTokenSingleFlight, maybeRefreshIdleAccounts } = createRefreshHelpers({
     client,
