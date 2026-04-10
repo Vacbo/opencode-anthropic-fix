@@ -1,0 +1,49 @@
+Task 8: Circuit Breaker RED Phase Evidence
+==========================================
+Date: 2025-04-10
+File: src/circuit-breaker.test.ts
+
+Test Results:
+-------------
+Status: FAILED (expected - RED phase)
+Error: Cannot find module './circuit-breaker.js'
+
+Tests Defined:
+--------------
+1. CircuitBreaker - State Management (3 tests)
+   - starts in CLOSED state and allows requests
+   - transitions to OPEN after N consecutive failures
+   - resets failure count on success
+
+2. CircuitBreaker - Open State (2 tests)
+   - fails fast without calling upstream when OPEN
+   - tracks open state duration
+
+3. CircuitBreaker - Half-Open State (3 tests)
+   - transitions to HALF_OPEN after timeout expires
+   - closes breaker on success in HALF_OPEN state
+   - reopens breaker on failure in HALF_OPEN state
+
+4. CircuitBreaker - Per-Client Isolation (4 tests)
+   - client A failures do not affect client B breaker
+   - each client has independent failure count
+   - shared registry returns same breaker for same clientId
+
+5. CircuitBreaker - Configuration (3 tests)
+   - uses default values when options not provided
+   - respects custom failure threshold
+   - respects custom reset timeout
+
+6. CircuitBreaker - Execute Wrapper (4 tests)
+   - executes upstream function when CLOSED
+   - records success when upstream succeeds
+   - records failure when upstream throws
+   - returns error result when upstream throws
+
+Total: 19 tests covering all circuit breaker scenarios
+
+TDD RED Phase Notes:
+--------------------
+- All tests import from non-existent module (circuit-breaker.js)
+- Tests will pass after T17 (GREEN implementation) lands
+- Per-client isolation ensures account-specific failure handling

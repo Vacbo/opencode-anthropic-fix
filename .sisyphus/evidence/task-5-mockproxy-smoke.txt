@@ -1,0 +1,9 @@
+> @vacbo/opencode-anthropic-fix@0.0.37 test
+> vitest run src/__tests__/helpers/mock-bun-proxy.smoke.test.ts
+
+RUN  v4.1.0 /Users/vacbo/Documents/Projects/opencode-anthropic-fix
+
+Test Files  1 passed (1)
+     Tests  4 passed (4)
+  Start at  16:53:06
+  Duration  182ms (transform 20ms, setup 0ms, import 28ms, tests 35ms, environment 0ms)
