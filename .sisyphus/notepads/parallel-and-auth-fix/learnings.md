@@ -217,6 +217,23 @@ Evidence: .sisyphus/evidence/task-6-conversation-smoke.txt
 - GREEN implementation in T17 will make tests pass
 - Used --no-verify to bypass pre-commit (tests MUST be committed failing)
 
+## Task 13: Streaming RED Tests (2026-04-10)
+
+### Completed
+
+- Created `src/response/streaming.test.ts` with 16 intentionally failing RED tests for SSE stream validation and rewrite edge cases.
+- Covered message_stop termination semantics, truncated stream detection, `event: error` handling, multiline `data:` event-block framing, shared parser/rewriter buffering, cancel propagation, malformed SSE handling, incomplete tool_use validation, non-SSE bypass, and final UTF-8 decoder flush behavior.
+- Verified the new test file is type-clean via LSP diagnostics.
+- Verified the repo still builds with `npm run build`.
+- Captured failing test evidence in `.sisyphus/evidence/task-13-streaming-red.txt`.
+
+### Key RED Patterns
+
+- Multiline JSON encoded through `encodeSSEEvent({ data: JSON.stringify(payload, null, 2) })` is a reliable way to expose line-oriented SSE rewriters that should operate on full event blocks.
+- Truncation tests are stronger when they distinguish between missing `message_stop`, missing final blank-line framing, and unfinished tool/tool-json state at EOF.
+- A controlled `ReadableStream` plus a pending `reader.read()` assertion is a useful probe for shared parser/rewriter buffering: current line-oriented code emits too early.
+- Invalid trailing UTF-8 bytes are a good RED case for `TextDecoder` final flush coverage because stream-mode decoding otherwise drops the error silently.
+
 ## Task 14: Account Dedup RED Tests (2026-04-10)
 
 ### Completed

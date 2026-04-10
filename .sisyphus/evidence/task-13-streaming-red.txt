@@ -1,0 +1,44 @@
+Task: T13 RED - streaming SSE edge cases
+Date: 2026-04-10
+
+Files:
+- src/response/streaming.test.ts
+
+Verification:
+- LSP diagnostics: clean for src/response/streaming.test.ts
+- Build: PASS (`npm run build`)
+- Targeted tests: FAIL as expected (`npm test -- src/response/streaming.test.ts`)
+
+Test result summary:
+- File: src/response/streaming.test.ts
+- Tests: 16 total
+- Failures: 16
+- Duration: 47ms
+
+Failing test names:
+1. accepts a multiline tool_use stream only when the final event is message_stop
+2. preserves multi-byte UTF-8 payloads across chunk boundaries before message_stop
+3. rewrites multiline data payloads as one event block instead of line-by-line
+4. does not emit rewritten bytes until a split event block is complete
+5. rejects a stream that ends after message_delta without message_stop
+6. rejects a final message_stop event that is missing its terminating blank line
+7. rejects an event:error terminator with a descriptive stream failure
+8. rejects malformed JSON event blocks instead of silently ignoring them
+9. rejects orphan content_block_delta events
+10. rejects orphan content_block_stop events
+11. rejects an unfinished tool_use block at EOF
+12. rejects incomplete input_json_delta tool payloads even if message_stop arrives
+13. rejects oversized unterminated event buffers before they grow unbounded
+14. rejects malformed UTF-8 buffered at EOF during the final decoder flush
+15. propagates cancel() to the upstream body reader
+16. bypasses the SSE transform path for non-event-stream responses
+
+Command output excerpts:
+
+$ npm test -- src/response/streaming.test.ts
+RUN  v4.1.0 /Users/vacbo/Documents/Projects/opencode-anthropic-fix
+❯ src/response/streaming.test.ts (16 tests | 16 failed) 47ms
+
+$ npm run build
+> bun scripts/build.ts
+Built dist/opencode-anthropic-auth-plugin.js and dist/opencode-anthropic-auth-cli.mjs
