@@ -4,7 +4,7 @@
 // ---------------------------------------------------------------------------
 
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -17,6 +17,7 @@ let healthCheckFails = 0;
 const FIXED_PORT = 48372;
 const PID_FILE = join(tmpdir(), "opencode-bun-proxy.pid");
 const MAX_HEALTH_FAILS = 2;
+const STALE_PID_FILE_AGE_MS = 24 * 60 * 60 * 1000;
 
 // Kill proxy when parent process exits — use multiple hooks for reliability
 let exitHandlerRegistered = false;
@@ -50,6 +51,16 @@ function registerExitHandler(): void {
     cleanup();
     process.exit(0);
   });
+  process.on("uncaughtException", (err) => {
+    cleanup();
+    console.error("[opencode-anthropic-auth] uncaughtException in parent, cleaning up proxy:", err);
+    process.exit(1);
+  });
+  process.on("unhandledRejection", (reason) => {
+    cleanup();
+    console.error("[opencode-anthropic-auth] unhandledRejection in parent, cleaning up proxy:", reason);
+    process.exit(1);
+  });
   // beforeExit fires when the event loop empties (graceful shutdown)
   process.on("beforeExit", cleanup);
 }
@@ -80,10 +91,18 @@ function hasBun(): boolean {
 
 function killStaleProxy(): void {
   try {
+    const pidFileStat = statSync(PID_FILE);
+    const ageMs = Date.now() - pidFileStat.mtimeMs;
+    if (ageMs > STALE_PID_FILE_AGE_MS) {
+      unlinkSync(PID_FILE);
+      return;
+    }
+
     const raw = readFileSync(PID_FILE, "utf-8").trim();
     const pid = parseInt(raw, 10);
     if (pid > 0) {
       try {
+        process.kill(pid, 0);
         process.kill(pid, "SIGTERM");
       } catch {
         /* already dead */
@@ -209,7 +228,18 @@ export async function ensureBunProxy(debug: boolean): Promise<number | null> {
 export function stopBunProxy(): void {
   if (proxyProcess) {
     try {
-      proxyProcess.kill();
+      const pid = proxyProcess.pid;
+      proxyProcess.kill("SIGTERM");
+      const escalationTimer = setTimeout(() => {
+        if (!pid) return;
+        try {
+          process.kill(pid, 0);
+          process.kill(pid, "SIGKILL");
+        } catch {
+          /* already dead */
+        }
+      }, 2000);
+      escalationTimer.unref?.();
     } catch {
       /* */
     }
