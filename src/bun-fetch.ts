@@ -25,14 +25,31 @@ function registerExitHandler(): void {
   exitHandlerRegistered = true;
   const cleanup = () => {
     if (proxyProcess && !proxyProcess.killed) {
-      try { proxyProcess.kill("SIGKILL"); } catch { /* */ }
+      try {
+        proxyProcess.kill("SIGKILL");
+      } catch {
+        /* */
+      }
     }
-    try { killStaleProxy(); } catch { /* */ }
+    try {
+      killStaleProxy();
+    } catch {
+      /* */
+    }
   };
   process.on("exit", cleanup);
-  process.on("SIGINT", () => { cleanup(); process.exit(0); });
-  process.on("SIGTERM", () => { cleanup(); process.exit(0); });
-  process.on("SIGHUP", () => { cleanup(); process.exit(0); });
+  process.on("SIGINT", () => {
+    cleanup();
+    process.exit(0);
+  });
+  process.on("SIGTERM", () => {
+    cleanup();
+    process.exit(0);
+  });
+  process.on("SIGHUP", () => {
+    cleanup();
+    process.exit(0);
+  });
   // beforeExit fires when the event loop empties (graceful shutdown)
   process.on("beforeExit", cleanup);
 }
@@ -66,7 +83,11 @@ function killStaleProxy(): void {
     const raw = readFileSync(PID_FILE, "utf-8").trim();
     const pid = parseInt(raw, 10);
     if (pid > 0) {
-      try { process.kill(pid, "SIGTERM"); } catch { /* already dead */ }
+      try {
+        process.kill(pid, "SIGTERM");
+      } catch {
+        /* already dead */
+      }
     }
     unlinkSync(PID_FILE);
   } catch {
@@ -110,7 +131,11 @@ function spawnProxy(debug: boolean): Promise<number | null> {
         if (done) return;
         done = true;
         if (port && child.pid) {
-          try { writeFileSync(PID_FILE, String(child.pid)); } catch { /* ok */ }
+          try {
+            writeFileSync(PID_FILE, String(child.pid));
+          } catch {
+            /* ok */
+          }
         }
         resolve(port);
       };
@@ -155,7 +180,7 @@ export async function ensureBunProxy(debug: boolean): Promise<number | null> {
   }
 
   // Check if a proxy is already running on the fixed port (from previous session)
-  if (!proxyPort && await isProxyHealthy(FIXED_PORT)) {
+  if (!proxyPort && (await isProxyHealthy(FIXED_PORT))) {
     proxyPort = FIXED_PORT;
     if (debug) console.error("[opencode-anthropic-auth] Reusing existing Bun proxy on port", FIXED_PORT);
     return proxyPort;
@@ -183,7 +208,11 @@ export async function ensureBunProxy(debug: boolean): Promise<number | null> {
 
 export function stopBunProxy(): void {
   if (proxyProcess) {
-    try { proxyProcess.kill(); } catch { /* */ }
+    try {
+      proxyProcess.kill();
+    } catch {
+      /* */
+    }
     proxyProcess = null;
   }
   proxyPort = null;
@@ -213,13 +242,19 @@ export async function fetchViaBun(
   // Dump full request for debugging
   if (debug && init.body && url.includes("/v1/messages") && !url.includes("count_tokens")) {
     try {
-      const { writeFileSync } = require("node:fs");
-      writeFileSync("/tmp/opencode-last-request.json", typeof init.body === "string" ? init.body : JSON.stringify(init.body));
+      writeFileSync(
+        "/tmp/opencode-last-request.json",
+        typeof init.body === "string" ? init.body : JSON.stringify(init.body),
+      );
       const hdrs: Record<string, string> = {};
-      init.headers.forEach((v: string, k: string) => { hdrs[k] = k === "authorization" ? "Bearer ***" : v; });
+      init.headers.forEach((v: string, k: string) => {
+        hdrs[k] = k === "authorization" ? "Bearer ***" : v;
+      });
       writeFileSync("/tmp/opencode-last-headers.json", JSON.stringify(hdrs, null, 2));
       console.error("[opencode-anthropic-auth] Dumped request to /tmp/opencode-last-request.json");
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   const headers = new Headers(init.headers);
@@ -246,7 +281,7 @@ export async function fetchViaBun(
     // If proxy seems dead, restart it and retry once
     if (healthCheckFails >= MAX_HEALTH_FAILS) {
       stopBunProxy();
-      const newPort = await ensureBunProxy();
+      const newPort = await ensureBunProxy(debug);
       if (newPort) {
         healthCheckFails = 0;
         const retryHeaders = new Headers(init.headers);
