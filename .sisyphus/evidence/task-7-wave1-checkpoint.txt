@@ -1,0 +1,44 @@
+Wave 1 Close-Out Checkpoint
+===========================
+
+Date: 2025-04-10
+Task: T7 - Register test helper globs in vitest config
+
+## Summary
+
+All Wave 1 tasks (T0-T7) have been completed.
+
+## Final State
+
+### Build Artifacts
+- dist/opencode-anthropic-auth-cli.mjs ✓
+- dist/opencode-anthropic-auth-plugin.js ✓
+
+### Test Results
+- Total Test Files: 22
+- Passed: 20
+- Failed: 2 (pre-existing issues)
+- Total Tests: 481
+- Passed: 479
+- Failed: 2
+
+### Code Quality
+- TypeScript: 2 errors (pre-existing in sse.ts, body.ts)
+- ESLint: 1 warning (pre-existing in sse.ts)
+- Prettier: No issues
+
+### New Configuration
+- vitest.config.ts created with helper globs
+- Includes: src/**/*.test.ts, src/__tests__/helpers/**/*.test.ts
+- Excludes: utility modules (non-test files)
+
+## Pre-existing Issues (Not Blockers)
+
+1. fingerprint-regression.test.ts - version hash mismatch
+2. sse.smoke.test.ts - emoji UTF-8 handling
+3. TypeScript errors in body.ts (argument count)
+4. TypeScript errors in sse.ts (Headers type)
+
+## Ready for Wave 2
+
+Wave 1 infrastructure is complete. Ready to proceed with T8-T16.

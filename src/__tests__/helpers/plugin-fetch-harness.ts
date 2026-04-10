@@ -53,7 +53,7 @@ export interface HarnessOptions {
 /** The fetch harness instance returned by createFetchHarness */
 export interface FetchHarness {
   /** The fetch interceptor function returned by plugin.auth.loader */
-  fetch: typeof globalThis.fetch;
+  fetch: (input: string | Request | URL, init?: RequestInit) => Promise<Response>;
   /** The mocked global fetch (vi.fn()) — use for assertions */
   mockFetch: Mock;
   /** Cleanup function to restore global state */
