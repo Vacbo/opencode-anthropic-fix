@@ -1,0 +1,39 @@
+Task 10: RED Phase - Account Identity Tests
+Date: 2025-04-10
+
+Status: RED (Tests failing as expected)
+
+Test File: src/account-identity.test.ts
+Tests: 13 test cases defined (all failing due to missing module)
+
+Test Coverage:
+- resolveIdentity: 3 tests
+  ✓ OAuth account identity resolved from email
+  ✓ CC account identity resolved from source+label
+  ✓ Legacy identity from refreshToken fallback
+
+- identitiesMatch: 8 tests
+  ✓ identity match - same email = same identity (OAuth)
+  ✓ identity match - same source+label = same identity (CC)
+  ✓ identity mismatch - different emails = different
+  ✓ identity mismatch - CC vs OAuth with same email = different
+  ✓ identity match - same refreshToken (legacy)
+  ✓ identity mismatch - different refreshTokens (legacy)
+  ✓ identity mismatch - different types (OAuth vs CC vs legacy)
+  ✓ identity mismatch - CC accounts with different labels
+
+- findByIdentity: 5 tests
+  ✓ findByIdentity finds matching OAuth account in array
+  ✓ findByIdentity finds matching CC account in array
+  ✓ findByIdentity finds matching legacy account in array
+  ✓ findByIdentity returns undefined when no match
+  ✓ findByIdentity returns first match when duplicates exist
+
+Test Output:
+```
+FAIL src/account-identity.test.ts
+Error: Cannot find module '../account-identity.js'
+```
+
+Expected: Module import failure (RED phase)
+Next: T29 will implement the module (GREEN phase)
