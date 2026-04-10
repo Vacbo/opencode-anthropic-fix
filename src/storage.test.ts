@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { appendFileSync, existsSync, promises as fs, readFileSync, writeFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import {

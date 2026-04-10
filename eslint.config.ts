@@ -40,9 +40,10 @@ export default tseslint.config(
     },
     rules: {
       "no-unused-vars": "off",
-      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
-      "@typescript-eslint/no-explicit-any": "off",
-      "no-console": "off",
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
+      "@typescript-eslint/no-explicit-any": ["warn"],
+      "@typescript-eslint/consistent-type-imports": ["warn"],
+      "no-console": ["warn"],
       "no-constant-condition": ["error", { checkLoops: false }],
       "prefer-const": "error",
       "no-var": "error",
@@ -50,8 +51,19 @@ export default tseslint.config(
     },
   },
   {
-    files: ["**/*.test.ts"],
+    // CLI, command, and IPC files legitimately use console for user-facing output.
+    files: ["src/cli.ts", "src/commands/**", "src/bun-proxy.ts"],
     rules: {
+      "no-console": "off",
+    },
+  },
+  {
+    // Test files and build scripts often use any for mocking and have
+    // legitimate console output for debugging.
+    files: ["**/*.test.ts", "src/__tests__/**", "script/**", "scripts/**"],
+    rules: {
+      "no-console": "off",
+      "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     },
   },

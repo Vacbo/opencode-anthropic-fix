@@ -165,6 +165,7 @@ function rpad(str: string, width: number) {
  * @param {{ refreshToken: string, access?: string, expires?: number }} account
  * @returns {Promise<string | null>}
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- mutable account shape shared across CLI/plugin; full typing deferred
 export async function refreshAccessToken(account: Record<string, any>) {
   try {
     const resp = await fetch("https://platform.claude.com/v1/oauth/token", {
@@ -178,6 +179,7 @@ export async function refreshAccessToken(account: Record<string, any>) {
       signal: AbortSignal.timeout(5000),
     });
     if (!resp.ok) return null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- OAuth token response shape is external API contract
     const json: any = await resp.json();
     account.access = json.access_token;
     account.expires = Date.now() + json.expires_in * 1000;
@@ -216,6 +218,7 @@ export async function fetchUsage(accessToken: string) {
  * @param {{ refreshToken: string, access?: string, expires?: number, enabled: boolean }} account
  * @returns {Promise<{ usage: Record<string, any> | null, tokenRefreshed: boolean }>}
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- mutable account shape shared across CLI/plugin; full typing deferred
 export async function ensureTokenAndFetchUsage(account: Record<string, any>) {
   if (!account.enabled) return { usage: null, tokenRefreshed: false };
 
@@ -288,6 +291,7 @@ const USAGE_LABEL_WIDTH = 13;
  * @param {Record<string, any>} usage
  * @returns {string[]}
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- upstream Anthropic usage API response has unstable bucket shapes
 export function renderUsageLines(usage: Record<string, any>) {
   const lines = [];
   for (const { key, label } of QUOTA_BUCKETS) {
@@ -1215,7 +1219,7 @@ export async function cmdStrategy(arg?: string) {
 
   const normalized = arg.toLowerCase().trim();
 
-  if (!VALID_STRATEGIES.includes(normalized as any)) {
+  if (!VALID_STRATEGIES.includes(normalized as (typeof VALID_STRATEGIES)[number])) {
     log.error(`Invalid strategy '${arg}'. Valid strategies: ${VALID_STRATEGIES.join(", ")}`);
     return 1;
   }
@@ -1625,10 +1629,10 @@ ${c.dim("Files:")}
 // Main entry point
 // ---------------------------------------------------------------------------
 
-/** @type {AsyncLocalStorage<{ log?: (...args: any[]) => void, error?: (...args: any[]) => void }>} */
+/** @type {AsyncLocalStorage<{ log?: (...args: unknown[]) => void, error?: (...args: unknown[]) => void }>} */
 type IoStore = {
-  log?: (...args: any[]) => void;
-  error?: (...args: any[]) => void;
+  log?: (...args: unknown[]) => void;
+  error?: (...args: unknown[]) => void;
 };
 const ioContext = new AsyncLocalStorage<IoStore>();
 
@@ -1662,10 +1666,10 @@ function uninstallConsoleRouter() {
 
 /**
  * Run with async-local IO capture without persistent global side effects.
- * @param {{ log?: (...args: any[]) => void, error?: (...args: any[]) => void }} io
+ * @param {{ log?: (...args: unknown[]) => void, error?: (...args: unknown[]) => void }} io
  * @param {() => Promise<number>} fn
  */
-async function runWithIoContext(io: Record<string, any>, fn: () => Promise<number>) {
+async function runWithIoContext(io: IoStore, fn: () => Promise<number>) {
   installConsoleRouter();
   try {
     return await ioContext.run(io, fn);
@@ -2013,13 +2017,13 @@ async function dispatch(argv: string[]) {
 /**
  * Parse argv and route to the appropriate command.
  * @param {string[]} argv - process.argv.slice(2)
- * @param {{ io?: { log?: (...args: any[]) => void, error?: (...args: any[]) => void } }} [options]
+ * @param {{ io?: { log?: (...args: unknown[]) => void, error?: (...args: unknown[]) => void } }} [options]
  * @returns {Promise<number>} exit code
  */
 export async function main(
   argv: string[],
   options: {
-    io?: { log?: (...args: any[]) => void; error?: (...args: any[]) => void };
+    io?: IoStore;
   } = {},
 ) {
   if (options.io) {

@@ -112,6 +112,7 @@ export function logTransformedSystemPrompt(body: string | undefined): void {
     ) {
       return;
     }
+    // eslint-disable-next-line no-console -- explicit debug logger gated by OPENCODE_ANTHROPIC_DEBUG_SYSTEM_PROMPT
     console.error(
       "[opencode-anthropic-auth][system-debug] transformed system:",
       JSON.stringify(parsed.system, null, 2),

@@ -36,7 +36,13 @@ import { createRefreshHelpers } from "./refresh-helpers.js";
 // Plugin factory
 // ---------------------------------------------------------------------------
 
-export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient & Record<string, any> }) {
+export async function AnthropicAuthPlugin({
+  client,
+}: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- OpenCode plugin client API boundary; accepts arbitrary extension methods
+  client: OpenCodeClient & Record<string, any>;
+}) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- plugin config accepts forward-compatible arbitrary keys
   const config: AnthropicAuthConfig & Record<string, any> = loadConfig();
   const signatureEmulationEnabled = config.signature_emulation.enabled;
   const promptCompactionMode =
@@ -57,6 +63,7 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient &
 
   function debugLog(...args: unknown[]) {
     if (!config.debug) return;
+    // eslint-disable-next-line no-console -- this IS the plugin's dedicated debug logger; gated on config.debug
     console.error("[opencode-anthropic-auth]", ...args);
   }
 
@@ -115,6 +122,7 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient &
   // -- Plugin return ---------------------------------------------------------
 
   return {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- OpenCode plugin hook API boundary
     "experimental.chat.system.transform": (input: Record<string, any>, output: Record<string, any>) => {
       const prefix = CLAUDE_CODE_IDENTITY_STRING;
       if (!signatureEmulationEnabled && input.model?.providerID === "anthropic") {
@@ -123,6 +131,7 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient &
       }
     },
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- OpenCode plugin hook API boundary
     config: async (input: Record<string, any>) => {
       input.command ??= {};
       input.command["anthropic"] = {
@@ -131,9 +140,11 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient &
       };
     },
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- OpenCode plugin hook API boundary
     "command.execute.before": async (input: Record<string, any>) => {
       if (input.command !== "anthropic") return;
       try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- command router accepts the Record-shaped input from OpenCode
         await handleAnthropicSlashCommand(input as any, commandDeps);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -144,10 +155,16 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient &
 
     auth: {
       provider: "anthropic",
-      async loader(getAuth: () => Promise<Record<string, any>>, provider: Record<string, any>) {
+      async loader(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- OpenCode auth loader API boundary
+        getAuth: () => Promise<Record<string, any>>,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- OpenCode auth loader API boundary
+        provider: Record<string, any>,
+      ) {
         const auth = await getAuth();
         if (auth.type === "oauth") {
           // Zero out cost for max plan and optionally override context limits.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- model objects carry provider-specific metadata
           for (const model of Object.values(provider.models) as Record<string, any>[]) {
             model.cost = { input: 0, output: 0, cache: { read: 0, write: 0 } };
             if (
@@ -210,7 +227,12 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient &
 
           return {
             apiKey: "",
-            async fetch(input: any, init: any) {
+            async fetch(
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any -- fetch input varies (string | URL | Request) across call sites
+              input: any,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any -- fetch init is OpenCode-shaped RequestInit-plus
+              init: any,
+            ) {
               const currentAuth = await getAuth();
               if (currentAuth.type !== "oauth") return fetch(input, init);
 
@@ -537,7 +559,8 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient &
                     }
                   : null;
                 const accountErrorCallback = shouldInspectStream
-                  ? (details: { reason: any; invalidateToken: boolean }) => {
+                  ? // eslint-disable-next-line @typescript-eslint/no-explicit-any -- reason carries opaque rate-limit metadata; shape stabilized at callsite
+                    (details: { reason: any; invalidateToken: boolean }) => {
                       if (details.invalidateToken) {
                         account.access = undefined;
                         account.expires = undefined;

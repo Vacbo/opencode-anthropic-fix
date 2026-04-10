@@ -36,6 +36,7 @@ const server = Bun.serve({
           const parsed = JSON.parse(new TextDecoder().decode(body));
           if (Array.isArray(parsed.system)) {
             systemPreview = JSON.stringify(
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any -- arbitrary system block shape from request JSON
               parsed.system.slice(0, 3).map((b: any) => ({
                 text: typeof b.text === "string" ? b.text.slice(0, 200) : "(non-text)",
                 cache_control: b.cache_control,

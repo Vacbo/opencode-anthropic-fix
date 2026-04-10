@@ -3,7 +3,7 @@ import { calculateBackoffMs } from "./backoff.js";
 import { readCCCredentials } from "./cc-credentials.js";
 import type { AnthropicAuthConfig } from "./config.js";
 import { HealthScoreTracker, selectAccount, TokenBucketTracker } from "./rotation.js";
-import type { AccountMetadata, AccountStorage } from "./storage.js";
+import type { AccountMetadata, AccountStats, AccountStorage } from "./storage.js";
 import { createDefaultStats, loadAccounts, saveAccounts } from "./storage.js";
 
 export interface ManagedAccount {
@@ -21,7 +21,7 @@ export interface ManagedAccount {
   consecutiveFailures: number;
   lastFailureTime: number | null;
   lastSwitchReason?: string;
-  stats: import("./storage.js").AccountStats;
+  stats: AccountStats;
   source?: "cc-keychain" | "cc-file" | "oauth";
 }
 
@@ -480,7 +480,10 @@ export class AccountManager {
     this.#saveTimeout = setTimeout(() => {
       this.#saveTimeout = null;
       this.saveToDisk().catch((err) => {
-        if (this.#config.debug) console.error("[opencode-anthropic-auth] saveToDisk failed:", (err as Error).message);
+        if (this.#config.debug) {
+          // eslint-disable-next-line no-console -- debug-gated stderr logging; plugin has no dedicated logger
+          console.error("[opencode-anthropic-auth] saveToDisk failed:", (err as Error).message);
+        }
       });
     }, 1000);
   }
@@ -720,6 +723,7 @@ export class AccountManager {
       if (this.#statsDeltas.size >= this.#MAX_STATS_DELTAS) {
         this.saveToDisk().catch((err) => {
           if (this.#config.debug) {
+            // eslint-disable-next-line no-console -- debug-gated stderr logging; plugin has no dedicated logger
             console.error("[opencode-anthropic-auth] forced statsDeltas flush failed:", (err as Error).message);
           }
         });

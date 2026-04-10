@@ -19,6 +19,7 @@ vi.mock("./cc-credentials.js", () => ({
   readCCCredentials: vi.fn(),
 }));
 
+import type { ManagedAccount } from "./accounts.js";
 import { createDefaultStats, loadAccounts, saveAccounts } from "./storage.js";
 import { readCCCredentials } from "./cc-credentials.js";
 
@@ -26,7 +27,7 @@ const mockLoadAccounts = loadAccounts as Mock;
 const mockSaveAccounts = saveAccounts as Mock;
 const mockReadCCredentials = readCCCredentials as Mock;
 
-function expectAccount(account: import("./accounts.js").ManagedAccount | null): import("./accounts.js").ManagedAccount {
+function expectAccount(account: ManagedAccount | null): ManagedAccount {
   expect(account).not.toBeNull();
   return account!;
 }

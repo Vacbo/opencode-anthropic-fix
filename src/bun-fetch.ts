@@ -53,11 +53,13 @@ function registerExitHandler(): void {
   });
   process.on("uncaughtException", (err) => {
     cleanup();
+    // eslint-disable-next-line no-console -- last-resort parent-process error before exit; no logger available
     console.error("[opencode-anthropic-auth] uncaughtException in parent, cleaning up proxy:", err);
     process.exit(1);
   });
   process.on("unhandledRejection", (reason) => {
     cleanup();
+    // eslint-disable-next-line no-console -- last-resort parent-process error before exit; no logger available
     console.error("[opencode-anthropic-auth] unhandledRejection in parent, cleaning up proxy:", reason);
     process.exit(1);
   });
@@ -201,6 +203,7 @@ export async function ensureBunProxy(debug: boolean): Promise<number | null> {
   // Check if a proxy is already running on the fixed port (from previous session)
   if (!proxyPort && (await isProxyHealthy(FIXED_PORT))) {
     proxyPort = FIXED_PORT;
+    // eslint-disable-next-line no-console -- debug-gated subprocess lifecycle log; no plugin logger available here
     if (debug) console.error("[opencode-anthropic-auth] Reusing existing Bun proxy on port", FIXED_PORT);
     return proxyPort;
   }
@@ -218,8 +221,10 @@ export async function ensureBunProxy(debug: boolean): Promise<number | null> {
   const port = await starting;
   starting = null;
   if (port) {
+    // eslint-disable-next-line no-console -- debug-gated subprocess lifecycle log; no plugin logger available here
     if (debug) console.error("[opencode-anthropic-auth] Bun proxy started on port", port);
   } else {
+    // eslint-disable-next-line no-console -- user-visible fallback warning; no plugin logger available here
     console.error("[opencode-anthropic-auth] Bun proxy unavailable, falling back to Node.js fetch");
   }
   return port;
@@ -263,10 +268,12 @@ export async function fetchViaBun(
   const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
 
   if (!port) {
+    // eslint-disable-next-line no-console -- user-visible fallback warning; no plugin logger available here
     console.error("[opencode-anthropic-auth] Bun proxy unavailable, falling back to Node.js fetch");
     return fetch(input, init as RequestInit);
   }
 
+  // eslint-disable-next-line no-console -- debug-gated request routing log; no plugin logger available here
   if (debug) console.error(`[opencode-anthropic-auth] Routing through Bun proxy at :${port} → ${url}`);
 
   // Dump full request for debugging
@@ -281,6 +288,7 @@ export async function fetchViaBun(
         hdrs[k] = k === "authorization" ? "Bearer ***" : v;
       });
       writeFileSync("/tmp/opencode-last-headers.json", JSON.stringify(hdrs, null, 2));
+      // eslint-disable-next-line no-console -- debug-gated request dump notice; no plugin logger available here
       console.error("[opencode-anthropic-auth] Dumped request to /tmp/opencode-last-request.json");
     } catch {
       /* ignore */
