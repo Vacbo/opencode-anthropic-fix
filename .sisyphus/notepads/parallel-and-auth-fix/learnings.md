@@ -217,6 +217,19 @@ Evidence: .sisyphus/evidence/task-6-conversation-smoke.txt
 - GREEN implementation in T17 will make tests pass
 - Used --no-verify to bypass pre-commit (tests MUST be committed failing)
 
+## Task 11: Bun Fetch RED Tests (2026-04-10)
+
+### Completed
+
+- Added `src/bun-fetch.test.ts` with 16 failing RED tests aimed at the T20/T21 bun-fetch rewrite.
+- Saved failing-test evidence to `.sisyphus/evidence/task-11-bunfetch-red.txt`.
+
+### Learnings
+
+- Source-guardrail assertions are useful for RED work when the future API does not exist yet; they still pin down invariants like no module globals, no fixed port, no restart-kill path, and no global handlers.
+- `mock-bun-proxy` plus deferred helpers let concurrency and lifecycle expectations stay deterministic even before the production factory exists.
+- A split `BUN_PROXY_PORT` banner test is a cheap way to lock in the planned switch from chunk regex parsing to line-buffered stdout handling.
+
 ## Task 13: Streaming RED Tests (2026-04-10)
 
 ### Completed
