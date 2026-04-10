@@ -29,13 +29,13 @@ function registerExitHandler(): void {
       try {
         proxyProcess.kill("SIGKILL");
       } catch {
-        /* */
+        // Best-effort cleanup — child may already be dead or detached
       }
     }
     try {
       killStaleProxy();
     } catch {
-      /* */
+      // Best-effort cleanup — PID file may be stale or inaccessible
     }
   };
   process.on("exit", cleanup);
@@ -290,8 +290,9 @@ export async function fetchViaBun(
       writeFileSync("/tmp/opencode-last-headers.json", JSON.stringify(hdrs, null, 2));
       // eslint-disable-next-line no-console -- debug-gated request dump notice; no plugin logger available here
       console.error("[opencode-anthropic-auth] Dumped request to /tmp/opencode-last-request.json");
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console -- debug-gated dump failure log; no plugin logger available here
+      console.error("[opencode-anthropic-auth] Failed to dump request:", err);
     }
   }
 

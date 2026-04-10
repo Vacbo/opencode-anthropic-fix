@@ -107,6 +107,7 @@ export async function exchange(code: string, verifier: string): Promise<Exchange
           reason = parsed.message;
         }
       } catch {
+        // Body is not JSON — use raw text as the reason, trimmed to strip whitespace
         reason = rawText.trim() || undefined;
       }
     }
@@ -154,6 +155,8 @@ export async function exchange(code: string, verifier: string): Promise<Exchange
         ? await result
             .text()
             .then((value) => (typeof value === "string" ? value : ""))
+            // Body may be unreadable on 5xx responses; empty string is the correct fallback
+            // because we've already captured the HTTP status for the caller.
             .catch(() => "")
         : "";
     return fail(result.status, raw);
@@ -198,6 +201,8 @@ export async function revoke(refreshToken: string): Promise<boolean> {
     });
     return resp.ok;
   } catch {
+    // Best-effort revocation — network errors, DNS failures, or endpoint unavailability
+    // are all expected; callers proceed with local cleanup regardless.
     return false;
   }
 }
@@ -236,6 +241,7 @@ export async function refreshToken(
   });
 
   if (!resp.ok) {
+    // Empty string is the correct fallback — we already have resp.status for the error message.
     const text = await resp.text().catch(() => "");
     const error: RefreshError = new Error(`Token refresh failed (HTTP ${resp.status}): ${text}`);
     error.status = resp.status;
@@ -243,7 +249,7 @@ export async function refreshToken(
       const parsed = JSON.parse(text);
       if (parsed.error) error.code = parsed.error;
     } catch {
-      // Body may not be valid JSON
+      // Body may not be valid JSON — leave error.code unset, the HTTP status is still attached
     }
     throw error;
   }
