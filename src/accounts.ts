@@ -49,6 +49,13 @@ export class AccountManager {
   #config: AnthropicAuthConfig;
   #saveTimeout: ReturnType<typeof setTimeout> | null = null;
   #statsDeltas = new Map<string, StatsDelta>();
+  /**
+   * Cap on pending stats deltas. When hit, a forced flush is scheduled so the
+   * map does not grow without bound between debounced saves. This is only a
+   * safety net — under normal load the 1s debounced save in `requestSaveToDisk`
+   * keeps the delta count below this cap.
+   */
+  readonly #MAX_STATS_DELTAS = 100;
 
   constructor(config: AnthropicAuthConfig) {
     this.#config = config;
@@ -710,6 +717,13 @@ export class AccountManager {
       delta.cacheReadTokens += crTok;
       delta.cacheWriteTokens += cwTok;
     } else {
+      if (this.#statsDeltas.size >= this.#MAX_STATS_DELTAS) {
+        this.saveToDisk().catch((err) => {
+          if (this.#config.debug) {
+            console.error("[opencode-anthropic-auth] forced statsDeltas flush failed:", (err as Error).message);
+          }
+        });
+      }
       this.#statsDeltas.set(account.id, {
         requests: 1,
         inputTokens: inTok,

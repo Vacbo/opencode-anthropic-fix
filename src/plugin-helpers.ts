@@ -3,6 +3,14 @@ import { stripAnsi } from "./commands/router.js";
 import type { AnthropicAuthConfig } from "./config.js";
 import type { OpenCodeClient } from "./token-refresh.js";
 
+/**
+ * Cap on the toast-debounce timestamp map. Bounded because each distinct
+ * `debounceKey` creates a long-lived entry, and new debounce keys accumulate
+ * over a session (one per account switch reason, per account, etc.). Eviction
+ * is FIFO on the insertion order preserved by Map.
+ */
+const DEBOUNCE_TOAST_MAP_MAX_SIZE = 50;
+
 export interface PluginHelperDeps {
   client: OpenCodeClient & Record<string, any>;
   config: AnthropicAuthConfig & Record<string, any>;
@@ -73,6 +81,13 @@ export function createPluginHelpers({
         const now = Date.now();
         const lastAt = debouncedToastTimestamps.get(options.debounceKey) ?? 0;
         if (now - lastAt < minGapMs) return;
+        if (
+          !debouncedToastTimestamps.has(options.debounceKey) &&
+          debouncedToastTimestamps.size >= DEBOUNCE_TOAST_MAP_MAX_SIZE
+        ) {
+          const oldestKey = debouncedToastTimestamps.keys().next().value;
+          if (oldestKey !== undefined) debouncedToastTimestamps.delete(oldestKey);
+        }
         debouncedToastTimestamps.set(options.debounceKey, now);
       }
     }

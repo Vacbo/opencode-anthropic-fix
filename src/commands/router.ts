@@ -15,6 +15,26 @@ import { completeSlashOAuth, startSlashOAuth, type OAuthFlowDeps, type PendingOA
 
 export const ANTHROPIC_COMMAND_HANDLED = "__ANTHROPIC_COMMAND_HANDLED__";
 
+/**
+ * Maximum number of file-to-account pinning entries retained in memory.
+ * Bounded to prevent unbounded growth across long sessions that touch many
+ * Files API uploads. Eviction is FIFO: when the cap is hit, the oldest entry
+ * (Maps preserve insertion order) is dropped before inserting the new one.
+ */
+export const FILE_ACCOUNT_MAP_MAX_SIZE = 1000;
+
+/**
+ * Insert a fileId→accountIndex binding with FIFO eviction when the cap is reached.
+ * See {@link FILE_ACCOUNT_MAP_MAX_SIZE} for the rationale.
+ */
+export function capFileAccountMap(fileAccountMap: Map<string, number>, fileId: string, accountIndex: number): void {
+  if (fileAccountMap.size >= FILE_ACCOUNT_MAP_MAX_SIZE) {
+    const oldestKey = fileAccountMap.keys().next().value;
+    if (oldestKey !== undefined) fileAccountMap.delete(oldestKey);
+  }
+  fileAccountMap.set(fileId, accountIndex);
+}
+
 export interface CliResult {
   code: number;
   stdout: string;
@@ -410,7 +430,7 @@ export async function handleAnthropicSlashCommand(
             data?: Array<{ id: string; filename: string; size: number; purpose: string }>;
           };
           const files = data.data || [];
-          for (const f of files) fileAccountMap.set(f.id, account.index);
+          for (const f of files) capFileAccountMap(fileAccountMap, f.id, account.index);
           if (files.length === 0) {
             await sendCommandMessage(input.sessionID, `▣ Anthropic Files [${label}]\n\nNo files uploaded.`);
             return;
@@ -441,7 +461,7 @@ export async function handleAnthropicSlashCommand(
               data?: Array<{ id: string; filename: string; size: number; purpose: string }>;
             };
             const files = data.data || [];
-            for (const f of files) fileAccountMap.set(f.id, acct.index);
+            for (const f of files) capFileAccountMap(fileAccountMap, f.id, acct.index);
             totalFiles += files.length;
             if (files.length === 0) {
               allLines.push(`[${label}] No files`);
@@ -517,7 +537,7 @@ export async function handleAnthropicSlashCommand(
         }
         const file = (await res.json()) as { id: string; filename: string; size?: number };
         const sizeKB = ((file.size || 0) / 1024).toFixed(1);
-        fileAccountMap.set(file.id, account.index);
+        capFileAccountMap(fileAccountMap, file.id, account.index);
         await sendCommandMessage(
           input.sessionID,
           `▣ Anthropic Files [${label}]\n\nUploaded: ${file.id}\n  Filename: ${file.filename}\n  Size: ${sizeKB} KB`,
@@ -551,7 +571,7 @@ export async function handleAnthropicSlashCommand(
           mime_type?: string;
           created_at?: string;
         };
-        fileAccountMap.set(file.id, account.index);
+        capFileAccountMap(fileAccountMap, file.id, account.index);
         const lines = [
           `▣ Anthropic Files [${label}]`,
           "",
