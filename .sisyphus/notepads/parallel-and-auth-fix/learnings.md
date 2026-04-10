@@ -217,6 +217,20 @@ Evidence: .sisyphus/evidence/task-6-conversation-smoke.txt
 - GREEN implementation in T17 will make tests pass
 - Used --no-verify to bypass pre-commit (tests MUST be committed failing)
 
+## Task 12: Bun Proxy Parallel RED Tests (2026-04-10)
+
+### Completed
+
+- Created `src/__tests__/bun-proxy.parallel.test.ts` with 11 RED-phase concurrency contract tests.
+- Used `deferred`, `mock-bun-proxy`, and `sse` helpers to encode parallel request, SSE ordering, cancellation, timeout, and bounded-load expectations.
+- Captured RED evidence in `.sisyphus/evidence/task-12-proxy-parallel-red.txt`.
+
+### Learnings
+
+- Dynamic `import("../bun-proxy.js")` fails per-test under Vitest because the current `bun-proxy.ts` executes `Bun.serve(...)` at module load time; this is a clean RED signal until T19 introduces testable exports.
+- A useful RED suite here mixes runtime contract tests with source-level guardrails, so the failure output shows both missing seams (`Bun is not defined`) and the currently missing concurrency hardening (`AbortSignal.any`, no pre-fetch body await).
+- `mock-bun-proxy` is a good fit for concurrency fan-out assertions because its `getInFlightCount()` exposes whether requests started in parallel without using a real network.
+
 ## Task 11: Bun Fetch RED Tests (2026-04-10)
 
 ### Completed

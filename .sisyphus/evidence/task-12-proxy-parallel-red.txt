@@ -1,0 +1,147 @@
+
+[1m[46m RUN [49m[22m [36mv4.1.0 [39m[90m/Users/vacbo/Documents/Projects/opencode-anthropic-fix[39m
+
+ [31m❯[39m src/__tests__/bun-proxy.parallel.test.ts [2m([22m[2m11 tests[22m[2m | [22m[31m11 failed[39m[2m)[22m[32m 19[2mms[22m[39m
+[31m     [31m×[31m single proxy handles 10 concurrent fetches with distinct bodies and responses[39m[32m 8[2mms[22m[39m
+[31m     [31m×[31m single proxy handles 50 concurrent fetches with distinct bodies[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m starts all concurrent upstream fetches in parallel without serialization[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m slow request does not head-of-line block siblings[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m concurrent SSE streams maintain per-stream event ordering[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m upstream error in 1 request does not affect siblings[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m upstream timeout of 1 request does not crash the proxy or cascade to later requests[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m canceling 1 of 10 requests aborts only that upstream signal and not siblings[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m releases all in-flight bookkeeping after repeated bursts to keep memory bounded[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m ties the upstream fetch to the incoming request signal without pre-fetch body awaits or mutable globals[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m starts a parent-PID watcher so the subprocess exits when the parent dies[39m[32m 1[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 11 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m src/__tests__/bun-proxy.parallel.test.ts[2m > [22mbun-proxy parallel request contract (RED)[2m > [22msingle proxy handles 10 concurrent fetches with distinct bodies and responses
+[41m[1m FAIL [22m[49m src/__tests__/bun-proxy.parallel.test.ts[2m > [22mbun-proxy parallel request contract (RED)[2m > [22msingle proxy handles 50 concurrent fetches with distinct bodies
+[41m[1m FAIL [22m[49m src/__tests__/bun-proxy.parallel.test.ts[2m > [22mbun-proxy parallel request contract (RED)[2m > [22mstarts all concurrent upstream fetches in parallel without serialization
+[41m[1m FAIL [22m[49m src/__tests__/bun-proxy.parallel.test.ts[2m > [22mbun-proxy parallel request contract (RED)[2m > [22mslow request does not head-of-line block siblings
+[41m[1m FAIL [22m[49m src/__tests__/bun-proxy.parallel.test.ts[2m > [22mbun-proxy parallel request contract (RED)[2m > [22mconcurrent SSE streams maintain per-stream event ordering
+[41m[1m FAIL [22m[49m src/__tests__/bun-proxy.parallel.test.ts[2m > [22mbun-proxy parallel request contract (RED)[2m > [22mupstream error in 1 request does not affect siblings
+[41m[1m FAIL [22m[49m src/__tests__/bun-proxy.parallel.test.ts[2m > [22mbun-proxy parallel request contract (RED)[2m > [22mupstream timeout of 1 request does not crash the proxy or cascade to later requests
+[41m[1m FAIL [22m[49m src/__tests__/bun-proxy.parallel.test.ts[2m > [22mbun-proxy parallel request contract (RED)[2m > [22mcanceling 1 of 10 requests aborts only that upstream signal and not siblings
+[41m[1m FAIL [22m[49m src/__tests__/bun-proxy.parallel.test.ts[2m > [22mbun-proxy parallel request contract (RED)[2m > [22mreleases all in-flight bookkeeping after repeated bursts to keep memory bounded
+[41m[1m FAIL [22m[49m src/__tests__/bun-proxy.parallel.test.ts[2m > [22mbun-proxy parallel request contract (RED)[2m > [22mstarts a parent-PID watcher so the subprocess exits when the parent dies
+[31m[1mReferenceError[22m: Bun is not defined[39m
+[36m [2m❯[22m src/bun-proxy.ts:[2m8:16[22m[39m
+    [90m  6|[39m [35mconst[39m [33mPORT[39m [33m=[39m [34mparseInt[39m(process[33m.[39margv[[34m2[39m] [33m||[39m [32m"48372"[39m[33m,[39m [34m10[39m)[33m;[39m
+    [90m  7|[39m
+    [90m  8|[39m [35mconst[39m server [33m=[39m [33mBun[39m[33m.[39m[34mserve[39m({
+    [90m   |[39m                [31m^[39m
+    [90m  9|[39m   port[33m:[39m [33mPORT[39m[33m,[39m
+    [90m 10|[39m   [35masync[39m [34mfetch[39m(req[33m:[39m [33mRequest[39m)[33m:[39m [33mPromise[39m[33m<[39m[33mResponse[39m[33m>[39m {
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/11]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/__tests__/bun-proxy.parallel.test.ts[2m > [22mbun-proxy parallel request contract (RED)[2m > [22mties the upstream fetch to the incoming request signal without pre-fetch body awaits or mutable globals
+[31m[1mAssertionError[22m: expected '// Standalone Bun TLS proxy — run wit…' to match /AbortSignal\.any\s*\(\s*\[\s*req\.si…/i[39m
+
+[32m- Expected:[39m
+/AbortSignal\.any\s*\(\s*\[\s*req\.signal/i
+
+[31m+ Received:[39m
+"// Standalone Bun TLS proxy — run with: bun dist/bun-proxy.mjs [port]
+// Forwards requests using Bun's native fetch (BoringSSL TLS fingerprint).
+
+const debug = process.env.OPENCODE_ANTHROPIC_DEBUG === \"1\";
+
+const PORT = parseInt(process.argv[2] || \"48372\", 10);
+
+const server = Bun.serve({
+  port: PORT,
+  async fetch(req: Request): Promise<Response> {
+    if (new URL(req.url).pathname === \"/__health\") {
+      return new Response(\"ok\");
+    }
+
+    const targetUrl = req.headers.get(\"x-proxy-url\");
+    if (!targetUrl) {
+      return new Response(\"Missing x-proxy-url\", { status: 400 });
+    }
+
+    const headers = new Headers(req.headers);
+    headers.delete(\"x-proxy-url\");
+    headers.delete(\"host\");
+    headers.delete(\"connection\");
+
+    const body = req.method !== \"GET\" && req.method !== \"HEAD\" ? await req.arrayBuffer() : undefined;
+
+    // Log full request for comparison debugging
+    if (debug && targetUrl.includes(\"/v1/messages\") && !targetUrl.includes(\"count_tokens\")) {
+      const logHeaders: Record<string, string> = {};
+      headers.forEach((v, k) => {
+        logHeaders[k] = k === \"authorization\" ? \"Bearer ***\" : v;
+      });
+      let systemPreview = \"\";
+      if (body) {
+        try {
+          const parsed = JSON.parse(new TextDecoder().decode(body));
+          if (Array.isArray(parsed.system)) {
+            systemPreview = JSON.stringify(
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any -- arbitrary system block shape from request JSON
+              parsed.system.slice(0, 3).map((b: any) => ({
+                text: typeof b.text === \"string\" ? b.text.slice(0, 200) : \"(non-text)\",
+                cache_control: b.cache_control,
+              })),
+              null,
+              2,
+            );
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      console.error(`\\n[bun-proxy] === /v1/messages REQUEST ===`);
+      console.error(`[bun-proxy] URL: ${targetUrl}`);
+      console.error(`[bun-proxy] Headers: ${JSON.stringify(logHeaders, null, 2)}`);
+      if (systemPreview) console.error(`[bun-proxy] System blocks (first 3): ${systemPreview}`);
+      console.error(`[bun-proxy] ===========================\\n`);
+    }
+
+    try {
+      const resp = await fetch(targetUrl, {
+        method: req.method,
+        headers,
+        body,
+        signal: AbortSignal.timeout(600_000), // 600s = 10 min, matches CC's x-stainless-timeout
+      });
+
+      const respHeaders = new Headers(resp.headers);
+      respHeaders.delete(\"transfer-encoding\");
+      respHeaders.delete(\"content-encoding\");
+
+      return new Response(resp.body, {
+        status: resp.status,
+        statusText: resp.statusText,
+        headers: respHeaders,
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return new Response(msg, { status: 502 });
+    }
+  },
+});
+
+console.log(`BUN_PROXY_PORT=${server.port}`);
+"
+
+[36m [2m❯[22m src/__tests__/bun-proxy.parallel.test.ts:[2m393:28[22m[39m
+    [90m391|[39m
+    [90m392|[39m   it("ties the upstream fetch to the incoming request signal without p…
+    [90m393|[39m     expect(bunProxySource).toMatch(/AbortSignal\.any\s*\(\s*\[\s*req\.…
+    [90m   |[39m                            [31m^[39m
+    [90m394|[39m     expect(bunProxySource).not.toMatch(/await\s+req\.arrayBuffer\s*\(/…
+    [90m395|[39m     [34mexpect[39m(bunProxySource)[33m.[39mnot[33m.[39m[34mtoMatch[39m([36m/^let\s+/m[39m)[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/11]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m11 failed[39m[22m[90m (11)[39m
+[2m   Start at [22m 17:08:37
+[2m   Duration [22m 199ms[2m (transform 41ms, setup 0ms, import 49ms, tests 19ms, environment 0ms)[22m
+
