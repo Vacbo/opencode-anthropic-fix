@@ -33,6 +33,7 @@ import {
   refreshAccountToken,
 } from "./token-refresh.js";
 import type { UsageStats } from "./types.js";
+import { fetchViaBun } from "./bun-fetch.js";
 
 // ---------------------------------------------------------------------------
 // Plugin factory
@@ -360,9 +361,9 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient &
           if (config.cc_credential_reuse?.enabled && config.cc_credential_reuse?.auto_detect) {
             const ccCount = accountManager.getCCAccounts().length;
             if (ccCount > 0) {
-              debugLog(`Found ${ccCount} Claude Code credential(s)`);
+              await toast(`Using Claude Code credentials (${ccCount} found)`, "success");
             } else {
-              debugLog("No Claude Code credentials found, using OAuth");
+              await toast("No Claude Code credentials — using OAuth", "info");
             }
           }
 
@@ -560,6 +561,8 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient &
                     sessionId: signatureSessionId,
                     accountId: getAccountIdentifier(account),
                   },
+                  config.relocate_third_party_prompts,
+                  config.sanitize_system_prompt,
                 );
                 logTransformedSystemPrompt(body);
 
@@ -604,11 +607,11 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient &
                 let response: Response;
                 const fetchInput = requestInput as string | URL | Request;
                 try {
-                  response = await fetch(fetchInput, {
+                  response = await fetchViaBun(fetchInput, {
                     ...requestInit,
                     body,
                     headers: requestHeaders,
-                  });
+                  }, config.debug);
                 } catch (err) {
                   const fetchError = err instanceof Error ? err : new Error(String(err));
                   if (accountManager && account) {
@@ -675,23 +678,12 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient &
                         const headersForRetry = new Headers(requestHeaders);
                         headersForRetry.set("x-stainless-retry-count", String(retryCount));
                         retryCount += 1;
-                        if (fetchInput instanceof Request) {
-                          return fetch(
-                            new Request(fetchInput, {
-                              ...requestInit,
-                              body,
-                              headers: headersForRetry,
-                            }),
-                          );
-                        }
-
-                        return fetch(
-                          new Request(fetchInput.toString(), {
-                            ...requestInit,
-                            body,
-                            headers: headersForRetry,
-                          }),
-                        );
+                        const retryUrl = fetchInput instanceof Request ? fetchInput.url : fetchInput.toString();
+                        return fetchViaBun(retryUrl, {
+                          ...requestInit,
+                          body,
+                          headers: headersForRetry,
+                        }, config.debug);
                       },
                       { maxRetries: 2 },
                     );
