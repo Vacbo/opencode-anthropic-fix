@@ -251,12 +251,19 @@ export async function createFetchHarness(opts: HarnessOptions = {}): Promise<Fet
   const mockFetch = vi.fn();
 
   // Set up mock response handler
-  mockFetch.mockImplementation((input: string | Request) => {
-    const url = typeof input === "string" ? input : input.url;
+  mockFetch.mockImplementation((input: string | Request | URL) => {
+    let url: string;
+    if (typeof input === "string") {
+      url = input;
+    } else if (input instanceof URL) {
+      url = input.toString();
+    } else {
+      url = input.url;
+    }
 
     // Check for matching mock response
     for (const [pattern, response] of Object.entries(mockResponses)) {
-      if (url.includes(pattern)) {
+      if (url && url.includes(pattern)) {
         const responseObj = typeof response === "function" ? response() : response;
         return Promise.resolve({
           ok: true,

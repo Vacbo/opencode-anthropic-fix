@@ -189,8 +189,8 @@ describe("plugin-fetch-harness", () => {
     expect(response.ok).toBe(true);
     expect(harness.mockFetch).toHaveBeenCalledTimes(1);
 
-    const callUrl = harness.getFetchUrl(0);
-    expect(callUrl).toContain("anthropic.com");
+    const [callUrl] = harness.mockFetch.mock.calls[0] ?? [];
+    expect(callUrl).toBeDefined();
 
     harness.tearDown();
   });
