@@ -45,7 +45,7 @@ export interface ToolUseBlock {
 export interface ToolResultBlock {
   type: "tool_result";
   tool_use_id: string;
-  content: string | Array<TextBlock | ToolResultImageBlock>;
+  content: string | Array<TextBlock | ImageBlock>;
   is_error?: boolean;
 }
 
@@ -104,7 +104,7 @@ export interface MakeToolResultOptions {
   /** ID of the tool_use this result corresponds to */
   toolUseId?: string;
   /** Result content - string or content blocks */
-  content?: string | Array<TextBlock | ToolResultImageBlock>;
+  content?: string | Array<TextBlock | ImageBlock>;
   /** Whether this result represents an error */
   isError?: boolean;
 }

@@ -1,0 +1,28 @@
+Task 6: Conversation History Helper
+
+Files Created:
+- src/__tests__/helpers/conversation-history.ts (factory functions)
+- src/__tests__/helpers/conversation-history.smoke.test.ts (smoke tests)
+
+Exports:
+- makeConversation(opts?): returns conversation object with messages array
+- makeMessage(opts?): creates a message with role, content
+- makeToolUse(opts?): creates tool_use block with id, name, input
+- makeToolResult(opts?): creates tool_result block with tool_use_id, content
+- ConversationFactory interface for typed options
+
+Test Results:
+- 25 tests passed
+- Coverage: conversation creation, message factories, tool pairing validation, ID generation, complex scenarios
+
+Validation Features:
+- validateToolPair(): validates tool_use/tool_result pairing
+- findToolResult(): finds matching tool result by ID
+- validateConversationTools(): validates all tool pairs in conversation
+- makeToolExchange(): creates paired tool_use + tool_result
+- makeToolConversation(): creates complete tool call flow
+
+Unique ID Generation:
+- Auto-generated unique IDs using crypto.randomUUID()
+- resetIdCounter() for deterministic tests
+
