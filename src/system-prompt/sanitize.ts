@@ -5,8 +5,18 @@
 import { CLAUDE_CODE_IDENTITY_STRING } from "../constants.js";
 import type { PromptCompactionMode } from "../types.js";
 
-export function sanitizeSystemText(text: string): string {
-  return text.replace(/OpenCode/g, "Claude Code").replace(/opencode/gi, "Claude");
+export function sanitizeSystemText(text: string, enabled = true): string {
+  if (!enabled) return text;
+  return text
+    .replace(/\bOpenCode\b/g, "Claude Code")
+    .replace(/\bopencode\b/gi, "Claude")
+    .replace(/OhMyClaude\s*Code/gi, "Claude Code")
+    .replace(/OhMyClaudeCode/gi, "Claude Code")
+    .replace(/\bSisyphus\b/g, "Claude Code Agent")
+    .replace(/\bMorph\s+plugin\b/gi, "edit plugin")
+    .replace(/\bmorph_edit\b/g, "edit")
+    .replace(/\bmorph_/g, "")
+    .replace(/\bOhMyClaude\b/gi, "Claude");
 }
 
 export function compactSystemText(text: string, mode: PromptCompactionMode): string {

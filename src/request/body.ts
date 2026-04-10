@@ -49,7 +49,7 @@ export function transformRequestBody(
       // Keep CC blocks in system. Move blocks with third-party identifiers
       // into messages to avoid system prompt content detection.
       const THIRD_PARTY_MARKERS =
-        /sisyphus|ohmyclaude|oh\s*my\s*claude|morph[_ ]|\.sisyphus\/|ultrawork|autopilot mode|ohmy|SwarmMode|\bomc\b|\bomo\b/i;
+        /sisyphus|ohmyclaude|oh\s*my\s*claude|morph[_ ]|\.sisyphus\/|ultrawork|autopilot mode|\bohmy\b|SwarmMode|\bomc\b|\bomo\b/i;
 
       const ccBlocks: typeof allSystemBlocks = [];
       const extraBlocks: typeof allSystemBlocks = [];
