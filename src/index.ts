@@ -26,14 +26,10 @@ import { isEventStreamResponse, transformResponse } from "./response/streaming.j
 import { readCCCredentials } from "./cc-credentials.js";
 import { clearAccounts, loadAccounts } from "./storage.js";
 import type { OpenCodeClient } from "./token-refresh.js";
-import {
-  formatSwitchReason,
-  markTokenStateUpdated,
-  readDiskAccountAuth,
-  refreshAccountToken,
-} from "./token-refresh.js";
+import { formatSwitchReason, markTokenStateUpdated, readDiskAccountAuth } from "./token-refresh.js";
 import type { UsageStats } from "./types.js";
 import { fetchViaBun } from "./bun-fetch.js";
+import { createRefreshHelpers } from "./refresh-helpers.js";
 
 // ---------------------------------------------------------------------------
 // Plugin factory
@@ -52,15 +48,6 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient &
   // Track account usage toasts; show once per account change (including first use).
   let lastToastedIndex = -1;
   const debouncedToastTimestamps = new Map<string, number>();
-
-  const refreshInFlight = new Map<string, { promise: Promise<string>; source: "foreground" | "idle" }>();
-
-  const idleRefreshLastAttempt = new Map<string, number>();
-  const idleRefreshInFlight = new Set<string>();
-
-  const IDLE_REFRESH_ENABLED = config.idle_refresh.enabled;
-  const IDLE_REFRESH_WINDOW_MS = config.idle_refresh.window_minutes * 60 * 1000;
-  const IDLE_REFRESH_MIN_INTERVAL_MS = config.idle_refresh.min_interval_minutes * 60 * 1000;
 
   let initialAccountPinned = false;
   const pendingSlashOAuth = new Map<string, PendingOAuthEntry>();
@@ -136,6 +123,13 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient &
     console.error("[opencode-anthropic-auth]", ...args);
   }
 
+  const { parseRefreshFailure, refreshAccountTokenSingleFlight, maybeRefreshIdleAccounts } = createRefreshHelpers({
+    client,
+    config,
+    getAccountManager: () => accountManager,
+    debugLog,
+  });
+
   // -- Version resolution ----------------------------------------------------
 
   let claudeCliVersion = FALLBACK_CLAUDE_CLI_VERSION;
@@ -149,134 +143,6 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient &
         debugLog("resolved claude-code version from npm", version);
       })
       .catch((err) => debugLog("CC version fetch failed:", (err as Error).message));
-  }
-
-  // -- Refresh helpers -------------------------------------------------------
-
-  function parseRefreshFailure(refreshError: unknown) {
-    const message = refreshError instanceof Error ? refreshError.message : String(refreshError);
-    const status =
-      typeof refreshError === "object" && refreshError && "status" in refreshError
-        ? Number((refreshError as Record<string, unknown>).status)
-        : NaN;
-    const errorCode =
-      typeof refreshError === "object" && refreshError && ("errorCode" in refreshError || "code" in refreshError)
-        ? String(
-            (refreshError as Record<string, unknown>).errorCode || (refreshError as Record<string, unknown>).code || "",
-          )
-        : "";
-    const msgLower = message.toLowerCase();
-    const isInvalidGrant =
-      errorCode === "invalid_grant" || errorCode === "invalid_request" || msgLower.includes("invalid_grant");
-    const isTerminalStatus = status === 400 || status === 401 || status === 403;
-    return { message, status, errorCode, isInvalidGrant, isTerminalStatus };
-  }
-
-  async function refreshAccountTokenSingleFlight(
-    account: ManagedAccount,
-    source: "foreground" | "idle" = "foreground",
-  ): Promise<string> {
-    const key = account.id;
-    const existing = refreshInFlight.get(key);
-    if (existing) {
-      if (source === "foreground" && existing.source === "idle") {
-        try {
-          await existing.promise;
-        } catch {
-          /* ignore idle failure */
-        }
-        if (account.access && account.expires && account.expires > Date.now()) return account.access;
-      } else {
-        return existing.promise;
-      }
-    }
-
-    const entry: { promise: Promise<string>; source: "foreground" | "idle" } = {
-      source,
-      promise: Promise.resolve(""),
-    };
-    const p = (async () => {
-      try {
-        return await refreshAccountToken(account, client, source, {
-          onTokensUpdated: async () => {
-            try {
-              await accountManager!.saveToDisk();
-            } catch {
-              accountManager!.requestSaveToDisk();
-              throw new Error("save failed, debounced retry scheduled");
-            }
-          },
-          debugLog,
-        });
-      } finally {
-        if (refreshInFlight.get(key) === entry) refreshInFlight.delete(key);
-      }
-    })();
-    entry.promise = p;
-    refreshInFlight.set(key, entry);
-    return p;
-  }
-
-  async function refreshIdleAccount(account: ManagedAccount) {
-    if (!accountManager) return;
-    if (idleRefreshInFlight.has(account.id)) return;
-    idleRefreshInFlight.add(account.id);
-    const attemptedRefreshToken = account.refreshToken;
-    try {
-      try {
-        await refreshAccountTokenSingleFlight(account, "idle");
-        return;
-      } catch (err) {
-        let details = parseRefreshFailure(err);
-        if (!(details.isInvalidGrant || details.isTerminalStatus)) {
-          debugLog("idle refresh skipped after transient failure", {
-            accountIndex: account.index,
-            status: details.status,
-            errorCode: details.errorCode,
-            message: details.message,
-          });
-          return;
-        }
-        const diskAuth = await readDiskAccountAuth(account.id);
-        const retryToken = diskAuth?.refreshToken;
-        if (retryToken && retryToken !== attemptedRefreshToken && account.refreshToken === attemptedRefreshToken) {
-          account.refreshToken = retryToken;
-          if (diskAuth?.tokenUpdatedAt) account.tokenUpdatedAt = diskAuth.tokenUpdatedAt;
-          else markTokenStateUpdated(account);
-        }
-        try {
-          await refreshAccountTokenSingleFlight(account, "idle");
-        } catch (retryErr) {
-          details = parseRefreshFailure(retryErr);
-          debugLog("idle refresh retry failed", {
-            accountIndex: account.index,
-            status: details.status,
-            errorCode: details.errorCode,
-            message: details.message,
-          });
-        }
-      }
-    } finally {
-      idleRefreshInFlight.delete(account.id);
-    }
-  }
-
-  function maybeRefreshIdleAccounts(activeAccount: ManagedAccount) {
-    if (!IDLE_REFRESH_ENABLED || !accountManager) return;
-    const now = Date.now();
-    const excluded = new Set([activeAccount.index]);
-    const candidates = accountManager
-      .getEnabledAccounts(excluded)
-      .filter((acc) => !acc.expires || acc.expires <= now + IDLE_REFRESH_WINDOW_MS)
-      .filter((acc) => {
-        const last = idleRefreshLastAttempt.get(acc.id) ?? 0;
-        return now - last >= IDLE_REFRESH_MIN_INTERVAL_MS;
-      })
-      .sort((a, b) => (a.expires ?? 0) - (b.expires ?? 0));
-    const target = candidates[0];
-    if (!target) return;
-    idleRefreshLastAttempt.set(target.id, now);
-    void refreshIdleAccount(target);
   }
 
   // -- Command deps ----------------------------------------------------------
