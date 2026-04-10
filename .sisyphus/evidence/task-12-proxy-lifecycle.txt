@@ -1,0 +1,23 @@
+Task 12 — Proxy shutdown lifecycle hardening evidence
+
+Changed file diagnostics:
+- src/bun-fetch.ts: lsp_diagnostics clean
+
+Vitest:
+
+RUN v4.1.0 /Users/vacbo/Documents/Projects/opencode-anthropic-fix
+Test Files 15 passed (15)
+Tests 620 passed (620)
+Duration 5.48s
+
+Build + proxy QA scenario:
+
+$ pkill -f "bun-proxy" 2>/dev/null; rm -f "/tmp/opencode-bun-proxy.pid"; npm run build && (bun dist/bun-proxy.mjs 48372 & PROXY_PID=$!; sleep 1; curl -s http://127.0.0.1:48372/__health; kill "$PROXY_PID" 2>/dev/null; wait "$PROXY_PID" 2>/dev/null; sleep 1; curl -sf http://127.0.0.1:48372/__health 2>&1 || printf "PROXY_DEAD\n")
+
+> @vacbo/opencode-anthropic-fix@0.0.45 build
+> bun scripts/build.ts
+
+Built dist/opencode-anthropic-auth-plugin.js, dist/opencode-anthropic-auth-cli.mjs, and dist/bun-proxy.mjs
+BUN_PROXY_PORT=48372
+ok
+PROXY_DEAD

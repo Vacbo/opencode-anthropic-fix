@@ -1,0 +1,14 @@
+
+[1mAuth Commands[0m
+
+  [36mlogin[0m               Add a new account via browser OAuth flow (alias: ln)
+  [36mlogout[0m <N>          Revoke tokens and remove account N (alias: lo)
+  [36mlogout[0m --all        Revoke all tokens and clear all accounts
+  [36mreauth[0m <N>          Re-authenticate account N with fresh tokens (alias: ra)
+  [36mrefresh[0m <N>         Attempt token refresh without browser (alias: rf)
+
+[2mExamples:[0m
+  opencode-anthropic-auth auth login
+  opencode-anthropic-auth auth logout 2
+  opencode-anthropic-auth auth reauth 1
+

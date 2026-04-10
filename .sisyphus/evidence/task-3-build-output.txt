@@ -1,0 +1,10 @@
+Build Output Evidence - Task 3
+==============================
+
+Command: bun scripts/build.ts
+Exit code: 0
+
+Output:
+Built dist/opencode-anthropic-auth-plugin.js and dist/opencode-anthropic-auth-cli.mjs
+
+Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")

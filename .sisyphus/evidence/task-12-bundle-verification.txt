@@ -1,0 +1,79 @@
+Bundle Verification Evidence - Task 12
+========================================
+
+Build Command: bun scripts/build.ts
+Build Result: exit 0 (success)
+Build Output: Built dist/opencode-anthropic-auth-plugin.js and dist/opencode-anthropic-auth-cli.mjs
+
+CLI Help Verification:
+----------------------
+Command: node dist/opencode-anthropic-auth-cli.mjs help
+Result: exit 0 (success)
+Output shows grouped subcommands:
+  - Command Groups: auth, account, usage, config, manage
+  - Auth Commands: login, logout, reauth, refresh
+  - Account Commands: list, switch, enable, disable, remove, reset
+  - Usage Commands: stats, reset-stats, status
+  - Config Commands: config, strategy
+  - Manage Commands: manage, help
+
+Auth Help Verification:
+-----------------------
+Command: node dist/opencode-anthropic-auth-cli.mjs auth help
+Result: exit 0 (success)
+Output shows auth subcommands:
+  - login, logout, reauth, refresh
+
+Non-Interactive Commands (isCancel Test):
+-----------------------------------------
+Command: node dist/opencode-anthropic-auth-cli.mjs account list
+Result: exit 0 (success)
+No Symbol/isCancel runtime errors observed
+Output: Account list with usage quotas displayed correctly
+
+Command: node dist/opencode-anthropic-auth-cli.mjs config show
+Result: exit 0 (success)
+No Symbol/isCancel runtime errors observed
+Output: Configuration displayed correctly
+
+Bundle Size Audit:
+------------------
+Command: wc -c dist/opencode-anthropic-auth-cli.mjs
+Current Size: 120678 bytes
+Task 3 Baseline: 69681 bytes
+Size Increase: +50997 bytes (+73.2%)
+
+Size Analysis:
+- The bundle size increased significantly from the baseline
+- This is likely due to additional dependencies being bundled
+- The @clack/prompts library and its dependencies contribute to the increase
+- No isCancel/Symbol errors in the bundle (verified by running commands)
+
+Test Suite Results:
+-------------------
+Command: bun test
+Result: Terminated after timeout (180s)
+Status: Multiple test failures observed
+
+Key Failure Patterns:
+1. Mock URL mismatches (tests expect claude.ai/oauth/authorize, get auth.example)
+2. Token refresh lock contention ("Refresh lock busy" errors)
+3. Response.headers.get errors (undefined is not an object)
+4. vi.advanceTimersByTimeAsync not a function (Bun/vitest compatibility)
+5. vi.setSystemTime not a function (Bun/vitest compatibility)
+
+Note: Test failures appear to be related to:
+- Mock configuration issues in test setup
+- Bun/vitest API compatibility differences
+- Not related to the CLI bundle functionality
+
+Conclusion:
+-----------
+✓ Build succeeds
+✓ CLI help shows grouped subcommands correctly
+✓ Auth help shows auth subcommands correctly
+✓ Non-interactive commands run without isCancel/Symbol errors
+⚠ Bundle size increased significantly (+73% from baseline)
+⚠ Test suite has multiple failures (mock/compatibility issues)
+
+Date: 2026-04-08

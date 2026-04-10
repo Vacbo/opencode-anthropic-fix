@@ -1,0 +1,14 @@
+Invalid strategy 'invalid-strategy'. Valid strategies: sticky, round-robin, hybrid
+[2mStrategy is already 'sticky'.[0m
+Strategy changed to 'round-robin'.
+Removed account #2 (Account 2).
+2 account(s) remaining.
+
+ 117 pass
+ 0 fail
+ 337 expect() calls
+Ran 117 tests across 1 file. [34.00ms]
+---
+Account commands migrated: cmdList, cmdSwitch, cmdEnable, cmdDisable, cmdRemove, cmdReset
+readline removed from cmdRemove, replaced with confirm()+isCancel()
+spinner() added to cmdList for quota fetching

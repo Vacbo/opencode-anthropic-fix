@@ -1,0 +1,12 @@
+Bundle Size Evidence - Task 3
+=============================
+
+Command: wc -c dist/opencode-anthropic-auth-cli.mjs
+Output: 69681 bytes
+
+Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+Dependency: @clack/prompts@1.2.0
+
+Verification: Bundle includes @clack/prompts (bundled, not externalized)
+Build: exit 0 (success)
+CLI test: exit 0 (success)

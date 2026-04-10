@@ -1,0 +1,137 @@
+Must Have [9/12] | Must NOT Have [3/3 clean] | Tasks [13/17 committed] | Tests [663/663 pass] | VERDICT: REJECT
+
+Evidence:
+- Debug gating: PASS
+  - src/bun-fetch.ts:145: env passes OPENCODE_ANTHROPIC_DEBUG to subprocess
+  - src/bun-proxy.ts:4: const debug = process.env.OPENCODE_ANTHROPIC_DEBUG === "1";
+  - src/bun-fetch.ts gated console lines found at 207, 225, 277, 280
+- Silent catch audit: FAIL
+  - Direct catch grep: no matches after exclusions
+  - Promise catch grep found:
+    - src/oauth.ts:157: .catch(() => "")
+    - src/oauth.ts:239: const text = await resp.text().catch(() => "");
+- Decomposition files: PASS
+  - src/plugin-helpers.ts
+  - src/refresh-helpers.ts
+- Proxy timeout: PASS
+  - src/bun-proxy.ts:64: signal: AbortSignal.timeout(600_000)
+- Exception handlers: PASS
+  - src/bun-fetch.ts:54 process.on("uncaughtException", ...)
+  - src/bun-fetch.ts:60 process.on("unhandledRejection", ...)
+- Evidence collected: PASS
+  - ls .sisyphus/evidence/ | wc -l => 24
+- index.ts LOC: FAIL
+  - wc -l src/index.ts => 737 lines (was 890)
+- Tests: PASS
+  - Test Files 20 passed (20)
+  - Tests 663 passed (663)
+- ESLint: PASS
+  - EXIT:0
+- Build: PASS
+  - Built dist/opencode-anthropic-auth-plugin.js, dist/opencode-anthropic-auth-cli.mjs, and dist/bun-proxy.mjs
+- No ungated /tmp writes: FAIL
+  - src/bun-fetch.ts:283: "/tmp/opencode-last-request.json",
+  - src/bun-fetch.ts:290: writeFileSync("/tmp/opencode-last-headers.json", JSON.stringify(hdrs, null, 2));
+  - src/bun-fetch.ts:292: console.error("[opencode-anthropic-auth] Dumped request to /tmp/opencode-last-request.json");
+- TSC: PASS
+  - EXIT:0
+
+Must NOT Have checks:
+- No PluginContext: CLEAN (no matches)
+- No ts-ignore / ts-expect-error: CLEAN (no matches outside tests)
+- No file-level no-explicit-any disable: CLEAN (no matches outside tests)
+
+Task commits audit (GIT_MASTER=1 git log --oneline HEAD~20..HEAD):
+- Present
+  - T2 57ed36b fix: gate debug output in bun-fetch.ts behind config.debug
+  - T3 80ee23e fix: gate debug output in bun-proxy.ts via DEBUG env var
+  - T5 f1ac684 fix: replace silent error swallowing with debugLog (6 violations)
+  - T6 ad9d44a refactor: extract refresh helpers from index.ts
+  - T7 96deabd refactor: extract plugin helpers from index.ts
+  - T9 4121bc4 fix: add word boundaries to sanitization regexes
+  - T10 729a7eb fix: use nullish coalescing for cc_entrypoint + document billing gaps
+  - T12 6323173 fix: harden proxy shutdown lifecycle with exception handlers and PID staleness checks
+  - T13 7317ee8 fix: cap unbounded state growth in maps and sets
+  - T14 50794a2 docs: document tool prefix convention vs CC
+  - T15 59eb340 docs: verify and document system prompt alignment with CC source
+  - T16 fd27f43 test: add coverage for refactored and fixed modules
+  - T17 286789d chore: tighten ESLint rules and enforce zero warnings
+- Missing as distinct commits in HEAD~20..HEAD
+  - T1 Baseline
+  - T4 Remove /tmp dump
+  - T8 Cleanup index.ts
+  - T11 Add proxy timeout
+
+Raw outputs:
+[Debug gating]
+src/bun-fetch.ts:145:        env: { ...process.env, OPENCODE_ANTHROPIC_DEBUG: debug ? "1" : "0" },
+src/bun-proxy.ts:4:const debug = process.env.OPENCODE_ANTHROPIC_DEBUG === "1";
+---
+src/bun-fetch.ts:207:    if (debug) console.error("[opencode-anthropic-auth] Reusing existing Bun proxy on port", FIXED_PORT);
+src/bun-fetch.ts:225:    if (debug) console.error("[opencode-anthropic-auth] Bun proxy started on port", port);
+src/bun-fetch.ts:277:  if (debug) console.error(`[opencode-anthropic-auth] Routing through Bun proxy at :${port} → ${url}`);
+src/bun-fetch.ts:280:  if (debug && init.body && url.includes("/v1/messages") && !url.includes("count_tokens")) {
+
+[Silent catch audit]
+---
+src/oauth.ts:157:            .catch(() => "")
+src/oauth.ts:239:    const text = await resp.text().catch(() => "");
+
+[Files / timeout / handlers / LOC]
+src/plugin-helpers.ts
+src/refresh-helpers.ts
+---
+64:        signal: AbortSignal.timeout(600_000), // 600s = 10 min, matches CC's x-stainless-timeout
+---
+54:  process.on("uncaughtException", (err) => {
+57:    console.error("[opencode-anthropic-auth] uncaughtException in parent, cleaning up proxy:", err);
+60:  process.on("unhandledRejection", (reason) => {
+63:    console.error("[opencode-anthropic-auth] unhandledRejection in parent, cleaning up proxy:", reason);
+---
+     737 src/index.ts
+
+[Evidence count and tmp audit]
+24
+---
+src/bun-fetch.ts:283:        "/tmp/opencode-last-request.json",
+src/bun-fetch.ts:290:      writeFileSync("/tmp/opencode-last-headers.json", JSON.stringify(hdrs, null, 2));
+src/bun-fetch.ts:292:      console.error("[opencode-anthropic-auth] Dumped request to /tmp/opencode-last-request.json");
+
+[Must NOT Have audit]
+(no matches)
+
+[Git log]
+fd27f43 test: add coverage for refactored and fixed modules
+59eb340 docs: verify and document system prompt alignment with CC source
+286789d chore: tighten ESLint rules and enforce zero warnings
+50794a2 docs: document tool prefix convention vs CC
+7317ee8 fix: cap unbounded state growth in maps and sets
+6323173 fix: harden proxy shutdown lifecycle with exception handlers and PID staleness checks
+729a7eb fix: use nullish coalescing for cc_entrypoint + document billing gaps
+4121bc4 fix: add word boundaries to sanitization regexes
+96deabd refactor: extract plugin helpers from index.ts
+ad9d44a refactor: extract refresh helpers from index.ts
+f1ac684 fix: replace silent error swallowing with debugLog (6 violations)
+57ed36b fix: gate debug output in bun-fetch.ts behind config.debug
+80ee23e fix: gate debug output in bun-proxy.ts via DEBUG env var
+be7c110 chore: bump version to 0.0.37
+6355e4a fix(mimicry): align cache_control, betas, and headers with CC 2.1.98 Proxyman capture
+91a6b48 chore: bump version to 0.0.36
+3841102 fix(mimicry): generate dynamic cch attestation hash instead of literal 00000
+e82bfb5 chore: bump version to 0.0.35
+1d553ef fix(mimicry): align fingerprint with CC 2.1.98 + add debug logging
+0da462d feat: detect membership-benefits 403, rewrite CLI with @clack/prompts + subcommand groups
+
+[Test summary]
+ Test Files 20 passed (20)
+      Tests 663 passed (663)
+   Duration 5.74s
+
+[ESLint]
+EXIT:0
+
+[Build]
+Built dist/opencode-anthropic-auth-plugin.js, dist/opencode-anthropic-auth-cli.mjs, and dist/bun-proxy.mjs
+
+[TSC]
+EXIT:0

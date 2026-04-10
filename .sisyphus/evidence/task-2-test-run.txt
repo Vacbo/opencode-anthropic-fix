@@ -1,0 +1,30 @@
+Task: 403 membership -> switch -> refresh integration test
+Date: 2026-04-08
+
+Files changed:
+- index.test.ts
+
+Verification:
+1. lsp_diagnostics /Users/vacbo/Documents/Projects/opencode-anthropic-fix/index.test.ts
+   Result: clean (no diagnostics found)
+
+2. Command: bun test index.test.ts
+   Result: FAILED in this environment before full-suite completion
+
+Key failure excerpts from the run:
+- fetch interceptor — token refresh > refreshes near-expiry idle account in background while serving active account
+  Expected refreshCalls.length to be 1, received 0
+- fetch interceptor — token refresh > does not disable idle account on background refresh failure
+  Expected refreshCalls.length to be >= 2, received 0
+- fetch interceptor — account exhaustion > handles 403 membership auth failure by clearing tokens and switching accounts
+  TypeError: vi.setSystemTime is not a function
+- fetch interceptor — account exhaustion > clears token state on 401 so next attempt refreshes token
+  TypeError: vi.setSystemTime is not a function
+- Multiple pre-existing failures also reference:
+  - TypeError: vi.advanceTimersByTimeAsync is not a function
+  - TypeError: undefined is not an object (evaluating 'response.headers.get')
+  - Error: Refresh lock busy
+
+Assessment:
+- The new test was added.
+- The requested full `bun test index.test.ts` pass condition is not currently satisfied because the suite is already failing broadly under Bun in this workspace/environment.

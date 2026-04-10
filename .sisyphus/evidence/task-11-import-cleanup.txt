@@ -1,0 +1,17 @@
+Task 11: Import cleanup in src/cli.ts
+
+Removed unused imports:
+- import { stdin, stdout } from "node:process";
+- import { createInterface } from "node:readline/promises";
+
+These were confirmed unused in cli.ts (createInterface is only used in prompts.ts).
+
+Kept imports:
+- import { AsyncLocalStorage } from "node:async_hooks";
+- import { exec } from "node:child_process";
+- import { pathToFileURL } from "node:url";
+
+Color helpers kept:
+- The c.* color helpers (c.bold, c.dim, c.green, c.yellow, c.cyan, c.red, c.gray)
+- Still used 156 times throughout cli.ts
+- NO_COLOR environment variable support preserved

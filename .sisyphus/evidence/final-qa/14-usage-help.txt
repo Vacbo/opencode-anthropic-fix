@@ -1,0 +1,11 @@
+
+[1mUsage Commands[0m
+
+  [36mstats[0m               Show per-account usage statistics
+  [36mreset-stats[0m [N|all] Reset usage statistics
+  [36mstatus[0m              Compact one-liner for scripts/prompts (alias: st)
+
+[2mExamples:[0m
+  opencode-anthropic-auth usage stats
+  opencode-anthropic-auth usage status
+

@@ -1,0 +1,17 @@
+Task 11: Add oaa alias, update help, cleanup legacy helpers
+Test Results: bun test cli.test.ts
+
+bun test v1.3.11 (af24e281)
+
+cli.test.ts:
+117 pass
+0 fail
+339 expect() calls
+Ran 117 tests across 1 file. [42.00ms]
+
+All tests passing after changes:
+- Added "oaa" alias to package.json bin field
+- Updated cmdHelp() to show grouped command structure (auth, account, usage, config, manage)
+- Updated file header comment to reflect new grouping
+- Removed unused createInterface import from node:readline/promises
+- Color helpers (c.*) kept - still used 156 times in cli.ts

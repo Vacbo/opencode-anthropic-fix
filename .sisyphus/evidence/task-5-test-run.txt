@@ -1,0 +1,20 @@
+bun test v1.3.11 (af24e281)
+Paste the authorization code here: 
+cli.test.ts:
+(fail) auth commands > cmdLogin adds a new account via OAuth [5000.07ms]
+  ^ this test timed out after 5000ms.
+Paste the authorization code here: (fail) auth commands > cmdLogin updates duplicate account even when at max capacity [5000.09ms]
+  ^ this test timed out after 5000ms.
+Paste the authorization code here: (fail) auth commands > cmdLogin rejects adding new account when at max capacity [5000.30ms]
+  ^ this test timed out after 5000ms.
+Paste the authorization code here: (fail) auth commands > cmdReauth refreshes credentials and resets account failure state [5000.02ms]
+  ^ this test timed out after 5000ms.
+Paste the authorization code here: (fail) main routing > routes 'ln' alias to login [5000.02ms]
+  ^ this test timed out after 5000ms.
+Paste the authorization code here: (fail) main routing > routes 'ra' alias to reauth [5000.00ms]
+  ^ this test timed out after 5000ms.
+
+ 103 pass
+ 6 fail
+ 295 expect() calls
+Ran 109 tests across 1 file. [30.05s]

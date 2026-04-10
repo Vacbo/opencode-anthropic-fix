@@ -1,0 +1,111 @@
+=== F4 Scope Fidelity Check (Re-run with Clarified Scope) ===
+Date: 2026-04-10
+
+--- Commit Range ---
+Base: be7c110
+HEAD: bccd981
+Total commits: 15
+
+--- Scope Interpretation ---
+- Task scope is taken from the task body / clarified map, not only the Commit Strategy table.
+- Task 15 includes `src/system-prompt/builder.ts`.
+- Task 17 includes `eslint.config.ts` plus any file touched to clear lint warnings.
+- Pre-existing TypeScript errors in test files (including `src/storage.test.ts`) are baseline and NOT counted against F4.
+- Task 14 is documentation/source-audit work with no net file in the current `be7c110..HEAD` diff, so it is excluded from the task denominator below.
+
+--- Changed Files (be7c110..HEAD) ---
+eslint.config.ts
+src/__tests__/billing-edge-cases.test.ts
+src/__tests__/debug-gating.test.ts
+src/__tests__/decomposition-smoke.test.ts
+src/__tests__/sanitization-regex.test.ts
+src/__tests__/state-bounds.test.ts
+src/accounts.test.ts
+src/accounts.ts
+src/bun-fetch.ts
+src/bun-proxy.ts
+src/cli.ts
+src/commands/router.ts
+src/env.ts
+src/headers/billing.ts
+src/index.ts
+src/oauth.ts
+src/plugin-helpers.ts
+src/refresh-helpers.ts
+src/request/body.ts
+src/request/metadata.ts
+src/storage.test.ts
+src/system-prompt/builder.ts
+src/system-prompt/sanitize.ts
+src/token-refresh.ts
+Total: 24
+
+--- Per-file Scope Mapping ---
+✅ IN SCOPE — eslint.config.ts — T17
+✅ IN SCOPE — src/__tests__/billing-edge-cases.test.ts — T16
+✅ IN SCOPE — src/__tests__/debug-gating.test.ts — T16
+✅ IN SCOPE — src/__tests__/decomposition-smoke.test.ts — T16
+✅ IN SCOPE — src/__tests__/sanitization-regex.test.ts — T16
+✅ IN SCOPE — src/__tests__/state-bounds.test.ts — T16
+✅ IN SCOPE — src/accounts.test.ts — T17
+✅ IN SCOPE — src/accounts.ts — T5, T13, T17
+✅ IN SCOPE — src/bun-fetch.ts — T2, T12, F1
+✅ IN SCOPE — src/bun-proxy.ts — T3, T17
+✅ IN SCOPE — src/cli.ts — T17, F2
+✅ IN SCOPE — src/commands/router.ts — T13, F2
+✅ IN SCOPE — src/env.ts — T17
+✅ IN SCOPE — src/headers/billing.ts — T10
+✅ IN SCOPE — src/index.ts — T5, T6, T7, T17
+✅ IN SCOPE — src/oauth.ts — F1
+✅ IN SCOPE — src/plugin-helpers.ts — T7, T13, T17
+✅ IN SCOPE — src/refresh-helpers.ts — T6, T17
+✅ IN SCOPE — src/request/body.ts — T5, T9
+✅ IN SCOPE — src/request/metadata.ts — T5
+✅ IN SCOPE — src/storage.test.ts — T17
+✅ IN SCOPE — src/system-prompt/builder.ts — T15
+✅ IN SCOPE — src/system-prompt/sanitize.ts — T9
+✅ IN SCOPE — src/token-refresh.ts — T5
+
+Unaccounted files: CLEAN (0/24)
+
+--- Forbidden Pattern Checks ---
+class Plugin / PluginContext: PASS (no matches)
+new @ts-ignore in diff: PASS (no matches)
+factory pattern: PASS
+  - src/refresh-helpers.ts: export function createRefreshHelpers(...)
+  - src/plugin-helpers.ts: export function createPluginHelpers(...)
+refresh-lock.ts untouched: PASS (empty diff)
+normalize.ts untouched: PASS (empty diff)
+
+--- LOC ---
+src/index.ts: 737
+src/refresh-helpers.ts: 165
+src/plugin-helpers.ts: 112
+Result: PASS (`src/index.ts` remains below the prior 890-line baseline; 737 is allowed as a guideline, not a gate)
+
+--- Commit Message Convention ---
+PASS — all commits in `be7c110..HEAD` use conventional prefixes.
+
+bccd981 fix: add reason comments to eslint disables and document silent catch
+82eaf0f fix: add comments and error binding to remaining silent catches
+fd27f43 test: add coverage for refactored and fixed modules
+59eb340 docs: verify and document system prompt alignment with CC source
+286789d chore: tighten ESLint rules and enforce zero warnings
+50794a2 docs: document tool prefix convention vs CC
+7317ee8 fix: cap unbounded state growth in maps and sets
+6323173 fix: harden proxy shutdown lifecycle with exception handlers and PID staleness checks
+729a7eb fix: use nullish coalescing for cc_entrypoint + document billing gaps
+4121bc4 fix: add word boundaries to sanitization regexes
+96deabd refactor: extract plugin helpers from index.ts
+ad9d44a refactor: extract refresh helpers from index.ts
+f1ac684 fix: replace silent error swallowing with debugLog (6 violations)
+57ed36b fix: gate debug output in bun-fetch.ts behind config.debug
+80ee23e fix: gate debug output in bun-proxy.ts via DEBUG env var
+
+--- Notes ---
+- Previously flagged files `src/accounts.test.ts`, `src/cli.ts`, `src/env.ts`, `src/storage.test.ts`, and `src/system-prompt/builder.ts` are in scope under the clarified Task 17 / Task 15 definitions.
+- `src/storage.test.ts` baseline TypeScript errors are explicitly excluded from F4.
+- The prior rejection reasons tied to literal Commit Strategy reading do not hold under the clarified task scope.
+
+=== VERDICT ===
+Tasks [14/14 compliant] | Unaccounted [CLEAN/24 files] | VERDICT: APPROVE

@@ -1,0 +1,40 @@
+## F1 Re-Audit Results
+
+### Must Have Items (verify each)
+- Debug gating in bun-fetch.ts: PASS
+  - `src/bun-fetch.ts` threads `debug` into `spawnProxy()` and sets `OPENCODE_ANTHROPIC_DEBUG` at line 145. Debug-only lifecycle/request logs remain gated; the Node fallback warnings are intentionally user-visible.
+- Debug gating in bun-proxy.ts (env var): PASS
+  - `src/bun-proxy.ts:4` reads `process.env.OPENCODE_ANTHROPIC_DEBUG === "1"`, and the `/v1/messages` request dump is wrapped in that `debug` check.
+- /tmp dump gated behind debug: PASS
+  - Previous finding was wrong. The `/tmp/opencode-last-*` writes sit inside `if (debug && init.body && url.includes("/v1/messages") && !url.includes("count_tokens"))` at `src/bun-fetch.ts:280-297`.
+- Silent error swallowing eliminated: PASS
+  - The re-rejected `oauth.ts` and `bun-fetch.ts` cases are fixed by `82eaf0f`. In `src/oauth.ts`, the remaining bare catches are now documented fallbacks; in `src/bun-fetch.ts`, the dump catch now binds `err` and logs it, and the remaining best-effort cleanup catches are commented.
+- Decomposition files exist: PASS
+  - `src/refresh-helpers.ts` and `src/plugin-helpers.ts` both exist. `wc -l` shows `index.ts` 737 lines, `refresh-helpers.ts` 165, `plugin-helpers.ts` 112.
+- Proxy upstream timeout: PASS
+  - `src/bun-proxy.ts:64` includes `signal: AbortSignal.timeout(600_000)`.
+- uncaughtException handler: PASS
+  - `src/bun-fetch.ts:54-64` registers both `uncaughtException` and `unhandledRejection` cleanup handlers.
+- Tests pass: 663/663
+  - Fresh run: `20 passed` test files, `663 passed` tests.
+- ESLint clean: PASS
+  - `npx eslint .` exited cleanly.
+- Build succeeds: PASS
+  - `npm run build` produced `dist/opencode-anthropic-auth-plugin.js`, `dist/opencode-anthropic-auth-cli.mjs`, and `dist/bun-proxy.mjs`.
+- No forbidden patterns: PASS
+  - `grep -rn 'PluginContext\|class Plugin' src/ --include='*.ts'` returned no matches.
+- Task commits accounted for: 17/17
+  - T1 is evidence-only per plan.
+  - T4 is grouped into `57ed36b` per plan.
+  - T8 has no standalone task-named commit, but the cleanup outcome is accounted for by the decomposition series (`ad9d44a`, `96deabd`) plus the current reduced/working `index.ts`; the plan treats the LOC target as a guideline, not a gate.
+  - T11 is present even though the commit message is grouped differently: `git blame` shows the `AbortSignal.timeout(600_000)` line came from `729a7eb`.
+
+### Final Verdict
+`Must Have [12/12] | Must NOT Have [7/7] | VERDICT: APPROVE`
+
+### Must NOT Have check summary
+- No `PluginContext` or `class Plugin` introduced.
+- Decomposition stayed factory/closure-based (`createRefreshHelpers`, `createPluginHelpers`) rather than redesigning state ownership.
+- `src/refresh-lock.ts` and `src/system-prompt/normalize.ts` were not touched in this wave.
+- Fixed proxy port remains `48372`.
+- No evidence of speculative abstraction beyond the two planned helper modules.

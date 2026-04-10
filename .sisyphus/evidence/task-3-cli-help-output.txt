@@ -1,0 +1,60 @@
+CLI Help Output Evidence - Task 3
+=================================
+
+Command: node dist/opencode-anthropic-auth-cli.mjs help
+Exit code: 0
+
+Output:
+
+[1mAnthropic Multi-Account Auth CLI[0m
+
+[2mUsage:[0m
+  opencode-anthropic-auth [command] [args]
+
+[2mAuth Commands:[0m
+  [36mlogin[0m                 Add a new account via browser OAuth flow
+  [36mlogout[0m <N>            Revoke tokens and remove account N
+  [36mlogout[0m --all          Revoke all tokens and clear all accounts
+  [36mreauth[0m <N>            Re-authenticate account N with fresh tokens
+  [36mrefresh[0m <N>           Attempt token refresh (no browser needed)
+
+[2mAccount Commands:[0m
+  [36mlist[0m                  Show all accounts with status [2m(default)[0m
+  [36mstatus[0m                Compact one-liner for scripts/prompts
+  [36mswitch[0m <N>            Set account N as active
+  [36menable[0m <N>            Enable a disabled account
+  [36mdisable[0m <N>           Disable an account (skipped in rotation)
+  [36mremove[0m <N>            Remove an account permanently
+  [36mreset[0m <N|all>         Clear rate-limit / failure tracking
+  [36mstats[0m                 Show per-account usage statistics
+  [36mreset-stats[0m [N|all]   Reset usage statistics
+  [36mstrategy[0m [name]       Show or change selection strategy
+  [36mconfig[0m                Show configuration and file paths
+  [36mmanage[0m                Interactive account management menu
+  [36mhelp[0m                  Show this help message
+
+[2mOptions:[0m
+  --force           Skip confirmation prompts
+  --all             Target all accounts (for logout)
+  --no-color        Disable colored output
+
+[2mExamples:[0m
+  opencode-anthropic-auth login             [2m# Add a new account via browser[0m
+  opencode-anthropic-auth logout 2          [2m# Revoke tokens & remove account 2[0m
+  opencode-anthropic-auth logout --all      [2m# Logout all accounts[0m
+  opencode-anthropic-auth reauth 1          [2m# Re-authenticate account 1[0m
+  opencode-anthropic-auth refresh 1         [2m# Quick token refresh for account 1[0m
+  opencode-anthropic-auth list              [2m# Show all accounts[0m
+  opencode-anthropic-auth switch 2          [2m# Make account 2 active[0m
+  opencode-anthropic-auth disable 3         [2m# Temporarily disable account 3[0m
+  opencode-anthropic-auth reset all         [2m# Clear all rate-limit tracking[0m
+  opencode-anthropic-auth strategy sticky   [2m# Switch to sticky mode[0m
+  opencode-anthropic-auth stats             [2m# Show token usage per account[0m
+  opencode-anthropic-auth status            [2m# One-liner for shell prompt[0m
+
+[2mFiles:[0m
+  Config:   ~/.config/opencode/anthropic-auth.json
+  Accounts: ~/.config/opencode/anthropic-accounts.json
+
+
+--- End of output ---

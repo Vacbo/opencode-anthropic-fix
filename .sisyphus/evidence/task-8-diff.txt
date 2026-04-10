@@ -1,0 +1,216 @@
+diff --git a/cli.test.ts b/cli.test.ts
+index 4f144fc..ab230c1 100644
+--- a/cli.test.ts
++++ b/cli.test.ts
+@@ -1900,16 +1900,16 @@ describe("cmdRemove active account", () => {
+ // ---------------------------------------------------------------------------
+ 
+ describe("cmdStats", () => {
+-  let output: ReturnType<typeof captureOutput>;
+-
+   beforeEach(() => {
+-    output = captureOutput();
+     vi.clearAllMocks();
+   });
+ 
+-  afterEach(() => {
+-    output.restore();
+-  });
++  function statsMessages() {
++    return (log.message as Mock).mock.calls
++      .map((call) => String(call[0]))
++      .join("\n")
++      .replace(ANSI_REGEX, "");
++  }
+ 
+   function makeStatsStorage() {
+     const storage = makeStorage();
+@@ -1937,7 +1937,7 @@ describe("cmdStats", () => {
+     mockLoadAccounts.mockResolvedValue(makeStatsStorage());
+     const code = await cmdStats();
+     expect(code).toBe(0);
+-    const text = output.text();
++    const text = statsMessages();
+     expect(text).toContain("alice@example.com");
+     expect(text).toContain("bob@example.com");
+     expect(text).toContain("142");
+@@ -1950,8 +1950,7 @@ describe("cmdStats", () => {
+     mockLoadAccounts.mockResolvedValue(null);
+     const code = await cmdStats();
+     expect(code).toBe(1);
+-    const text = output.text();
+-    expect(text).toContain("No accounts");
++    expect(log.warn).toHaveBeenCalledWith("No accounts configured.");
+   });
+ 
+   it("handles accounts with no stats (defaults)", async () => {
+@@ -1960,7 +1959,7 @@ describe("cmdStats", () => {
+     mockLoadAccounts.mockResolvedValue(storage);
+     const code = await cmdStats();
+     expect(code).toBe(0);
+-    const text = output.text();
++    const text = statsMessages();
+     expect(text).toContain("alice@example.com");
+     expect(text).toContain("0");
+   });
+@@ -1971,18 +1970,11 @@ describe("cmdStats", () => {
+ // ---------------------------------------------------------------------------
+ 
+ describe("cmdResetStats", () => {
+-  let output: ReturnType<typeof captureOutput>;
+-
+   beforeEach(() => {
+-    output = captureOutput();
+     vi.clearAllMocks();
+     mockSaveAccounts.mockResolvedValue(undefined);
+   });
+ 
+-  afterEach(() => {
+-    output.restore();
+-  });
+-
+   it("resets stats for all accounts", async () => {
+     const storage = makeStorage();
+     storage.accounts = [storage.accounts[0]];
+@@ -1998,8 +1990,7 @@ describe("cmdResetStats", () => {
+ 
+     const code = await cmdResetStats("all");
+     expect(code).toBe(0);
+-    const text = output.text();
+-    expect(text).toContain("Reset usage statistics for all");
++    expect(log.success).toHaveBeenCalledWith("Reset usage statistics for all accounts.");
+ 
+     const saved = mockSaveAccounts.mock.calls[0][0];
+     expect(saved.accounts[0].stats.requests).toBe(0);
+@@ -2021,8 +2012,7 @@ describe("cmdResetStats", () => {
+ 
+     const code = await cmdResetStats("1");
+     expect(code).toBe(0);
+-    const text = output.text();
+-    expect(text).toContain("Reset usage statistics for alice@example.com");
++    expect(log.success).toHaveBeenCalledWith("Reset usage statistics for alice@example.com.");
+   });
+ 
+   it("returns 1 for invalid account number", async () => {
+@@ -2032,6 +2022,7 @@ describe("cmdResetStats", () => {
+ 
+     const code = await cmdResetStats("99");
+     expect(code).toBe(1);
++    expect(log.error).toHaveBeenCalledWith("Invalid account number. Use 1-1 or 'all'.");
+   });
+ 
+   it("resets all accounts when no argument given", async () => {
+@@ -2049,8 +2040,7 @@ describe("cmdResetStats", () => {
+ 
+     const code = await cmdResetStats();
+     expect(code).toBe(0);
+-    const text = output.text();
+-    expect(text).toContain("Reset usage statistics for all");
++    expect(log.success).toHaveBeenCalledWith("Reset usage statistics for all accounts.");
+ 
+     const saved = mockSaveAccounts.mock.calls[0][0];
+     expect(saved.accounts[0].stats.requests).toBe(0);
+@@ -2060,5 +2050,6 @@ describe("cmdResetStats", () => {
+     mockLoadAccounts.mockResolvedValue(null);
+     const code = await cmdResetStats("all");
+     expect(code).toBe(1);
++    expect(log.warn).toHaveBeenCalledWith("No accounts configured.");
+   });
+ });
+diff --git a/src/cli.ts b/src/cli.ts
+index 23c7705..555fb84 100755
+--- a/src/cli.ts
++++ b/src/cli.ts
+@@ -1250,7 +1250,7 @@ function fmtTokens(n: number) {
+ export async function cmdStats() {
+   const stored = await loadAccounts();
+   if (!stored || stored.accounts.length === 0) {
+-    console.log(c.yellow("No accounts configured."));
++    log.warn("No accounts configured.");
+     return 1;
+   }
+ 
+@@ -1259,8 +1259,8 @@ export async function cmdStats() {
+ 
+   const RULE = c.dim("  " + "─".repeat(74));
+ 
+-  console.log(c.bold("Anthropic Account Usage"));
+-  console.log(
++  log.message(c.bold("Anthropic Account Usage"));
++  log.message(
+     "  " +
+       pad(c.dim("#"), W.num) +
+       pad(c.dim("Account"), W.name) +
+@@ -1270,7 +1270,7 @@ export async function cmdStats() {
+       rpad(c.dim("Cache R"), W.val) +
+       rpad(c.dim("Cache W"), W.val),
+   );
+-  console.log(RULE);
++  log.message(RULE);
+ 
+   let totReq = 0,
+     totIn = 0,
+@@ -1287,7 +1287,7 @@ export async function cmdStats() {
+     const num = `${marker} ${i + 1}`;
+     const name = acc.email || `Account ${i + 1}`;
+ 
+-    console.log(
++    log.message(
+       "  " +
+         pad(num, W.num) +
+         pad(name, W.name) +
+@@ -1307,8 +1307,8 @@ export async function cmdStats() {
+   }
+ 
+   if (stored.accounts.length > 1) {
+-    console.log(RULE);
+-    console.log(
++    log.message(RULE);
++    log.message(
+       c.bold(
+         "  " +
+           pad("", W.num) +
+@@ -1322,9 +1322,8 @@ export async function cmdStats() {
+     );
+   }
+ 
+-  console.log("");
+   if (oldestReset < Infinity) {
+-    console.log(c.dim(`Tracking since: ${new Date(oldestReset).toLocaleString()} (${formatTimeAgo(oldestReset)})`));
++    log.message(c.dim(`Tracking since: ${new Date(oldestReset).toLocaleString()} (${formatTimeAgo(oldestReset)})`));
+   }
+ 
+   return 0;
+@@ -1338,7 +1337,7 @@ export async function cmdStats() {
+ export async function cmdResetStats(arg?: string) {
+   const stored = await loadAccounts();
+   if (!stored || stored.accounts.length === 0) {
+-    console.log(c.yellow("No accounts configured."));
++    log.warn("No accounts configured.");
+     return 1;
+   }
+ 
+@@ -1349,20 +1348,20 @@ export async function cmdResetStats(arg?: string) {
+       acc.stats = createDefaultStats(now);
+     }
+     await saveAccounts(stored);
+-    console.log(c.green("Reset usage statistics for all accounts."));
++    log.success("Reset usage statistics for all accounts.");
+     return 0;
+   }
+ 
+   const idx = parseInt(arg, 10) - 1;
+   if (isNaN(idx) || idx < 0 || idx >= stored.accounts.length) {
+-    console.log(c.red(`Invalid account number. Use 1-${stored.accounts.length} or 'all'.`));
++    log.error(`Invalid account number. Use 1-${stored.accounts.length} or 'all'.`);
+     return 1;
+   }
+ 
+   stored.accounts[idx].stats = createDefaultStats(now);
+   await saveAccounts(stored);
+   const name = stored.accounts[idx].email || `Account ${idx + 1}`;
+-  console.log(c.green(`Reset usage statistics for ${name}.`));
++  log.success(`Reset usage statistics for ${name}.`);
+   return 0;
+ }
+ 

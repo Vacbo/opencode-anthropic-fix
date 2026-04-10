@@ -1,0 +1,105 @@
+=== F4 Scope Fidelity Check ===
+Date: 2026-04-10
+
+--- Commit Range ---
+Base: be7c110 (v0.0.37)
+HEAD: 82eaf0f55e7adae3401c9abbec25460e12359c4b
+Total commits: 14
+
+--- Changed Files (committed only) ---
+eslint.config.ts
+src/__tests__/billing-edge-cases.test.ts
+src/__tests__/debug-gating.test.ts
+src/__tests__/decomposition-smoke.test.ts
+src/__tests__/sanitization-regex.test.ts
+src/__tests__/state-bounds.test.ts
+src/accounts.test.ts
+src/accounts.ts
+src/bun-fetch.ts
+src/bun-proxy.ts
+src/cli.ts
+src/commands/router.ts
+src/env.ts
+src/headers/billing.ts
+src/index.ts
+src/oauth.ts
+src/plugin-helpers.ts
+src/refresh-helpers.ts
+src/request/body.ts
+src/request/metadata.ts
+src/storage.test.ts
+src/system-prompt/builder.ts
+src/system-prompt/sanitize.ts
+src/token-refresh.ts
+
+--- In-scope verification ---
+✅ IN SCOPE — eslint.config.ts
+✅ IN SCOPE — src/__tests__/billing-edge-cases.test.ts
+✅ IN SCOPE — src/__tests__/debug-gating.test.ts
+✅ IN SCOPE — src/__tests__/decomposition-smoke.test.ts
+✅ IN SCOPE — src/__tests__/sanitization-regex.test.ts
+✅ IN SCOPE — src/__tests__/state-bounds.test.ts
+❌ UNACCOUNTED — src/accounts.test.ts
+✅ IN SCOPE — src/accounts.ts
+✅ IN SCOPE — src/bun-fetch.ts
+✅ IN SCOPE — src/bun-proxy.ts
+❌ UNACCOUNTED — src/cli.ts
+✅ IN SCOPE — src/commands/router.ts
+❌ UNACCOUNTED — src/env.ts
+✅ IN SCOPE — src/headers/billing.ts
+✅ IN SCOPE — src/index.ts
+✅ IN SCOPE — src/oauth.ts
+✅ IN SCOPE — src/plugin-helpers.ts
+✅ IN SCOPE — src/refresh-helpers.ts
+✅ IN SCOPE — src/request/body.ts
+✅ IN SCOPE — src/request/metadata.ts
+❌ UNACCOUNTED — src/storage.test.ts
+❌ UNACCOUNTED — src/system-prompt/builder.ts
+✅ IN SCOPE — src/system-prompt/sanitize.ts
+✅ IN SCOPE — src/token-refresh.ts
+
+--- Commit compliance (global scope list + allowed test glob) ---
+✅ 80ee23e — all touched files were in scope
+✅ 57ed36b — all touched files were in scope
+✅ f1ac684 — all touched files were in scope
+✅ ad9d44a — all touched files were in scope
+✅ 96deabd — all touched files were in scope
+✅ 4121bc4 — all touched files were in scope
+✅ 729a7eb — all touched files were in scope
+✅ 6323173 — all touched files were in scope
+✅ 7317ee8 — all touched files were in scope
+✅ 50794a2 — all touched files were in scope
+❌ 286789d — introduced out-of-scope files: src/accounts.test.ts, src/cli.ts, src/env.ts, src/storage.test.ts
+❌ 59eb340 — introduced out-of-scope file: src/system-prompt/builder.ts
+✅ fd27f43 — all touched files were in scope
+✅ 82eaf0f — all touched files were in scope
+
+--- Forbidden patterns ---
+- class Plugin / PluginContext: PASS
+- @ts-ignore additions: PASS
+- refresh-lock.ts untouched: PASS
+- normalize.ts untouched: PASS
+
+--- LOC ---
+src/index.ts: 737 lines (baseline was 890)
+src/refresh-helpers.ts: 165 lines
+src/plugin-helpers.ts: 112 lines
+
+--- Factory pattern ---
+createRefreshHelpers: closure function ✅
+createPluginHelpers: closure function ✅
+
+--- Commit message convention ---
+PASS — all commits in be7c110..HEAD use conventional prefixes (fix:, refactor:, docs:, test:, chore:)
+
+--- Verification context ---
+Build: PASS (`npm run build`)
+LSP diagnostics: NOT CLEAN repo-wide; changed file `src/storage.test.ts` still reports TypeScript errors in current workspace diagnostics.
+
+=== VERDICT ===
+Tasks [12/14 compliant] | Unaccounted [5/24 files] | VERDICT: REJECT
+
+Notes:
+- Scope creep is concentrated in `286789d` (lint cleanup pulled extra files) and `59eb340` (inline audit comments landed in `src/system-prompt/builder.ts` instead of a listed docs target).
+- Forbidden-pattern audit passed.
+- LOC reduction and helper-factory extraction passed.

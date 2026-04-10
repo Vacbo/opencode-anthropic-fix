@@ -1,0 +1,5 @@
+
+> @vacbo/opencode-anthropic-fix@0.0.45 build
+> bun scripts/build.ts
+
+Built dist/opencode-anthropic-auth-plugin.js, dist/opencode-anthropic-auth-cli.mjs, and dist/bun-proxy.mjs

@@ -1,0 +1,98 @@
+F2 Code Quality Review — Re-run After Fixes
+
+Reference
+- Plan: .sisyphus/plans/quality-refactor.md
+- Reviewed on: 2026-04-10
+- Target commit: bccd981 fix: add reason comments to eslint disables and document silent catch
+
+Summary
+Lint PASS | Build PASS | Tests 663 pass/0 fail | Files 61 clean/0 issues | VERDICT: APPROVE
+
+Scope reviewed
+- Commit files:
+  - src/cli.ts
+  - src/commands/router.ts
+- Source files scanned: 61 TypeScript files under src/**/*.ts
+
+Command outputs
+
+=== ESLINT ===
+(no output from `set -o pipefail && npx eslint . 2>&1 | tail -5`)
+
+Assessment: PASS. No eslint problems surfaced.
+
+=== TSC ===
+(no output from `set -o pipefail && npx tsc --noEmit 2>&1 | tail -5`)
+
+Assessment: PASS. No main-src TypeScript errors surfaced.
+
+=== BUILD ===
+> bun scripts/build.ts
+
+Built dist/opencode-anthropic-auth-plugin.js, dist/opencode-anthropic-auth-cli.mjs, and dist/bun-proxy.mjs
+
+Assessment: PASS. Build succeeded and reported all 3 expected artifacts.
+
+=== TESTS ===
+Test Files 20 passed (20)
+Tests 663 passed (663)
+Start at 12:44:02
+Duration 5.74s (transform 4.23s, setup 0ms, import 5.71s, tests 5.60s, environment 2ms)
+
+Assessment: PASS. 663/663 tests passed.
+
+=== ESLINT-DISABLE WITHOUT REASON ===
+(no output from `grep -rn 'eslint-disable' src/ --include='*.ts' | grep -v ' -- ' | grep -v test`)
+
+Assessment: PASS. No production eslint-disable comments are missing `-- reason`.
+
+=== AS-ANY IN PRODUCTION ===
+src/index.ts:148:        await handleAnthropicSlashCommand(input as any, commandDeps);
+
+Assessment: PASS after manual review. This is immediately preceded by:
+`// eslint-disable-next-line @typescript-eslint/no-explicit-any -- command router accepts the Record-shaped input from OpenCode`
+It remains a justified API-boundary cast and is not counted as an F2 issue.
+
+=== SILENT-CATCH ===
+(no output from `grep -rn 'catch.*{[[:space:]]*}' src/ --include='*.ts'`)
+
+Assessment: PASS. No truly silent catches found in non-test source.
+
+=== PREVIOUSLY FLAGGED SPOTS ===
+src/cli.ts:132
+// eslint-disable-next-line no-control-regex -- ANSI escape sequences start with \x1b which is a control char
+
+src/commands/router.ts:61
+// eslint-disable-next-line no-control-regex -- ANSI escape sequences start with \x1b which is a control char
+
+src/cli.ts:735-739
+// Best-effort persistence — if saveAccounts fails, the CLI continues to render the
+// status view with the in-memory refreshed tokens. The next command run will retry persisting.
+await saveAccounts(stored).catch((err) => {
+  console.error("[opencode-anthropic-auth] failed to persist refreshed tokens:", err);
+});
+
+Assessment: PASS. All 3 previously rejected findings in F2 are resolved in bccd981.
+
+=== LSP DIAGNOSTICS ON TOUCHED FILES ===
+src/cli.ts: no warnings or errors
+src/commands/router.ts: no warnings or errors
+
+Assessment: PASS. Changed TypeScript files are clean at warning/error severity.
+
+Blocking issues
+- None.
+
+File count
+- Source files scanned: 61
+- Files with blocking issues: 0
+- Files clean: 61
+
+Verdict rationale
+- Lint, typecheck, build, and tests all passed.
+- The two eslint-disable comments now include explicit reasons.
+- The prior silent catch is replaced with documented best-effort handling plus error logging.
+- No new blocking code quality regressions were found in the rerun scope.
+
+Final verdict
+Lint PASS | Build PASS | Tests 663 pass/0 fail | Files 61 clean/0 issues | VERDICT: APPROVE

@@ -1,0 +1,26 @@
+[?25l│
+◒  Fetching usage quotas[1G[J◐  Fetching usage quotas[1G[J◓  Fetching usage quotas[1G[J◑  Fetching usage quotas[1G[J◇  Usage quotas fetched.
+[?25h│
+│  Anthropic Multi-Account Status
+│
+│    #    Account               Status        Failures   Rate Limit
+│
+│    ──────────────────────────────────────────────────────────────
+│
+│    1    Account 1             ○ disabled    —          —
+│
+│
+│
+│    2    Account 2             ● active      0          —
+│
+│         5h            ███░░░░░░░ 34%  resets in 2h 44m
+│
+│         7d            ██░░░░░░░░ 21%  resets in 2d 17h
+│
+│         Sonnet 7d     ░░░░░░░░░░ 0%   resets in 6d 3h
+│
+│
+│
+●  Strategy: sticky | 1 of 2 enabled | 1 disabled
+│
+●  Storage: ~/.config/opencode/anthropic-accounts.json

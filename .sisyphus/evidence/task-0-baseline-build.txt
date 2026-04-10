@@ -1,0 +1,11 @@
+
+> @vacbo/opencode-anthropic-fix@0.0.37 build
+> bun scripts/build.ts
+
+Built dist/opencode-anthropic-auth-plugin.js and dist/opencode-anthropic-auth-cli.mjs
+total 816
+drwxr-xr-x@  5 vacbo  staff     160 Apr 10 16:43 .
+drwxr-xr-x@ 34 vacbo  staff    1088 Apr 10 16:43 ..
+-rw-r--r--@  1 vacbo  staff    2644 Apr 10 12:44 bun-proxy.mjs
+-rw-r--r--@  1 vacbo  staff  120769 Apr 10 16:43 opencode-anthropic-auth-cli.mjs
+-rw-r--r--@  1 vacbo  staff  286885 Apr 10 16:43 opencode-anthropic-auth-plugin.js

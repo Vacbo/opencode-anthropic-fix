@@ -1,0 +1,26 @@
+[?25l│
+◒  Fetching usage quotas[1G[J◐  Fetching usage quotas[1G[J◓  Fetching usage quotas[1G[J◑  Fetching usage quotas[1G[J◒  Fetching usage quotas[1G[J◐  Fetching usage quotas[1G[J◓  Fetching usage quotas[1G[J◑  Fetching usage quotas[1G[J◒  Fetching usage quotas.[1G[J◐  Fetching usage quotas.[1G[J◓  Fetching usage quotas.[1G[J◑  Fetching usage quotas.[1G[J◇  Usage quotas fetched.
+[?25h│
+│  [1mAnthropic Multi-Account Status[0m
+│
+│    [2m#[0m    [2mAccount[0m               [2mStatus[0m        [2mFailures[0m   [2mRate Limit[0m
+│
+│  [2m  ──────────────────────────────────────────────────────────────[0m
+│
+│    [1m1[0m    Account 1             [90m○ disabled[0m    [2m—[0m          [2m—[0m
+│
+│
+│
+│    [1m2[0m    Account 2             [32m● active[0m      [2m0[0m          [2m—[0m
+│
+│         5h            [32m███[0m[2m░░░░░░░[0m 34%  [2mresets in 2h 44m[0m
+│
+│         7d            [32m██[0m[2m░░░░░░░░[0m 21%  [2mresets in 2d 17h[0m
+│
+│         Sonnet 7d     [32m[0m[2m░░░░░░░░░░[0m 0%   [2mresets in 6d 3h[0m
+│
+│
+│
+●  Strategy: [36msticky[0m[2m | [0m[1m1[0m of 2 enabled[2m | [0m[33m1[0m disabled
+│
+●  Storage: ~/.config/opencode/anthropic-accounts.json

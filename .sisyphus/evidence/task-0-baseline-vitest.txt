@@ -1,0 +1,80 @@
+
+[1m[46m RUN [49m[22m [36mv4.1.0 [39m[90m/Users/vacbo/Documents/Projects/opencode-anthropic-fix[39m
+
+ [31m❯[39m src/__tests__/fingerprint-regression.test.ts [2m([22m[2m73 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 29[2mms[22m[39m
+[31m     [31m×[31m appends version hash derived from first user message[39m[32m 9[2mms[22m[39m
+[90mstderr[2m | index.test.ts[2m > [22m[2mfetch interceptor[2m > [22m[2mdoes not show account usage toast for non-message endpoints
+[22m[39m[opencode-anthropic-auth] Bun proxy unavailable, falling back to Node.js fetch
+
+[90mstderr[2m | index.test.ts[2m > [22m[2mfetch interceptor[2m > [22m[2mdoes not repeat toast when account stays the same
+[22m[39m[opencode-anthropic-auth] Bun proxy unavailable, falling back to Node.js fetch
+
+ [31m❯[39m index.test.ts [2m([22m[2m132 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[32m 177[2mms[22m[39m
+[31m     [31m×[31m does not show account usage toast for non-message endpoints[39m[32m 11[2mms[22m[39m
+[31m     [31m×[31m does not repeat toast when account stays the same[39m[32m 1[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 3 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m index.test.ts[2m > [22mfetch interceptor[2m > [22mdoes not show account usage toast for non-message endpoints
+[31m[1mAssertionError[22m: expected "vi.fn()" to not be called at all, but actually been called 1 times[90m
+
+Received:
+
+[1m  1st vi.fn() call:
+
+[22m    Array [
+      Object {
+        "body": Object {
+          "message": "No Claude Code credentials — using OAuth",
+          "variant": "info",
+        },
+      },
+    ]
+[31m[90m
+
+Number of calls: [1m1[22m
+[31m[39m
+[36m [2m❯[22m index.test.ts:[2m1178:38[22m[39m
+    [90m1176|[39m     });
+    [90m1177|[39m
+    [90m1178|[39m     expect(client.tui.showToast).not.toHaveBeenCalled();
+    [90m   |[39m                                      [31m^[39m
+    [90m1179|[39m   });
+    [90m1180|[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m index.test.ts[2m > [22mfetch interceptor[2m > [22mdoes not repeat toast when account stays the same
+[31m[1mAssertionError[22m: expected "vi.fn()" to be called 1 times, but got 2 times[39m
+[36m [2m❯[22m index.test.ts:[2m1204:34[22m[39m
+    [90m1202|[39m       body: JSON.stringify({ messages: [] }),
+    [90m1203|[39m     });
+    [90m1204|[39m     expect(client.tui.showToast).toHaveBeenCalledTimes(1);
+    [90m   |[39m                                  [31m^[39m
+    [90m1205|[39m
+    [90m1206|[39m     // Second request, same account — no new toast
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/__tests__/fingerprint-regression.test.ts[2m > [22mCC 2.1.98 — Billing header[2m > [22mappends version hash derived from first user message
+[31m[1mAssertionError[22m: expected 'x-anthropic-billing-header: cc_versio…' to contain 'cc_version=2.1.98.854'[39m
+
+Expected: [32m"cc_version=2.1.98.854"[39m
+Received: [31m"x-anthropic-billing-header: cc_version=2.1.98.80a; cc_entrypoint=cli; cch=1bf2a;"[39m
+
+[36m [2m❯[22m src/__tests__/fingerprint-regression.test.ts:[2m219:20[22m[39m
+    [90m217|[39m       [33m.[39m[34mslice[39m([34m0[39m[33m,[39m [34m3[39m)[33m;[39m
+    [90m218|[39m
+    [90m219|[39m     expect(header).toContain(`cc_version=${CC_VERSION}.${expectedHash}…
+    [90m   |[39m                    [31m^[39m
+    [90m220|[39m   })[33m;[39m
+    [90m221|[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m18 passed[39m[22m[90m (20)[39m
+[2m      Tests [22m [1m[31m3 failed[39m[22m[2m | [22m[1m[32m660 passed[39m[22m[90m (663)[39m
+[2m   Start at [22m 16:42:36
+[2m   Duration [22m 5.92s[2m (transform 4.35s, setup 0ms, import 6.31s, tests 5.62s, environment 8ms)[22m
+

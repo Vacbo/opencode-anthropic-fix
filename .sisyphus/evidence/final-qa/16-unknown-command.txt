@@ -1,0 +1,2 @@
+[31mUnknown command: foobar[0m
+[2mRun 'opencode-anthropic-auth help' for usage.[0m

@@ -1,0 +1,10 @@
+
+[1mConfig Commands[0m
+
+  [36mshow[0m                Show current configuration and file paths (alias: cfg)
+  [36mstrategy[0m [name]     Show or change selection strategy (alias: strat)
+
+[2mExamples:[0m
+  opencode-anthropic-auth config show
+  opencode-anthropic-auth config strategy round-robin
+

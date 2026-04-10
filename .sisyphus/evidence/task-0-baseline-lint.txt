@@ -1,0 +1,4 @@
+
+> @vacbo/opencode-anthropic-fix@0.0.37 lint
+> eslint .
+

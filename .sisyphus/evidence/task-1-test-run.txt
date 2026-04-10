@@ -1,0 +1,4 @@
+Test run: Wed Apr  8 12:52:06 -03 2026
+Command: bun test src/backoff.test.ts
+Result: 69 pass, 0 fail, 77 expect() calls
+Status: SUCCESS

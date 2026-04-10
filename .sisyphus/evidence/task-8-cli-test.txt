@@ -1,0 +1,319 @@
+bun test v1.3.11 (af24e281)
+
+cli.test.ts:
+No accounts configured.
+Storage: /home/user/.config/opencode/anthropic-accounts.json
+Run 'opencode auth login' and select 'Claude Pro/Max' to add accounts.
+[1mAnthropic Multi-Account Status[0m
+  [2m#[0m    [2mAccount[0m               [2mStatus[0m        [2mFailures[0m   [2mRate Limit[0m
+[2m  ──────────────────────────────────────────────────────────────[0m
+  [1m1[0m    alice@example.com     [32m● active[0m      [2m0[0m          [2m—[0m
+[2m       quotas: unavailable[0m
+
+  [1m2[0m    Account 2             [36m● ready[0m       [2m0[0m          [2m—[0m
+[2m       quotas: unavailable[0m
+
+  [1m3[0m    charlie@example.com   [90m○ disabled[0m    [2m—[0m          [2m—[0m
+
+Strategy: [36msticky[0m[2m | [0m[1m2[0m of 3 enabled[2m | [0m[33m1[0m disabled
+Storage: /home/user/.config/opencode/anthropic-accounts.json
+[1mAnthropic Multi-Account Status[0m
+  [2m#[0m    [2mAccount[0m               [2mStatus[0m        [2mFailures[0m   [2mRate Limit[0m
+[2m  ──────────────────────────────────────────────────────────────[0m
+  [1m1[0m    alice@example.com     [32m● active[0m      [2m0[0m          [2m—[0m
+[2m       quotas: unavailable[0m
+
+  [1m2[0m    Account 2             [36m● ready[0m       [2m0[0m          [2m—[0m
+[2m       quotas: unavailable[0m
+
+  [1m3[0m    charlie@example.com   [90m○ disabled[0m    [2m—[0m          [2m—[0m
+
+Strategy: [36msticky[0m[2m | [0m[1m2[0m of 3 enabled[2m | [0m[33m1[0m disabled
+Storage: /home/user/.config/opencode/anthropic-accounts.json
+[1mAnthropic Multi-Account Status[0m
+  [2m#[0m    [2mAccount[0m               [2mStatus[0m        [2mFailures[0m   [2mRate Limit[0m
+[2m  ──────────────────────────────────────────────────────────────[0m
+  [1m1[0m    alice@example.com     [32m● active[0m      [2m0[0m          [2m—[0m
+[2m       quotas: unavailable[0m
+
+  [1m2[0m    Account 2             [36m● ready[0m       [2m0[0m          [33m⚠ 2m 30s[0m
+[2m       quotas: unavailable[0m
+
+  [1m3[0m    charlie@example.com   [90m○ disabled[0m    [2m—[0m          [2m—[0m
+
+Strategy: [36msticky[0m[2m | [0m[1m2[0m of 3 enabled[2m | [0m[33m1[0m disabled
+Storage: /home/user/.config/opencode/anthropic-accounts.json
+[1mAnthropic Multi-Account Status[0m
+  [2m#[0m    [2mAccount[0m               [2mStatus[0m        [2mFailures[0m   [2mRate Limit[0m
+[2m  ──────────────────────────────────────────────────────────────[0m
+  [1m1[0m    alice@example.com     [32m● active[0m      [33m5[0m          [2m—[0m
+[2m       quotas: unavailable[0m
+
+  [1m2[0m    Account 2             [36m● ready[0m       [2m0[0m          [2m—[0m
+[2m       quotas: unavailable[0m
+
+  [1m3[0m    charlie@example.com   [90m○ disabled[0m    [2m—[0m          [2m—[0m
+
+Strategy: [36msticky[0m[2m | [0m[1m2[0m of 3 enabled[2m | [0m[33m1[0m disabled
+Storage: /home/user/.config/opencode/anthropic-accounts.json
+[1mAnthropic Multi-Account Status[0m
+  [2m#[0m    [2mAccount[0m               [2mStatus[0m        [2mFailures[0m   [2mRate Limit[0m
+[2m  ──────────────────────────────────────────────────────────────[0m
+  [1m1[0m    alice@example.com     [32m● active[0m      [2m0[0m          [2m—[0m
+[2m       quotas: unavailable[0m
+
+  [1m2[0m    Account 2             [36m● ready[0m       [2m0[0m          [2m—[0m
+[2m       quotas: unavailable[0m
+
+  [1m3[0m    charlie@example.com   [90m○ disabled[0m    [2m—[0m          [2m—[0m
+
+Strategy: [36msticky[0m[2m | [0m[1m2[0m of 3 enabled[2m | [0m[33m1[0m disabled
+Storage: /home/user/.config/opencode/anthropic-accounts.json
+[1mAnthropic Multi-Account Status[0m
+  [2m#[0m    [2mAccount[0m               [2mStatus[0m        [2mFailures[0m   [2mRate Limit[0m
+[2m  ──────────────────────────────────────────────────────────────[0m
+  [1m1[0m    alice@example.com     [32m● active[0m      [2m0[0m          [2m—[0m
+[2m       quotas: unavailable[0m
+
+  [1m2[0m    Account 2             [36m● ready[0m       [2m0[0m          [2m—[0m
+[2m       quotas: unavailable[0m
+
+  [1m3[0m    charlie@example.com   [90m○ disabled[0m    [2m—[0m          [2m—[0m
+
+Strategy: [36msticky[0m[2m | [0m[1m2[0m of 3 enabled[2m | [0m[33m1[0m disabled
+Storage: /home/user/.config/opencode/anthropic-accounts.json
+[1mAnthropic Multi-Account Status[0m
+  [2m#[0m    [2mAccount[0m               [2mStatus[0m        [2mFailures[0m   [2mRate Limit[0m
+[2m  ──────────────────────────────────────────────────────────────[0m
+  [1m1[0m    alice@example.com     [32m● active[0m      [2m0[0m          [2m—[0m
+       5h            [32m█[0m[2m░░░░░░░░░[0m 9%   [2mresets in 59m 59s[0m
+       7d            [32m███████[0m[2m░░░[0m 67%  [2mresets in 23h 59m[0m
+       Sonnet 7d     [32m█[0m[2m░░░░░░░░░[0m 11%  [2mresets in 1d 23h[0m
+
+  [1m2[0m    Account 2             [36m● ready[0m       [2m0[0m          [2m—[0m
+       5h            [32m█[0m[2m░░░░░░░░░[0m 9%   [2mresets in 59m 59s[0m
+       7d            [32m███████[0m[2m░░░[0m 67%  [2mresets in 23h 59m[0m
+       Sonnet 7d     [32m█[0m[2m░░░░░░░░░[0m 11%  [2mresets in 1d 23h[0m
+
+  [1m3[0m    charlie@example.com   [90m○ disabled[0m    [2m—[0m          [2m—[0m
+
+Strategy: [36msticky[0m[2m | [0m[1m2[0m of 3 enabled[2m | [0m[33m1[0m disabled
+Storage: /home/user/.config/opencode/anthropic-accounts.json
+[1mAnthropic Multi-Account Status[0m
+  [2m#[0m    [2mAccount[0m               [2mStatus[0m        [2mFailures[0m   [2mRate Limit[0m
+[2m  ──────────────────────────────────────────────────────────────[0m
+  [1m1[0m    alice@example.com     [32m● active[0m      [2m0[0m          [2m—[0m
+[2m       quotas: unavailable[0m
+
+  [1m2[0m    Account 2             [36m● ready[0m       [2m0[0m          [2m—[0m
+[2m       quotas: unavailable[0m
+
+  [1m3[0m    charlie@example.com   [36m● ready[0m       [2m0[0m          [2m—[0m
+[2m       quotas: unavailable[0m
+
+Strategy: [36msticky[0m[2m | [0m[1m3[0m of 3 enabled
+Storage: /home/user/.config/opencode/anthropic-accounts.json
+[1mAnthropic Multi-Account Status[0m
+  [2m#[0m    [2mAccount[0m               [2mStatus[0m        [2mFailures[0m   [2mRate Limit[0m
+[2m  ──────────────────────────────────────────────────────────────[0m
+  [1m1[0m    alice@example.com     [32m● active[0m      [2m0[0m          [2m—[0m
+       5h            [32m█[0m[2m░░░░░░░░░[0m 5%   [2mresets in 1s[0m
+
+  [1m2[0m    Account 2             [36m● ready[0m       [2m0[0m          [2m—[0m
+       5h            [32m██[0m[2m░░░░░░░░[0m 15%  [2mresets in 1s[0m
+
+  [1m3[0m    charlie@example.com   [90m○ disabled[0m    [2m—[0m          [2m—[0m
+
+Strategy: [36msticky[0m[2m | [0m[1m2[0m of 3 enabled[2m | [0m[33m1[0m disabled
+Storage: /home/user/.config/opencode/anthropic-accounts.json
+[1mAnthropic Multi-Account Status[0m
+  [2m#[0m    [2mAccount[0m               [2mStatus[0m        [2mFailures[0m   [2mRate Limit[0m
+[2m  ──────────────────────────────────────────────────────────────[0m
+  [1m1[0m    alice@example.com     [32m● active[0m      [2m0[0m          [2m—[0m
+       5h            [32m[0m[2m░░░░░░░░░░[0m 1%   [2mresets in 1s[0m
+
+  [1m2[0m    Account 2             [36m● ready[0m       [2m0[0m          [2m—[0m
+       5h            [32m[0m[2m░░░░░░░░░░[0m 2%   [2mresets in 1s[0m
+
+  [1m3[0m    charlie@example.com   [90m○ disabled[0m    [2m—[0m          [2m—[0m
+
+Strategy: [36msticky[0m[2m | [0m[1m2[0m of 3 enabled[2m | [0m[33m1[0m disabled
+Storage: /home/user/.config/opencode/anthropic-accounts.json
+Enabled account #3 (charlie@example.com).
+Account 1 is already enabled.
+Error: account 99 does not exist.
+Disabled account #2 (Account 2).
+Account 3 is already disabled.
+Error: cannot disable the last enabled account.
+Disabled account #1 (alice@example.com).
+Active account switched to #2 (Account 2).
+Removed account #2 (Account 2).
+2 account(s) remaining.
+Removed account #1 (alice@example.com).
+2 account(s) remaining.
+Removed account #1 (alice@example.com).
+No accounts remaining. Run 'opencode auth login' to add one.
+Error: account 99 does not exist.
+Removed account #2 (Account 2).
+2 account(s) remaining.
+Cancelled.
+Reset tracking for account #1 (alice@example.com).
+Reset tracking for all 3 account(s).
+Error: provide an account number or 'all' (e.g., 'reset 1' or 'reset all')
+Error: account 99 does not exist.
+[1mAnthropic Auth Configuration[0m
+General
+Strategy:          [36msticky[0m
+Failure TTL:       3600s
+Debug:             off
+Health Score
+Initial:         70
+Success reward:  +1
+Rate limit:      -10
+Failure:         -20
+Recovery/hour:   +2
+Min usable:      50
+Token Bucket
+Max tokens:      50
+Regen/min:       6
+Initial:         50
+Files
+Config:          /home/user/.config/opencode/anthropic-auth.json
+Accounts:        /home/user/.config/opencode/anthropic-accounts.json
+Accounts total:  3 (2 enabled)
+[1mAnthropic Auth Configuration[0m
+General
+Strategy:          [36msticky[0m
+Failure TTL:       3600s
+Debug:             off
+Health Score
+Initial:         70
+Success reward:  +1
+Rate limit:      -10
+Failure:         -20
+Recovery/hour:   +2
+Min usable:      50
+Token Bucket
+Max tokens:      50
+Regen/min:       6
+Initial:         50
+Files
+Config:          /home/user/.config/opencode/anthropic-auth.json
+Accounts:        /home/user/.config/opencode/anthropic-accounts.json
+Accounts total:  none
+[1mAnthropic Auth Configuration[0m
+General
+Strategy:          [36msticky[0m
+Failure TTL:       3600s
+Debug:             off
+Health Score
+Initial:         70
+Success reward:  +1
+Rate limit:      -10
+Failure:         -20
+Recovery/hour:   +2
+Min usable:      50
+Token Bucket
+Max tokens:      50
+Regen/min:       6
+Initial:         50
+Files
+Config:          /home/user/.config/opencode/anthropic-auth.json
+Accounts:        /home/user/.config/opencode/anthropic-accounts.json
+Accounts total:  none
+[1mAnthropic Auth Configuration[0m
+General
+Strategy:          [36msticky[0m
+Failure TTL:       3600s
+Debug:             off
+Health Score
+Initial:         70
+Success reward:  +1
+Rate limit:      -10
+Failure:         -20
+Recovery/hour:   +2
+Min usable:      50
+Token Bucket
+Max tokens:      50
+Regen/min:       6
+Initial:         50
+Files
+Config:          /home/user/.config/opencode/anthropic-auth.json
+Accounts:        /home/user/.config/opencode/anthropic-accounts.json
+Accounts total:  none
+[1mAnthropic Auth Configuration[0m
+General
+Strategy:          [36msticky[0m
+Failure TTL:       3600s
+Debug:             off
+Health Score
+Initial:         70
+Success reward:  +1
+Rate limit:      -10
+Failure:         -20
+Recovery/hour:   +2
+Min usable:      50
+Token Bucket
+Max tokens:      50
+Regen/min:       6
+Initial:         50
+Files
+Config:          /home/user/.config/opencode/anthropic-auth.json
+Accounts:        /home/user/.config/opencode/anthropic-accounts.json
+Accounts total:  3 (2 enabled)
+[1mAnthropic Auth Configuration[0m
+General
+Strategy:          [36msticky[0m
+Failure TTL:       3600s
+Debug:             off
+Health Score
+Initial:         70
+Success reward:  +1
+Rate limit:      -10
+Failure:         -20
+Recovery/hour:   +2
+Min usable:      50
+Token Bucket
+Max tokens:      50
+Regen/min:       6
+Initial:         50
+Files
+Config:          /home/user/.config/opencode/anthropic-auth.json
+Accounts:        /home/user/.config/opencode/anthropic-accounts.json
+Accounts total:  none
+[1mAccount Selection Strategy[0m
+[32m▸ [0m[1m[36msticky[0m[0m          Stay on one account until it fails or is rate-limited
+  [2mround-robin[0m     [2mRotate through accounts on every request[0m
+  [2mhybrid[0m          [2mPrefer healthy accounts, rotate when degraded[0m
+[2mChange with: opencode-anthropic-auth strategy <sticky|round-robin|hybrid>[0m
+Strategy changed to 'round-robin'.
+Invalid strategy 'invalid-strategy'. Valid strategies: sticky, round-robin, hybrid
+[2mStrategy is already 'sticky'.[0m
+Strategy changed to 'round-robin'.
+Removed account #2 (Account 2).
+2 account(s) remaining.
+Anthropic Account Usage
+  #   Account                 Requests     Input    Output   Cache R   Cache W
+  ──────────────────────────────────────────────────────────────────────────
+  ● 1 alice@example.com            142      1.2M    380.0K    890.0K     45.0K
+    2 bob@example.com               87    720.0K    210.0K    540.0K     32.0K
+    3 charlie@example.com            0         0         0         0         0
+  ──────────────────────────────────────────────────────────────────────────
+      Total                        229      1.9M    590.0K      1.4M     77.0K
+Tracking since: 4/7/2026, 7:01:45 PM (1d ago)
+No accounts configured.
+Anthropic Account Usage
+  #   Account                 Requests     Input    Output   Cache R   Cache W
+  ──────────────────────────────────────────────────────────────────────────
+  ● 1 alice@example.com              0         0         0         0         0
+Tracking since: 4/8/2026, 7:01:45 PM (now ago)
+Reset usage statistics for all accounts.
+Reset usage statistics for alice@example.com.
+Invalid account number. Use 1-1 or 'all'.
+Reset usage statistics for all accounts.
+No accounts configured.
+
+ 117 pass
+ 0 fail
+ 339 expect() calls
+Ran 117 tests across 1 file. [39.00ms]

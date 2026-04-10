@@ -1,0 +1,15 @@
+
+[1mAccount Commands[0m
+
+  [36mlist[0m                Show all accounts with status (alias: ls)
+  [36mswitch[0m <N>          Set account N as active (alias: sw)
+  [36menable[0m <N>          Enable a disabled account (alias: en)
+  [36mdisable[0m <N>         Disable an account (alias: dis)
+  [36mremove[0m <N>          Remove an account permanently (alias: rm)
+  [36mreset[0m               Clear rate-limit / failure tracking
+
+[2mExamples:[0m
+  opencode-anthropic-auth account list
+  opencode-anthropic-auth account switch 2
+  opencode-anthropic-auth account disable 3
+

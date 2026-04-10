@@ -1,0 +1,6 @@
+=== F3 Scenario 2: Debug Silence ===
+BUILD_EXIT: 0
+DUMP_COUNT (expected 0): 0
+
+--- stderr contents ---
+(no stderr output)

@@ -1,0 +1,10 @@
+PATH_STRIPPED: /usr/bin:/bin
+NODE_PATH: /opt/homebrew/bin/node
+> @vacbo/opencode-anthropic-fix@0.0.45 build
+> bun scripts/build.ts
+
+Built dist/opencode-anthropic-auth-plugin.js, dist/opencode-anthropic-auth-cli.mjs, and dist/bun-proxy.mjs
+LOAD_MODE=require
+PLUGIN_LOADED=ok
+BUILD_EXIT=0
+NODE_EXIT=0

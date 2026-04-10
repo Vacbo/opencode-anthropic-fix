@@ -1,0 +1,7 @@
+
+> @vacbo/opencode-anthropic-fix@0.0.37 format:check
+> prettier --check .
+
+Checking formatting...
+[[33mwarn[39m] .sisyphus/notepads/quality-refactor/decisions.md
+[[33mwarn[39m] Code style issues found in the above file. Run Prettier with --write to fix.

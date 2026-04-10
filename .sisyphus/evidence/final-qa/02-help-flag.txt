@@ -1,0 +1,71 @@
+
+[1mAnthropic Multi-Account Auth CLI[0m
+
+[2mUsage:[0m
+  opencode-anthropic-auth [group] [command] [args]
+  opencode-anthropic-auth [command] [args] [2m(legacy format, still supported)[0m
+  oaa [group] [command] [args] [2m(short alias)[0m
+
+[2mCommand Groups:[0m
+  [36mauth[0m                  Authentication: login, logout, reauth, refresh
+  [36maccount[0m               Account management: list, switch, enable, disable, remove, reset
+  [36musage[0m                 Usage statistics: stats, reset-stats, status
+  [36mconfig[0m                Configuration: show, strategy
+  [36mmanage[0m                Interactive account management menu
+
+[2mAuth Commands:[0m
+  [36mlogin[0m                 Add a new account via browser OAuth (alias: ln)
+  [36mlogout[0m <N>            Revoke tokens and remove account N (alias: lo)
+  [36mlogout[0m --all          Revoke all tokens and clear all accounts
+  [36mreauth[0m <N>            Re-authenticate account N (alias: ra)
+  [36mrefresh[0m <N>           Attempt token refresh (alias: rf)
+
+[2mAccount Commands:[0m
+  [36mlist[0m                  Show all accounts with status [2m(default, alias: ls)[0m
+  [36mswitch[0m <N>            Set account N as active (alias: sw)
+  [36menable[0m <N>            Enable a disabled account (alias: en)
+  [36mdisable[0m <N>           Disable an account (alias: dis)
+  [36mremove[0m <N>            Remove an account permanently (alias: rm)
+  [36mreset[0m <N|all>         Clear rate-limit / failure tracking
+
+[2mUsage Commands:[0m
+  [36mstats[0m                 Show per-account usage statistics
+  [36mreset-stats[0m [N|all]   Reset usage statistics
+  [36mstatus[0m                Compact one-liner for scripts/prompts (alias: st)
+
+[2mConfig Commands:[0m
+  [36mconfig[0m                Show configuration and file paths (alias: cfg)
+  [36mstrategy[0m [name]       Show or change selection strategy (alias: strat)
+
+[2mManage Commands:[0m
+  [36mmanage[0m                Interactive account management menu (alias: mg)
+  [36mhelp[0m                  Show this help message
+
+[2mGroup Help:[0m
+  opencode-anthropic-auth auth help         [2m# Show auth commands[0m
+  opencode-anthropic-auth account help      [2m# Show account commands[0m
+  opencode-anthropic-auth usage help        [2m# Show usage commands[0m
+  opencode-anthropic-auth config help       [2m# Show config commands[0m
+
+[2mOptions:[0m
+  --force           Skip confirmation prompts
+  --all             Target all accounts (for logout)
+  --no-color        Disable colored output
+
+[2mExamples:[0m
+  opencode-anthropic-auth login             [2m# Add a new account via browser[0m
+  opencode-anthropic-auth auth login        [2m# Same as above (group format)[0m
+  oaa login             [2m# Same as above (short alias)[0m
+  opencode-anthropic-auth logout 2          [2m# Revoke tokens & remove account 2[0m
+  opencode-anthropic-auth auth logout 2     [2m# Same as above (group format)[0m
+  opencode-anthropic-auth list              [2m# Show all accounts (default)[0m
+  opencode-anthropic-auth account list      [2m# Same as above (group format)[0m
+  opencode-anthropic-auth switch 2          [2m# Make account 2 active[0m
+  opencode-anthropic-auth account switch 2  [2m# Same as above (group format)[0m
+  opencode-anthropic-auth stats             [2m# Show token usage per account[0m
+  opencode-anthropic-auth usage stats       [2m# Same as above (group format)[0m
+
+[2mFiles:[0m
+  Config:   ~/.config/opencode/anthropic-auth.json
+  Accounts: ~/.config/opencode/anthropic-accounts.json
+

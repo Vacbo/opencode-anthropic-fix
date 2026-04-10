@@ -1,0 +1,8 @@
+│
+●  [1mAccount Selection Strategy[0m
+│
+│  [32m▸ [0m[1m[36msticky[0m[0m          Stay on one account until it fails or is rate-limited
+│    [2mround-robin[0m     [2mRotate through accounts on every request[0m
+│    [2mhybrid[0m          [2mPrefer healthy accounts, rotate when degraded[0m
+│
+│  [2mChange with: opencode-anthropic-auth strategy <sticky|round-robin|hybrid>[0m

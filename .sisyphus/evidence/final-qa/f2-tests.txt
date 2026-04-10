@@ -1,0 +1,9 @@
+
+[1m[46m RUN [49m[22m [36mv4.1.0 [39m[90m/Users/vacbo/Documents/Projects/opencode-anthropic-fix[39m
+
+
+[2m Test Files [22m [1m[32m20 passed[39m[22m[90m (20)[39m
+[2m      Tests [22m [1m[32m663 passed[39m[22m[90m (663)[39m
+[2m   Start at [22m 12:08:25
+[2m   Duration [22m 5.68s[2m (transform 3.91s, setup 0ms, import 5.35s, tests 5.50s, environment 3ms)[22m
+

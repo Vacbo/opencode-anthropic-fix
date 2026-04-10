@@ -1,0 +1,71 @@
+
+Anthropic Multi-Account Auth CLI
+
+Usage:
+  opencode-anthropic-auth [group] [command] [args]
+  opencode-anthropic-auth [command] [args] (legacy format, still supported)
+  oaa [group] [command] [args] (short alias)
+
+Command Groups:
+  auth                  Authentication: login, logout, reauth, refresh
+  account               Account management: list, switch, enable, disable, remove, reset
+  usage                 Usage statistics: stats, reset-stats, status
+  config                Configuration: show, strategy
+  manage                Interactive account management menu
+
+Auth Commands:
+  login                 Add a new account via browser OAuth (alias: ln)
+  logout <N>            Revoke tokens and remove account N (alias: lo)
+  logout --all          Revoke all tokens and clear all accounts
+  reauth <N>            Re-authenticate account N (alias: ra)
+  refresh <N>           Attempt token refresh (alias: rf)
+
+Account Commands:
+  list                  Show all accounts with status (default, alias: ls)
+  switch <N>            Set account N as active (alias: sw)
+  enable <N>            Enable a disabled account (alias: en)
+  disable <N>           Disable an account (alias: dis)
+  remove <N>            Remove an account permanently (alias: rm)
+  reset <N|all>         Clear rate-limit / failure tracking
+
+Usage Commands:
+  stats                 Show per-account usage statistics
+  reset-stats [N|all]   Reset usage statistics
+  status                Compact one-liner for scripts/prompts (alias: st)
+
+Config Commands:
+  config                Show configuration and file paths (alias: cfg)
+  strategy [name]       Show or change selection strategy (alias: strat)
+
+Manage Commands:
+  manage                Interactive account management menu (alias: mg)
+  help                  Show this help message
+
+Group Help:
+  opencode-anthropic-auth auth help         # Show auth commands
+  opencode-anthropic-auth account help      # Show account commands
+  opencode-anthropic-auth usage help        # Show usage commands
+  opencode-anthropic-auth config help       # Show config commands
+
+Options:
+  --force           Skip confirmation prompts
+  --all             Target all accounts (for logout)
+  --no-color        Disable colored output
+
+Examples:
+  opencode-anthropic-auth login             # Add a new account via browser
+  opencode-anthropic-auth auth login        # Same as above (group format)
+  oaa login             # Same as above (short alias)
+  opencode-anthropic-auth logout 2          # Revoke tokens & remove account 2
+  opencode-anthropic-auth auth logout 2     # Same as above (group format)
+  opencode-anthropic-auth list              # Show all accounts (default)
+  opencode-anthropic-auth account list      # Same as above (group format)
+  opencode-anthropic-auth switch 2          # Make account 2 active
+  opencode-anthropic-auth account switch 2  # Same as above (group format)
+  opencode-anthropic-auth stats             # Show token usage per account
+  opencode-anthropic-auth usage stats       # Same as above (group format)
+
+Files:
+  Config:   ~/.config/opencode/anthropic-auth.json
+  Accounts: ~/.config/opencode/anthropic-accounts.json
+

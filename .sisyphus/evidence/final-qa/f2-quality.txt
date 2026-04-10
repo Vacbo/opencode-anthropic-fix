@@ -1,0 +1,98 @@
+F2 Code Quality Review — Final Verification Wave
+
+Reference
+- Plan: .sisyphus/plans/quality-refactor.md lines 1249-1267
+- Reviewed on: 2026-04-10
+
+Summary
+Lint PASS | Build PASS | Tests 663 pass/0 fail | Files 59 clean/2 issues | VERDICT: REJECT
+
+TSC
+- PASS: no main-src TypeScript errors surfaced by `npx tsc --noEmit 2>&1 | tail -5`
+- Baseline note: index.test.ts pre-existing error budget was not penalized per instruction.
+
+Command outputs
+
+=== ESLINT ===
+(no output from `npx eslint . 2>&1 | tail -10`)
+
+Assessment: PASS. No eslint problems surfaced.
+
+=== TSC ===
+(no output from `npx tsc --noEmit 2>&1 | tail -5`)
+
+Assessment: PASS. No main-src TypeScript errors surfaced.
+
+=== BUILD ===
+> @vacbo/opencode-anthropic-fix@0.0.45 build
+> bun scripts/build.ts
+
+Built dist/opencode-anthropic-auth-plugin.js, dist/opencode-anthropic-auth-cli.mjs, and dist/bun-proxy.mjs
+
+Assessment: PASS. Build succeeded and reported all 3 expected artifacts.
+
+=== TESTS ===
+ RUN v4.1.0 /Users/vacbo/Documents/Projects/opencode-anthropic-fix
+
+ Test Files 20 passed (20)
+      Tests 663 passed (663)
+   Start at 12:29:03
+   Duration 5.84s (transform 4.42s, setup 0ms, import 5.72s, tests 5.63s, environment 2ms)
+
+Assessment: PASS. 663/663 tests passed.
+
+=== ESLINT-DISABLE ===
+src/cli.ts:132:  // eslint-disable-next-line no-control-regex
+src/commands/router.ts:61:  // eslint-disable-next-line no-control-regex
+
+Assessment: FAIL. Two eslint-disable comments are missing the required `-- reason` suffix.
+
+=== AS-ANY ===
+src/index.ts:148:        await handleAnthropicSlashCommand(input as any, commandDeps);
+
+Assessment: PASS after manual review. This cast is immediately preceded by:
+`// eslint-disable-next-line @typescript-eslint/no-explicit-any -- command router accepts the Record-shaped input from OpenCode`
+That is an explicit boundary justification, so this is not counted as an unexcused production `as any`.
+
+=== SILENT-CATCH ===
+src/cli.ts:735:    await saveAccounts(stored).catch(() => {});
+
+Assessment: FAIL. This is a truly silent catch with no handling and no explanatory comment.
+
+=== CONSOLE ===
+src/bun-fetch.ts:57:    console.error("[opencode-anthropic-auth] uncaughtException in parent, cleaning up proxy:", err);
+src/bun-fetch.ts:63:    console.error("[opencode-anthropic-auth] unhandledRejection in parent, cleaning up proxy:", reason);
+src/bun-fetch.ts:207:    if (debug) console.error("[opencode-anthropic-auth] Reusing existing Bun proxy on port", FIXED_PORT);
+src/bun-fetch.ts:225:    if (debug) console.error("[opencode-anthropic-auth] Bun proxy started on port", port);
+src/bun-fetch.ts:228:    console.error("[opencode-anthropic-auth] Bun proxy unavailable, falling back to Node.js fetch");
+src/bun-fetch.ts:272:    console.error("[opencode-anthropic-auth] Bun proxy unavailable, falling back to Node.js fetch");
+src/bun-fetch.ts:277:  if (debug) console.error(`[opencode-anthropic-auth] Routing through Bun proxy at :${port} → ${url}`);
+src/bun-fetch.ts:292:      console.error("[opencode-anthropic-auth] Dumped request to /tmp/opencode-last-request.json");
+src/bun-fetch.ts:295:      console.error("[opencode-anthropic-auth] Failed to dump request:", err);
+src/accounts.ts:485:          console.error("[opencode-anthropic-auth] saveToDisk failed:", (err as Error).message);
+src/accounts.ts:727:            console.error("[opencode-anthropic-auth] forced statsDeltas flush failed:", (err as Error).message);
+src/index.ts:67:    console.error("[opencode-anthropic-auth]", ...args);
+src/env.ts:116:    console.error(
+
+Assessment: PASS after manual review. These console calls are documented by adjacent `eslint-disable-next-line no-console -- ...` comments or are the explicitly named debug logger in `src/index.ts`. They are not counted as undocumented console usage.
+
+Blocking issues
+1. src/cli.ts
+   - Missing reason on eslint-disable at line 132.
+   - Truly silent catch at line 735.
+2. src/commands/router.ts
+   - Missing reason on eslint-disable at line 61.
+
+File count
+- Source files scanned: 61 TypeScript files under `src/**/*.ts`
+- Files with blocking issues: 2
+- Files clean: 59
+
+Verdict rationale
+- Lint, typecheck, build, and tests all passed.
+- F2 still fails because file cleanliness did not meet the gate:
+  - 2 unjustified eslint-disable comments
+  - 1 truly silent catch
+
+Final verdict
+Lint PASS | Build PASS | Tests 663 pass/0 fail | Files 59 clean/2 issues | VERDICT: REJECT

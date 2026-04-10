@@ -1,0 +1,2 @@
+│
+■  Error: provide a valid account number (e.g., 'switch 2')

@@ -1,0 +1,5 @@
+=== F3 Scenario 1: Proxy Lifecycle ===
+BUILD_EXIT: 0
+HEALTH: ok
+ORPHANS (expected 0): 0
+PID_FILE (expected missing): missing

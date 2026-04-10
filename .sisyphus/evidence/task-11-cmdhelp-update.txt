@@ -1,0 +1,15 @@
+Task 11: cmdHelp() function updated to show grouped command structure
+
+Changes made:
+1. Added "oaa [group] [command] [args] (short alias)" to Usage section
+2. Reorganized commands into 5 clear groups:
+   - Auth Commands: login, logout, reauth, refresh
+   - Account Commands: list, switch, enable, disable, remove, reset
+   - Usage Commands: stats, reset-stats, status
+   - Config Commands: config, strategy
+   - Manage Commands: manage, help
+3. Added "oaa login" example to Examples section
+4. Removed the "Quick Commands (Legacy Format)" mixed listing
+5. Group Help section remains for detailed per-group help
+
+The new structure makes it easier for users to understand the command organization.

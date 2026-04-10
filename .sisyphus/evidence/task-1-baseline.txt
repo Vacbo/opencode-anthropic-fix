@@ -1,0 +1,50 @@
+=== BASELINE SUMMARY ===
+Tests: 620 pass / 0 fail / 620 total
+Type errors: 0
+Build: PASS
+Dist artifacts: 3 present (bun-proxy.mjs, opencode-anthropic-auth-cli.mjs, opencode-anthropic-auth-plugin.js)
+index.ts lines: 890
+ESLint: 1 error, 1 warning
+========================
+
+=== DETAILED OUTPUT ===
+
+--- VITEST OUTPUT ---
+[1m[46m RUN [49m[22m [36mv4.1.0 [39m[90m/Users/vacbo/Documents/Projects/opencode-anthropic-fix[39m
+
+[2m Test Files [22m [1m[32m15 passed[39m[22m[90m (15)[39m
+[2m      Tests [22m [1m[32m620 passed[39m[22m[90m (620)[39m
+[2m   Start at [22m 23:48:50
+[2m   Duration [22m 5.93s[2m (transform 4.77s, setup 0ms, import 6.59s, tests 5.70s, environment 3ms)[22m
+
+--- TYPESCRIPT OUTPUT ---
+No output (0 errors)
+
+--- BUILD OUTPUT ---
+> @vacbo/opencode-anthropic-auth@0.0.45 build
+> bun scripts/build.ts
+
+Built dist/opencode-anthropic-auth-plugin.js, dist/opencode-anthropic-auth-cli.mjs, and dist/bun-proxy.mjs
+
+--- DIST ARTIFACTS ---
+total 800
+drwxr-xr-x@  5 vacbo  staff     160 Apr  9 22:47 .
+drwxr-xr-x@ 34 vacbo  staff    1088 Apr  9 23:48 ..
+-rw-r--r--@  1 vacbo  staff    2287 Apr  9 22:47 bun-proxy.mjs
+-rw-r--r--@  1 vacbo  staff  120864 Apr  9 22:47 opencode-anthropic-auth-cli.mjs
+-rw-r--r--@  1 vacbo  staff  282490 Apr  9 22:47 opencode-anthropic-auth-plugin.js
+
+--- INDEX.TS LINE COUNT ---
+     890 /Users/vacbo/Documents/Projects/opencode-anthropic-fix/src/index.ts
+
+--- ESLINT OUTPUT ---
+/Users/vacbo/Documents/Projects/opencode-anthropic-fix/src/bun-fetch.ts
+  211:33  error  A `require()` style import is forbidden  @typescript-eslint/no-require-imports
+
+/Users/vacbo/Documents/Projects/opencode-anthropic-fix/src/storage.test.ts
+  1:1  warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+
+✖ 2 problems (1 error, 1 warning)
+  0 errors and 1 warning potentially fixable with the `--fix` option.
+
+=== END OF BASELINE ===

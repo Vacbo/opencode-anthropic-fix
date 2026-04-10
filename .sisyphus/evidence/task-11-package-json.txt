@@ -1,0 +1,14 @@
+Task 11: package.json bin field update
+
+Before:
+  "bin": {
+    "opencode-anthropic-auth": "./dist/opencode-anthropic-auth-cli.mjs"
+  },
+
+After:
+  "bin": {
+    "opencode-anthropic-auth": "./dist/opencode-anthropic-auth-cli.mjs",
+    "oaa": "./dist/opencode-anthropic-auth-cli.mjs"
+  },
+
+The "oaa" short alias now points to the same CLI entry point.
