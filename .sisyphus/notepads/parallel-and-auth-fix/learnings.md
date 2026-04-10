@@ -205,6 +205,21 @@ Evidence: .sisyphus/evidence/task-6-conversation-smoke.txt
 - Timeout-based transitions tested with real timers (small delays)
 - Per-client isolation uses clientId option + shared registry pattern
 
+## Task 15: Index Parallel RED Tests (2026-04-10)
+
+### Completed
+
+- Added `src/__tests__/index.parallel.test.ts` with 12 RED tests covering fan-out, per-request isolation, retry body reuse, account rotation, refresh concurrency, SSE+JSON concurrency, error isolation, and cleanup behavior.
+- Verified the new file is type-clean with `lsp_diagnostics`.
+- Verified the repo still builds with `npm run build`.
+
+### Learnings
+
+- `transformRequestBody` currently double-prefixes historical `mcp_` tool names in both `tools[]` and assistant `tool_use` history, which makes parallel fan-out tests fail immediately.
+- When fetch input is a `Request` and `init.body` is omitted, the interceptor loses the original body before service-wide retries because `src/index.ts` only transforms `requestInit.body`.
+- Non-SSE JSON responses are not de-prefixed on the way back, so concurrent SSE + JSON coverage needs to assert both transport paths explicitly.
+- The interceptor currently sends `x-stainless-retry-count: 0` on clean follow-up requests, so cleanup assertions should check header reset behavior as part of RED coverage.
+
 ### Evidence
 
 - `.sisyphus/evidence/task-8-circuit-red.txt`

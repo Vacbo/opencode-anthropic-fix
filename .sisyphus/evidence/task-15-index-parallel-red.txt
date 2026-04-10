@@ -1,0 +1,51 @@
+npx vitest run src/__tests__/index.parallel.test.ts
+
+RUN  v4.1.0 /Users/vacbo/Documents/Projects/opencode-anthropic-fix
+
+❯ src/__tests__/index.parallel.test.ts (12 tests | 12 failed)
+
+Failed tests:
+- intercepts 50 concurrent requests without double-prefixing historical tool definitions
+  AssertionError: expected 'mcp_mcp_parallel_tool_0' to be 'mcp_parallel_tool_0'
+
+- keeps per-request tool definition state isolated under concurrent mixed prefix load
+  transformedNames contains 'mcp_mcp_existing_read', 'mcp_mcp_existing_write', 'mcp_mcp_existing_list'
+
+- keeps historical tool_use blocks isolated under concurrent request fan-out
+  AssertionError: expected 'mcp_mcp_history_tool_0' to be 'mcp_history_tool_0'
+
+- clones Request input bodies before service-wide retries
+  AssertionError: expected typeof firstInit.body to be 'string', received 'undefined'
+
+- preserves each concurrent Request body independently across retry fan-out
+  AssertionError: expected typeof init.body to be 'string', received 'undefined'
+
+- rotates accounts under concurrent 429 load without tool-prefix drift
+  AssertionError: expected successful rotated calls length 12, received 0
+
+- shares one refresh across concurrent requests without cross-request contamination
+  AssertionError: expected 'mcp_mcp_refresh_tool_0' to be 'mcp_refresh_tool_0'
+
+- keeps SSE and JSON tool-name rewriting consistent when both run concurrently
+  AssertionError: expected 'mcp_parallel_json' to be 'parallel_json'
+
+- does not leak one request error into sibling concurrent requests
+  AssertionError: expected 'mcp_mcp_ok_tool' to be 'mcp_ok_tool'
+
+- does not mutate shared request payloads across concurrent batches
+  AssertionError: expected 'mcp_mcp_shared_tool' to be 'mcp_shared_tool'
+
+- cleans up retry bookkeeping after each request
+  AssertionError: expected 'x-stainless-retry-count' to be null, received '0'
+
+- leaves no dangling deferred work after concurrent request cleanup
+  AssertionError: expected 'mcp_mcp_cleanup_gate_followup' to be 'mcp_cleanup_gate_followup'
+
+Summary:
+- Test Files: 1 failed
+- Tests: 12 failed
+- Duration: 1.75s
+
+Verification:
+- lsp_diagnostics src/__tests__/index.parallel.test.ts -> clean
+- npm run build -> pass
