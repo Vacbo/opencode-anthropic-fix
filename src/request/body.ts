@@ -19,6 +19,18 @@ export function transformRequestBody(
 ): string | undefined {
   if (!body || typeof body !== "string") return body;
 
+  // Tool prefix for plugin-internal namespacing.
+  //
+  // This is NOT mimicking Claude Code's convention. CC uses:
+  // - "mcp__<server>__<tool>" (double underscore) for MCP-connected tools
+  // - No prefix for native tools (read_file, write_file, etc.)
+  //
+  // Opencode sends tool names without prefixes. This plugin adds "mcp_" (single
+  // underscore) before sending to Anthropic to namespace tools, then strips
+  // the prefix from the response stream (see src/response/mcp.ts). This is a
+  // round-trip transformation: the client sees original names, Anthropic sees
+  // prefixed names. Tools already named "mcp_*" get double-prefixed so that
+  // response stripping restores their original name.
   const TOOL_PREFIX = "mcp_";
 
   try {
