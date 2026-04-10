@@ -1,0 +1,41 @@
+Task 14 evidence - RED account dedup tests
+Date: 2026-04-10
+
+Changed file:
+- src/accounts.dedup.test.ts
+
+LSP diagnostics:
+- src/accounts.dedup.test.ts: clean
+
+Build verification:
+- Command: npm run build
+- Result: PASS
+- Output:
+  Built dist/opencode-anthropic-auth-plugin.js and dist/opencode-anthropic-auth-cli.mjs
+
+RED verification:
+- Command: npx vitest run src/accounts.dedup.test.ts
+- Result: FAIL as expected
+- Summary: 1 file failed, 12 tests failed, 0 passed
+
+Failing tests:
+1. updates an OAuth account by email instead of creating a duplicate on refresh rotation
+2. matches duplicates by identity rather than refresh token for OAuth accounts
+3. preserves account metadata when an OAuth identity is updated
+4. preserves the active index when dedup updates an existing OAuth identity
+5. deduplicates CC accounts by source and label across rotation cycles
+6. keeps OAuth and CC accounts separate even when they share an email
+7. enforces MAX_ACCOUNTS during CC auto-detect instead of overflowing capacity
+8. preserves the source field when syncing a rotated account from disk
+9. preserves in-flight object references while syncing rotated auth from disk
+10. unions disk-only accounts during save instead of dropping them
+11. does not lose disk-only accounts on repeated saves
+12. keeps the same active account when disk-only unions shift array positions
+
+Representative failure signals:
+- OAuth email rotation creates 2 accounts instead of 1
+- CC auto-detect creates 2 or 3 accounts instead of deduping by identity
+- CC auto-detect exceeds MAX_ACCOUNTS with 11 accounts instead of 10
+- syncActiveIndexFromDisk drops source (received undefined instead of cc-file)
+- syncActiveIndexFromDisk replaces object references instead of updating in place
+- saveToDisk drops disk-only accounts instead of unioning them
