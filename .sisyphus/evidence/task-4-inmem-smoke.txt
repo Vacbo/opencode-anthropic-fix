@@ -1,0 +1,13 @@
+
+> @vacbo/opencode-anthropic-fix@0.0.37 test
+> vitest run src/__tests__/helpers/in-memory-storage.smoke.test.ts
+
+
+[1m[46m RUN [49m[22m [36mv4.1.0 [39m[90m/Users/vacbo/Documents/Projects/opencode-anthropic-fix[39m
+
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m13 passed[39m[22m[90m (13)[39m
+[2m   Start at [22m 16:48:42
+[2m   Duration [22m 156ms[2m (transform 22ms, setup 0ms, import 30ms, tests 5ms, environment 0ms)[22m
+
