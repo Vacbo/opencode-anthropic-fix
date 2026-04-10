@@ -1,0 +1,39 @@
+
+> @vacbo/opencode-anthropic-fix@0.0.37 test
+> vitest run src/request/body.history.test.ts
+
+
+[1m[46m RUN [49m[22m [36mv4.1.0 [39m[90m/Users/vacbo/Documents/Projects/opencode-anthropic-fix[39m
+
+ [31m❯[39m src/request/body.history.test.ts [2m([22m[2m33 tests[22m[2m | [22m[31m25 failed[39m[2m)[22m[32m 19[2mms[22m[39m
+[31m     [31m×[31m should reject non-string body with clear error[39m[32m 4[2mms[22m[39m
+[31m     [31m×[31m should validate body type at runtime with descriptive error[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m should detect and reject double-prefixed tool names (mcp_mcp_)[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m should detect double-prefix in tool_use blocks[39m[32m 0[2mms[22m[39m
+[31m     [31m×[31m should strip existing mcp_ prefix before adding new prefix[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m should handle tools already prefixed with mcp_ correctly[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m should fail gracefully when body has been consumed[39m[32m 0[2mms[22m[39m
+[31m     [31m×[31m should handle historical tool_use.name with prefix correctly[39m[32m 0[2mms[22m[39m
+[31m     [31m×[31m should handle mixed prefixed and unprefixed tools[39m[32m 0[2mms[22m[39m
+[31m     [31m×[31m should preserve all non-tool fields during transformation[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m should return true for valid string body[39m[32m 0[2mms[22m[39m
+[31m     [31m×[31m should return false for undefined[39m[32m 0[2mms[22m[39m
+[31m     [31m×[31m should return false for null[39m[32m 0[2mms[22m[39m
+[31m     [31m×[31m should return false for non-string types[39m[32m 0[2mms[22m[39m
+[31m     [31m×[31m should throw with descriptive message when throwOnInvalid is true[39m[32m 0[2mms[22m[39m
+[31m     [31m×[31m should return new string instance for retry[39m[32m 0[2mms[22m[39m
+[31m     [31m×[31m should throw when body is consumed[39m[32m 0[2mms[22m[39m
+[31m     [31m×[31m should handle empty but valid body[39m[32m 0[2mms[22m[39m
+[31m     [31m×[31m should detect mcp_mcp_ prefix[39m[32m 0[2mms[22m[39m
+[31m     [31m×[31m should not detect single mcp_ prefix[39m[32m 0[2mms[22m[39m
+[31m     [31m×[31m should not detect unprefixed names[39m[32m 0[2mms[22m[39m
+[31m     [31m×[31m should detect triple prefix[39m[32m 0[2mms[22m[39m
+[31m     [31m×[31m should extract tool names from tools array[39m[32m 0[2mms[22m[39m
+[31m     [31m×[31m should extract tool names from tool_use blocks[39m[32m 0[2mms[22m[39m
+[31m     [31m×[31m should return empty array for body without tools[39m[32m 0[2mms[22m[39m
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m25 failed[39m[22m[2m | [22m[1m[32m8 passed[39m[22m[90m (33)[39m
+[2m   Start at [22m 17:00:20
+[2m   Duration [22m 277ms[2m (transform 63ms, setup 0ms, import 88ms, tests 19ms, environment 0ms)[22m
+
