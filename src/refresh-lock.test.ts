@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const baseDir = join(tmpdir(), `opencode-refresh-lock-test-${process.pid}`);
 const storagePath = join(baseDir, "anthropic-accounts.json");
+const DEFAULT_LOCK_TIMEOUT_MS = 15_000;
+const DEFAULT_STALE_LOCK_MS = 90_000;
 
 vi.mock("./storage.js", () => ({
   getStoragePath: () => storagePath,
@@ -26,13 +28,14 @@ describe("refresh-lock", () => {
     const lock = await acquireRefreshLock("acc-1");
     expect(lock.acquired).toBe(true);
     expect(lock.lockPath).toBeTruthy();
+    const lockPath = lock.lockPath!;
 
-    await releaseRefreshLock({ lockPath: lock.lockPath, owner: "wrong-owner" });
+    await releaseRefreshLock({ lockPath, owner: "wrong-owner" });
 
-    await expect(fs.stat(lock.lockPath)).resolves.toBeTruthy();
+    await expect(fs.stat(lockPath)).resolves.toBeTruthy();
 
     await releaseRefreshLock(lock);
-    await expect(fs.stat(lock.lockPath)).rejects.toMatchObject({
+    await expect(fs.stat(lockPath)).rejects.toMatchObject({
       code: "ENOENT",
     });
   });
@@ -43,9 +46,10 @@ describe("refresh-lock", () => {
       staleMs: 10_000,
     });
     expect(first.acquired).toBe(true);
+    const firstLockPath = first.lockPath!;
 
     const old = Date.now() / 1000 - 120;
-    await fs.utimes(first.lockPath, old, old);
+    await fs.utimes(firstLockPath, old, old);
 
     const second = await acquireRefreshLock("acc-2", {
       timeoutMs: 200,
@@ -65,28 +69,51 @@ describe("refresh-lock", () => {
     const second = await acquireRefreshLock("acc-3", {
       timeoutMs: 30,
       backoffMs: 5,
-      staleMs: 60_000,
+      staleMs: DEFAULT_STALE_LOCK_MS,
     });
     expect(second.acquired).toBe(false);
 
     await releaseRefreshLock(first);
   });
 
+  it("stale reaper does NOT steal a lock held for 60s", async () => {
+    const first = await acquireRefreshLock("acc-stable-refresh", {
+      timeoutMs: DEFAULT_LOCK_TIMEOUT_MS,
+    });
+    expect(first.acquired).toBe(true);
+    expect(first.lockPath).toBeTruthy();
+    const firstLockPath = first.lockPath!;
+
+    const sixtySecondsAgo = Date.now() / 1000 - 60;
+    await fs.utimes(firstLockPath, sixtySecondsAgo, sixtySecondsAgo);
+
+    const second = await acquireRefreshLock("acc-stable-refresh", {
+      timeoutMs: 30,
+      backoffMs: 5,
+      staleMs: DEFAULT_STALE_LOCK_MS,
+    });
+    expect(second.acquired).toBe(false);
+
+    await expect(fs.stat(firstLockPath)).resolves.toBeTruthy();
+    await releaseRefreshLock(first);
+  });
+
   it("does not release when inode changed even if owner matches", async () => {
     const first = await acquireRefreshLock("acc-4");
     expect(first.acquired).toBe(true);
+    const firstLockPath = first.lockPath!;
 
     // Replace lock file with a new inode that reuses owner text.
-    await fs.unlink(first.lockPath);
-    await fs.writeFile(first.lockPath, JSON.stringify({ owner: first.owner, createdAt: Date.now() }), {
+    await fs.unlink(firstLockPath);
+    await fs.writeFile(firstLockPath, JSON.stringify({ owner: first.owner, createdAt: Date.now() }), {
       encoding: "utf-8",
       mode: 0o600,
     });
 
     await releaseRefreshLock(first);
 
-    await expect(fs.stat(first.lockPath)).resolves.toBeTruthy();
+    await expect(fs.stat(firstLockPath)).resolves.toBeTruthy();
 
-    await fs.unlink(first.lockPath);
+    await fs.unlink(firstLockPath);
   });
 });

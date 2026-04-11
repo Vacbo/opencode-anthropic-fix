@@ -3,9 +3,9 @@ import { promises as fs } from "node:fs";
 import { dirname, join } from "node:path";
 import { getStoragePath } from "./storage.js";
 
-const DEFAULT_LOCK_TIMEOUT_MS = 2_000;
+const DEFAULT_LOCK_TIMEOUT_MS = 15_000;
 const DEFAULT_LOCK_BACKOFF_MS = 50;
-const DEFAULT_STALE_LOCK_MS = 20_000;
+const DEFAULT_STALE_LOCK_MS = 90_000;
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

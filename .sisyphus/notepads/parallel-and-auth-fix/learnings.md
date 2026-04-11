@@ -463,3 +463,9 @@ Evidence: .sisyphus/evidence/task-6-conversation-smoke.txt
 - loadAccounts must warn and continue on unknown storage versions; returning null on additive schema drift wipes persisted account state.
 - Storage deserialization should preserve source exactly as stored and leave missing values as undefined; downstream identity resolution decides how to interpret legacy records.
 - Targeted storage tests should cover both best-effort unknown-version reads and missing-source preservation to lock in additive compatibility.
+
+## Task 35: Refresh lock stale-window widening (2026-04-10)
+
+- Claude Code credential refresh can legitimately hold the per-account refresh lock for about 60 seconds, so the stale reaper window needs slack above that runtime or a healthy refresh gets treated like an abandoned lock.
+- Letting `refreshAccountToken()` fall through to the widened `acquireRefreshLock()` defaults is safer than re-declaring shorter `timeoutMs` and `staleMs` values locally; it keeps the policy in one place while preserving the custom backoff.
+- The regression to keep is simple: age a held lock to 60 seconds, then prove a second contender still backs off instead of stealing it. That pins the no-thrashing/no-live-lock-theft contract without changing lock ownership or release semantics.

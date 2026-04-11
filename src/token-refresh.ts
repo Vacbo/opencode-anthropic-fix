@@ -192,9 +192,7 @@ export async function refreshAccountToken(
   { onTokensUpdated, debugLog }: RefreshAccountTokenOptions = {},
 ): Promise<string> {
   const lockResult = await acquireRefreshLock(account.id, {
-    timeoutMs: 2_000,
     backoffMs: 60,
-    staleMs: 20_000,
   });
   const lock =
     lockResult && typeof lockResult === "object"
