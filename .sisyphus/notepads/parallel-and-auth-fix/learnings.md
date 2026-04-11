@@ -437,6 +437,11 @@ Evidence: .sisyphus/evidence/task-6-conversation-smoke.txt
 
 ## Task 27: Stream completeness error propagation GREEN (2026-04-10)
 
+## Task 34: CLI login identity dedup GREEN (2026-04-10)
+
+- `cmdLogin()` should resolve `resolveIdentityFromOAuthExchange(credentials)` immediately after the OAuth exchange, then call `findByIdentity(storage.accounts, identity)` before any legacy refresh-token fallback so repeat logins for the same email update the existing record in place.
+- When the CLI updates an existing stored OAuth account, it should refresh `refreshToken`, `access`, `expires`, `token_updated_at`, `identity`, and `enabled` while preserving persisted metadata such as `id`, `source`, and existing stats/failure history.
+
 - Stream truncation is easier to reason about when EOF failures use a dedicated `StreamTruncatedError` with structured context instead of a plain `Error` string.
 - The most useful truncation context is the in-flight SSE label (`message_delta`, `content_block_start(tool_use)`, `content_block_delta(input_json_delta)`) plus any open block index; that makes consumer-side logs actionable without treating the failure like auth/account rotation.
 - Logging stream-completeness failures at the fetch-interceptor boundary should be observational only: emit `debugLog(...)`, preserve the original error, and keep account health state unchanged.

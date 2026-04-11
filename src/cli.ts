@@ -52,6 +52,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { exec } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import { findByIdentity, resolveIdentityFromOAuthExchange } from "./account-identity.js";
 import { CLIENT_ID, getConfigPath, loadConfig, saveConfig, VALID_STRATEGIES } from "./config.js";
 import { authorize, exchange, revoke } from "./oauth.js";
 import { createDefaultStats, getStoragePath, loadAccounts, saveAccounts } from "./storage.js";
@@ -407,18 +408,26 @@ export async function cmdLogin() {
 
   // Load or create storage
   const storage = stored || { version: 1, accounts: [], activeIndex: 0 };
+  const identity = resolveIdentityFromOAuthExchange(credentials);
 
-  // Check for duplicate refresh token
-  const existingIdx = storage.accounts.findIndex((acc) => acc.refreshToken === credentials.refresh);
-  if (existingIdx >= 0) {
+  const existing =
+    findByIdentity(storage.accounts, identity) ||
+    storage.accounts.find((acc) => acc.refreshToken === credentials.refresh);
+  if (existing) {
+    const existingIdx = storage.accounts.indexOf(existing);
+
     // Update existing account
-    storage.accounts[existingIdx].access = credentials.access;
-    storage.accounts[existingIdx].expires = credentials.expires;
-    if (credentials.email) storage.accounts[existingIdx].email = credentials.email;
-    storage.accounts[existingIdx].enabled = true;
+    existing.refreshToken = credentials.refresh;
+    existing.access = credentials.access;
+    existing.expires = credentials.expires;
+    existing.token_updated_at = Date.now();
+    if (credentials.email) existing.email = credentials.email;
+    existing.identity = identity;
+    existing.source = existing.source ?? "oauth";
+    existing.enabled = true;
     await saveAccounts(storage);
 
-    const label = credentials.email || `Account ${existingIdx + 1}`;
+    const label = credentials.email || existing.email || `Account ${existingIdx + 1}`;
     log.success(`Updated existing account #${existingIdx + 1} (${label}).`);
     return 0;
   }
@@ -433,6 +442,7 @@ export async function cmdLogin() {
   storage.accounts.push({
     id: `${now}:${credentials.refresh.slice(0, 12)}`,
     email: credentials.email,
+    identity,
     refreshToken: credentials.refresh,
     access: credentials.access,
     expires: credentials.expires,
@@ -444,6 +454,7 @@ export async function cmdLogin() {
     consecutiveFailures: 0,
     lastFailureTime: null,
     stats: createDefaultStats(now),
+    source: "oauth",
   });
 
   // If this is the first account, it's already active at index 0

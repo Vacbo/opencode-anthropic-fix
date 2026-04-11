@@ -2,22 +2,18 @@ import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { AccountManager } from "./accounts.js";
 import { DEFAULT_CONFIG } from "./config.js";
 
-vi.mock("./storage.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./storage.js")>();
-  return {
-    ...actual,
-    createDefaultStats: (now?: number) => ({
-      requests: 0,
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
-      lastReset: now ?? Date.now(),
-    }),
-    loadAccounts: vi.fn(),
-    saveAccounts: vi.fn().mockResolvedValue(undefined),
-  };
-});
+vi.mock("./storage.js", () => ({
+  createDefaultStats: (now?: number) => ({
+    requests: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    lastReset: now ?? Date.now(),
+  }),
+  loadAccounts: vi.fn(),
+  saveAccounts: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock("./cc-credentials.js", () => ({
   readCCCredentials: vi.fn(),

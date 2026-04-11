@@ -1156,6 +1156,63 @@ describe("auth commands", () => {
     }
   });
 
+  it("cmdLogin deduplicates by email identity", async () => {
+    const storage = {
+      version: 1,
+      activeIndex: 0,
+      accounts: [
+        {
+          id: "acct-1",
+          email: "alice@example.com",
+          identity: { kind: "oauth", email: "alice@example.com" },
+          source: "oauth",
+          refreshToken: "refresh-old",
+          access: "access-old",
+          expires: Date.now() + 1000,
+          token_updated_at: 123,
+          addedAt: 1000,
+          lastUsed: 5000,
+          enabled: false,
+          rateLimitResetTimes: {},
+          consecutiveFailures: 2,
+          lastFailureTime: Date.now(),
+        },
+      ],
+    };
+    mockLoadAccounts.mockResolvedValue(storage);
+    mockExchange.mockResolvedValueOnce({
+      type: "success",
+      refresh: "refresh-rotated",
+      access: "access-rotated",
+      expires: Date.now() + 7200_000,
+      email: "alice@example.com",
+    });
+
+    const restoreTTY = setStdinTTY(true);
+    mockReadlineAnswer("auth-code#state");
+
+    try {
+      const code = await cmdLogin();
+      expect(code).toBe(0);
+
+      const saved = mockSaveAccounts.mock.calls[0][0];
+      expect(saved.accounts).toHaveLength(1);
+      expect(saved.accounts[0]).toEqual(
+        expect.objectContaining({
+          id: "acct-1",
+          email: "alice@example.com",
+          identity: { kind: "oauth", email: "alice@example.com" },
+          source: "oauth",
+          refreshToken: "refresh-rotated",
+          access: "access-rotated",
+          enabled: true,
+        }),
+      );
+    } finally {
+      restoreTTY();
+    }
+  });
+
   it("cmdLogin rejects adding new account when at max capacity", async () => {
     const fullStorage = {
       version: 1,

@@ -2576,7 +2576,7 @@ Run: `npx vitest run` + `npx tsc --noEmit` + `npm run build`. Expected state: Wa
 
 ---
 
-- [ ] 29. GREEN: `src/account-identity.ts` — stable identity abstraction
+- [x] 29. GREEN: `src/account-identity.ts` — stable identity abstraction
 
   **What to do**:
   - Create `src/account-identity.ts`
@@ -2632,7 +2632,7 @@ Run: `npx vitest run` + `npx tsc --noEmit` + `npm run build`. Expected state: Wa
   - Files: `src/account-identity.ts`, `src/accounts.ts` (interface additions), `src/storage.ts` (interface additions)
   - Pre-commit: `npx vitest run src/account-identity.test.ts && npx tsc --noEmit`
 
-- [ ] 30. GREEN: `src/accounts.ts` — identity-first addAccount + preserve source in sync
+- [x] 30. GREEN: `src/accounts.ts` — identity-first addAccount + preserve source in sync
 
   **What to do**:
   - Update `src/accounts.ts`:
@@ -2686,7 +2686,7 @@ Run: `npx vitest run` + `npx tsc --noEmit` + `npm run build`. Expected state: Wa
   - Files: `src/accounts.ts`
   - Pre-commit: `npx vitest run src/accounts`
 
-- [ ] 31. GREEN: `src/accounts.ts` + `src/storage.ts` — saveToDisk unions disk-only accounts
+- [x] 31. GREEN: `src/accounts.ts` + `src/storage.ts` — saveToDisk unions disk-only accounts
 
   **What to do**:
   - Update `AccountManager.saveToDisk`:
@@ -2738,7 +2738,7 @@ Run: `npx vitest run` + `npx tsc --noEmit` + `npm run build`. Expected state: Wa
   - Files: `src/accounts.ts`, `src/storage.ts`
   - Pre-commit: `npx vitest run src/accounts src/storage`
 
-- [ ] 32. GREEN: `src/storage.ts` — preserve source on load + tolerate unknown version
+- [x] 32. GREEN: `src/storage.ts` — preserve source on load + tolerate unknown version
 
   **What to do**:
   - Update `loadAccounts()`:
@@ -2789,7 +2789,7 @@ Run: `npx vitest run` + `npx tsc --noEmit` + `npm run build`. Expected state: Wa
   - Files: `src/storage.ts`
   - Pre-commit: `npx vitest run src/storage`
 
-- [ ] 33. GREEN: `src/index.ts` — DEDUP-A (CC auto-detect authorize) + DEDUP-B (OAuth authorize)
+- [x] 33. GREEN: `src/index.ts` — DEDUP-A (CC auto-detect authorize) + DEDUP-B (OAuth authorize)
 
   **What to do**:
   - Update `src/index.ts` "Claude Code Credentials (auto-detected)" authorize handler (~lines 587-631):
