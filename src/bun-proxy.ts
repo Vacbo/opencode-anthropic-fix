@@ -1,83 +1,304 @@
-// Standalone Bun TLS proxy — run with: bun dist/bun-proxy.mjs [port]
-// Forwards requests using Bun's native fetch (BoringSSL TLS fingerprint).
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const debug = process.env.OPENCODE_ANTHROPIC_DEBUG === "1";
+import { ParentPidWatcher } from "./parent-pid-watcher.js";
 
-const PORT = parseInt(process.argv[2] || "48372", 10);
+const DEFAULT_ALLOWED_HOSTS = ["api.anthropic.com", "platform.claude.com"];
+const DEFAULT_REQUEST_TIMEOUT_MS = 600_000;
+const DEFAULT_PARENT_EXIT_CODE = 1;
+const DEFAULT_PARENT_POLL_INTERVAL_MS = 5_000;
+const HEALTH_PATH = "/__health";
+const DEBUG_ENABLED = process.env.OPENCODE_ANTHROPIC_DEBUG === "1";
 
-const server = Bun.serve({
-  port: PORT,
-  async fetch(req: Request): Promise<Response> {
-    if (new URL(req.url).pathname === "/__health") {
+interface ProxyRequestHandlerOptions {
+  fetchImpl: typeof fetch;
+  allowHosts?: string[];
+  requestTimeoutMs?: number;
+}
+
+interface ProxyProcessRuntimeOptions {
+  argv?: string[];
+  exit?: (code?: number) => void;
+  parentWatcherFactory?: ParentWatcherFactory;
+}
+
+interface ParentWatcher {
+  start(): void;
+  stop(): void;
+}
+
+interface ParentWatcherFactoryOptions {
+  parentPid: number;
+  onParentExit: (exitCode?: number) => void;
+  pollIntervalMs?: number;
+  exitCode?: number;
+}
+
+type ParentWatcherFactory = (options: ParentWatcherFactoryOptions) => ParentWatcher;
+
+type RequestInitWithDuplex = RequestInit & {
+  duplex?: "half";
+};
+
+interface AbortContext {
+  signal: AbortSignal;
+  timeoutSignal: AbortSignal;
+  cancelTimeout(): void;
+}
+
+function isMainModule(argv: string[] = process.argv): boolean {
+  return Boolean(argv[1]) && resolve(argv[1]) === fileURLToPath(import.meta.url);
+}
+
+function parseInteger(value: string | undefined): number | null {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function parseParentPid(argv: string[]): number | null {
+  const inlineValue = argv
+    .map((argument) => argument.match(/^--parent-pid=(\d+)$/)?.[1] ?? null)
+    .find((value) => value !== null);
+
+  if (inlineValue) {
+    return parseInteger(inlineValue);
+  }
+
+  const flagIndex = argv.indexOf("--parent-pid");
+  return flagIndex >= 0 ? parseInteger(argv[flagIndex + 1]) : null;
+}
+
+function createNoopWatcher(): ParentWatcher {
+  return {
+    start(): void {},
+    stop(): void {},
+  };
+}
+
+function createDefaultParentWatcherFactory(): ParentWatcherFactory {
+  return ({ parentPid, onParentExit, pollIntervalMs, exitCode }): ParentWatcher =>
+    new ParentPidWatcher({
+      parentPid,
+      pollIntervalMs,
+      onParentGone: () => {
+        onParentExit(exitCode);
+      },
+    });
+}
+
+function sanitizeForwardHeaders(source: Headers): Headers {
+  const headers = new Headers(source);
+  ["x-proxy-url", "host", "connection", "content-length"].forEach((headerName) => {
+    headers.delete(headerName);
+  });
+  return headers;
+}
+
+function copyResponseHeaders(source: Headers): Headers {
+  const headers = new Headers(source);
+  ["transfer-encoding", "content-encoding"].forEach((headerName) => {
+    headers.delete(headerName);
+  });
+  return headers;
+}
+
+function resolveTargetUrl(req: Request, allowedHosts: ReadonlySet<string>): URL | Response {
+  const targetUrl = req.headers.get("x-proxy-url");
+
+  if (!targetUrl) {
+    return new Response("Missing x-proxy-url", { status: 400 });
+  }
+
+  try {
+    const parsedUrl = new URL(targetUrl);
+    if (allowedHosts.size > 0 && !allowedHosts.has(parsedUrl.hostname)) {
+      return new Response(`Host not allowed: ${parsedUrl.hostname}`, { status: 403 });
+    }
+
+    return parsedUrl;
+  } catch {
+    return new Response("Invalid x-proxy-url", { status: 400 });
+  }
+}
+
+function createAbortContext(req: Request, requestTimeoutMs: number): AbortContext {
+  const timeoutController = new AbortController();
+  const timer = setTimeout(() => {
+    timeoutController.abort(new DOMException("Upstream request timed out", "TimeoutError"));
+  }, requestTimeoutMs);
+
+  timer.unref?.();
+
+  return {
+    signal: AbortSignal.any([req.signal, timeoutController.signal]),
+    timeoutSignal: timeoutController.signal,
+    cancelTimeout(): void {
+      clearTimeout(timer);
+    },
+  };
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException
+    ? error.name === "AbortError" || error.name === "TimeoutError"
+    : error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
+}
+
+function isTimeoutAbort(signal: AbortSignal): boolean {
+  const reason = signal.reason;
+  return reason instanceof DOMException
+    ? reason.name === "TimeoutError"
+    : reason instanceof Error && reason.name === "TimeoutError";
+}
+
+function createAbortResponse(req: Request, timeoutSignal: AbortSignal): Response {
+  return req.signal.aborted
+    ? new Response("Client disconnected", { status: 499 })
+    : isTimeoutAbort(timeoutSignal)
+      ? new Response("Upstream request timed out", { status: 504 })
+      : new Response("Upstream request aborted", { status: 499 });
+}
+
+async function createUpstreamInit(req: Request, signal: AbortSignal): Promise<RequestInitWithDuplex> {
+  const method = req.method || "GET";
+  const hasBody = method !== "GET" && method !== "HEAD";
+  const bodyText = hasBody ? await req.text() : "";
+
+  return {
+    method,
+    headers: sanitizeForwardHeaders(req.headers),
+    signal,
+    ...(hasBody && bodyText.length > 0 ? { body: bodyText } : {}),
+  };
+}
+
+function logRequest(targetUrl: URL, req: Request): void {
+  if (!DEBUG_ENABLED) {
+    return;
+  }
+
+  const logHeaders = Object.fromEntries(
+    [...sanitizeForwardHeaders(req.headers).entries()].map(([key, value]) => [
+      key,
+      key === "authorization" ? "Bearer ***" : value,
+    ]),
+  );
+
+  console.error("\n[bun-proxy] === FORWARDED REQUEST ===");
+  console.error(`[bun-proxy] ${req.method} ${targetUrl.toString()}`);
+  console.error(`[bun-proxy] Headers: ${JSON.stringify(logHeaders, null, 2)}`);
+  console.error("[bun-proxy] =========================\n");
+}
+
+export function createProxyRequestHandler(options: ProxyRequestHandlerOptions): (req: Request) => Promise<Response> {
+  const allowedHosts = new Set(options.allowHosts ?? DEFAULT_ALLOWED_HOSTS);
+  const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+
+  return async function handleProxyRequest(req: Request): Promise<Response> {
+    if (new URL(req.url).pathname === HEALTH_PATH) {
       return new Response("ok");
     }
 
-    const targetUrl = req.headers.get("x-proxy-url");
-    if (!targetUrl) {
-      return new Response("Missing x-proxy-url", { status: 400 });
+    const targetUrl = resolveTargetUrl(req, allowedHosts);
+    if (targetUrl instanceof Response) {
+      return targetUrl;
     }
 
-    const headers = new Headers(req.headers);
-    headers.delete("x-proxy-url");
-    headers.delete("host");
-    headers.delete("connection");
-
-    const body = req.method !== "GET" && req.method !== "HEAD" ? await req.arrayBuffer() : undefined;
-
-    // Log full request for comparison debugging
-    if (debug && targetUrl.includes("/v1/messages") && !targetUrl.includes("count_tokens")) {
-      const logHeaders: Record<string, string> = {};
-      headers.forEach((v, k) => {
-        logHeaders[k] = k === "authorization" ? "Bearer ***" : v;
-      });
-      let systemPreview = "";
-      if (body) {
-        try {
-          const parsed = JSON.parse(new TextDecoder().decode(body));
-          if (Array.isArray(parsed.system)) {
-            systemPreview = JSON.stringify(
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any -- arbitrary system block shape from request JSON
-              parsed.system.slice(0, 3).map((b: any) => ({
-                text: typeof b.text === "string" ? b.text.slice(0, 200) : "(non-text)",
-                cache_control: b.cache_control,
-              })),
-              null,
-              2,
-            );
-          }
-        } catch {
-          /* ignore */
-        }
-      }
-      console.error(`\n[bun-proxy] === /v1/messages REQUEST ===`);
-      console.error(`[bun-proxy] URL: ${targetUrl}`);
-      console.error(`[bun-proxy] Headers: ${JSON.stringify(logHeaders, null, 2)}`);
-      if (systemPreview) console.error(`[bun-proxy] System blocks (first 3): ${systemPreview}`);
-      console.error(`[bun-proxy] ===========================\n`);
-    }
+    const abortContext = createAbortContext(req, requestTimeoutMs);
+    const upstreamInit = await createUpstreamInit(req, abortContext.signal);
+    logRequest(targetUrl, req);
 
     try {
-      const resp = await fetch(targetUrl, {
-        method: req.method,
-        headers,
-        body,
-        signal: AbortSignal.timeout(600_000), // 600s = 10 min, matches CC's x-stainless-timeout
+      const upstreamResponse = await options.fetchImpl(targetUrl.toString(), upstreamInit);
+      return new Response(upstreamResponse.body, {
+        status: upstreamResponse.status,
+        statusText: upstreamResponse.statusText,
+        headers: copyResponseHeaders(upstreamResponse.headers),
       });
+    } catch (error) {
+      if (abortContext.signal.aborted && isAbortError(error)) {
+        return createAbortResponse(req, abortContext.timeoutSignal);
+      }
 
-      const respHeaders = new Headers(resp.headers);
-      respHeaders.delete("transfer-encoding");
-      respHeaders.delete("content-encoding");
-
-      return new Response(resp.body, {
-        status: resp.status,
-        statusText: resp.statusText,
-        headers: respHeaders,
-      });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return new Response(msg, { status: 502 });
+      const message = error instanceof Error ? error.message : String(error);
+      return new Response(message, { status: 502 });
+    } finally {
+      abortContext.cancelTimeout();
     }
-  },
-});
+  };
+}
 
-console.log(`BUN_PROXY_PORT=${server.port}`);
+export function createProxyProcessRuntime(options: ProxyProcessRuntimeOptions = {}): ParentWatcher {
+  const argv = options.argv ?? process.argv;
+  const parentPid = parseParentPid(argv);
+  if (!parentPid) {
+    return createNoopWatcher();
+  }
+
+  const exit = options.exit ?? process.exit;
+  const parentWatcherFactory = options.parentWatcherFactory ?? createDefaultParentWatcherFactory();
+
+  return parentWatcherFactory({
+    parentPid,
+    pollIntervalMs: DEFAULT_PARENT_POLL_INTERVAL_MS,
+    exitCode: DEFAULT_PARENT_EXIT_CODE,
+    onParentExit: (exitCode) => {
+      exit(exitCode ?? DEFAULT_PARENT_EXIT_CODE);
+    },
+  });
+}
+
+function assertBunRuntime(): typeof Bun {
+  if (typeof Bun === "undefined") {
+    throw new Error("bun-proxy.ts must be executed with Bun.");
+  }
+
+  return Bun;
+}
+
+async function runProxyProcess(): Promise<void> {
+  const bun = assertBunRuntime();
+  const watcher = createProxyProcessRuntime();
+  const server = bun.serve({
+    port: 0,
+    fetch: createProxyRequestHandler({
+      fetchImpl: fetch,
+      allowHosts: DEFAULT_ALLOWED_HOSTS,
+      requestTimeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
+    }),
+  });
+
+  const lifecycle = {
+    closed: false,
+  };
+
+  const shutdown = (exitCode = 0): void => {
+    if (lifecycle.closed) {
+      return;
+    }
+
+    lifecycle.closed = true;
+    watcher.stop();
+    server.stop(true);
+    process.exit(exitCode);
+  };
+
+  process.on("SIGTERM", () => {
+    shutdown(0);
+  });
+
+  process.on("SIGINT", () => {
+    shutdown(0);
+  });
+
+  watcher.start();
+  process.stdout.write(`BUN_PROXY_PORT=${server.port}\n`);
+}
+
+if (isMainModule()) {
+  void runProxyProcess().catch((error) => {
+    const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
+    process.stderr.write(`${message}\n`);
+    process.exit(1);
+  });
+}

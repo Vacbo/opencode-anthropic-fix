@@ -1,0 +1,22 @@
+Task 19 verification
+====================
+
+Changed file:
+- src/bun-proxy.ts
+
+LSP diagnostics:
+- src/bun-proxy.ts -> no diagnostics found
+
+Command: npx vitest run src/__tests__/bun-proxy.parallel.test.ts
+Result:
+RUN  v4.1.0 /Users/vacbo/Documents/Projects/opencode-anthropic-fix
+Test Files  1 passed (1)
+Tests  11 passed (11)
+Duration  297ms
+
+Command: npm run build
+Result:
+> @vacbo/opencode-anthropic-fix@0.0.37 build
+> bun scripts/build.ts
+
+Built dist/opencode-anthropic-auth-plugin.js and dist/opencode-anthropic-auth-cli.mjs
