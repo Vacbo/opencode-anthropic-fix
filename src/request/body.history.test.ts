@@ -126,13 +126,22 @@ describe("transformRequestBody - body cloning for retries", () => {
       tools: [{ name: "read_file", description: "Read a file" }],
     });
 
-    const result1 = transformRequestBody(originalBody, mockSignature, mockRuntime);
-    const result2 = transformRequestBody(originalBody, mockSignature, mockRuntime);
+    // The cch billing hash mixes Date.now() into its input (src/headers/billing.ts)
+    // to mimic CC's per-request attestation. Freeze the clock so the two calls
+    // produce byte-identical output and this test stays about clone-safety, not
+    // about an accidental millisecond collision. Without this, the idempotency
+    // assertion flakes whenever the two calls cross a millisecond boundary under
+    // load (husky pre-push, CI workers, etc.).
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    try {
+      const result1 = transformRequestBody(originalBody, mockSignature, mockRuntime);
+      const result2 = transformRequestBody(originalBody, mockSignature, mockRuntime);
+      expect(result1).toBe(result2);
+    } finally {
+      vi.useRealTimers();
+    }
 
-    // Both calls should produce identical results from same input
-    expect(result1).toBe(result2);
-
-    // Original should be unchanged
     const parsedOriginal = JSON.parse(originalBody);
     expect(parsedOriginal.tools[0].name).toBe("read_file");
   });
