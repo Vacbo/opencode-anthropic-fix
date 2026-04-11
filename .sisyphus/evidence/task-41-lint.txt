@@ -1,0 +1,65 @@
+
+> @vacbo/opencode-anthropic-fix@0.1.0 lint
+> eslint .
+
+
+/Users/vacbo/Documents/Projects/opencode-anthropic-fix/scripts/mock-upstream.js
+  3:14  error  A `require()` style import is forbidden  @typescript-eslint/no-require-imports
+  3:14  error  'require' is not defined                 no-undef
+
+/Users/vacbo/Documents/Projects/opencode-anthropic-fix/scripts/rotation-test.js
+  3:12  error  A `require()` style import is forbidden  @typescript-eslint/no-require-imports
+  3:12  error  'require' is not defined                 no-undef
+  4:14  error  A `require()` style import is forbidden  @typescript-eslint/no-require-imports
+  4:14  error  'require' is not defined                 no-undef
+  5:12  error  A `require()` style import is forbidden  @typescript-eslint/no-require-imports
+  5:12  error  'require' is not defined                 no-undef
+  6:14  error  A `require()` style import is forbidden  @typescript-eslint/no-require-imports
+  6:14  error  'require' is not defined                 no-undef
+  7:27  error  A `require()` style import is forbidden  @typescript-eslint/no-require-imports
+  7:27  error  'require' is not defined                 no-undef
+
+/Users/vacbo/Documents/Projects/opencode-anthropic-fix/src/__tests__/helpers/conversation-history.smoke.test.ts
+   22:8   warning  'Conversation' is defined but never used. Allowed unused vars must match /^_/u       @typescript-eslint/no-unused-vars
+   24:8   warning  'ToolUseBlock' is defined but never used. Allowed unused vars must match /^_/u       @typescript-eslint/no-unused-vars
+   25:8   warning  'ToolResultBlock' is defined but never used. Allowed unused vars must match /^_/u    @typescript-eslint/no-unused-vars
+  300:13  warning  'counter1' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+/Users/vacbo/Documents/Projects/opencode-anthropic-fix/src/__tests__/helpers/sse.ts
+  154:9  warning  'encoder' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+/Users/vacbo/Documents/Projects/opencode-anthropic-fix/src/accounts.dedup.test.ts
+   71:48  warning  `import()` type annotations are forbidden  @typescript-eslint/consistent-type-imports
+  141:48  warning  `import()` type annotations are forbidden  @typescript-eslint/consistent-type-imports
+
+/Users/vacbo/Documents/Projects/opencode-anthropic-fix/src/bun-fetch.test.ts
+  23:47  warning  `import()` type annotations are forbidden  @typescript-eslint/consistent-type-imports
+  35:38  warning  `import()` type annotations are forbidden  @typescript-eslint/consistent-type-imports
+  44:43  warning  `import()` type annotations are forbidden  @typescript-eslint/consistent-type-imports
+  73:43  warning  `import()` type annotations are forbidden  @typescript-eslint/consistent-type-imports
+
+/Users/vacbo/Documents/Projects/opencode-anthropic-fix/src/bun-fetch.ts
+    7:1   warning  Imports "CircuitState" are only used as type  @typescript-eslint/consistent-type-imports
+  177:7   warning  Unexpected console statement                  no-console
+  181:5   warning  Unexpected console statement                  no-console
+  371:17  error    Empty block statement                         no-empty
+  398:9   warning  Unexpected console statement                  no-console
+  405:13  warning  Unexpected console statement                  no-console
+  408:11  warning  Unexpected console statement                  no-console
+
+/Users/vacbo/Documents/Projects/opencode-anthropic-fix/src/circuit-breaker.test.ts
+  1:36  warning  'beforeEach' is defined but never used. Allowed unused vars must match /^_/u      @typescript-eslint/no-unused-vars
+  2:32  warning  'CircuitBreaker' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+/Users/vacbo/Documents/Projects/opencode-anthropic-fix/src/response/streaming.ts
+  201:11  error  Empty block statement  no-empty
+  472:15  error  Empty block statement  no-empty
+  477:13  error  Empty block statement  no-empty
+
+/Users/vacbo/Documents/Projects/opencode-anthropic-fix/src/storage.ts
+  320:7  warning  Unexpected console statement  no-console
+
+✖ 36 problems (16 errors, 20 warnings)
+  0 errors and 1 warning potentially fixable with the `--fix` option.
+
+EXIT=1

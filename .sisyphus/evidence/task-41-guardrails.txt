@@ -1,0 +1,87 @@
+# Guardrail Greps — Task 41 Final Regression
+Generated: 2026-04-11T03:41:45Z
+
+## 1. healthCheckFails|MAX_HEALTH_FAILS (expect 0)
+src/bun-fetch.test.ts:121:    expect(source).not.toMatch(/^let (proxyPort|proxyProcess|starting|healthCheckFails|exitHandlerRegistered)\b/m);
+src/bun-fetch.test.ts:124:  it("does not hard-code a fixed port, pid file, or MAX_HEALTH_FAILS singleton constants", async () => {
+src/bun-fetch.test.ts:127:    expect(source).not.toMatch(/\b(FIXED_PORT|PID_FILE|MAX_HEALTH_FAILS|healthCheckFails)\b/);
+src/bun-fetch.test.ts:150:  it("uses a circuit breaker instead of a shared healthCheckFails counter", async () => {
+src/bun-fetch.test.ts:154:    expect(source).not.toContain("healthCheckFails");
+
+## 2. 48372|FIXED_PORT (expect 0)
+src/__tests__/helpers/mock-bun-proxy.smoke.test.ts:18:    const child = proxy.mockSpawn("bun", ["run", "./bun-proxy.ts", "48372"], {
+src/__tests__/helpers/mock-bun-proxy.smoke.test.ts:33:    expect(onData.mock.calls[0][0].toString()).toContain("BUN_PROXY_PORT=48372");
+src/__tests__/helpers/mock-bun-proxy.smoke.test.ts:38:    const child = proxy.mockSpawn("bun", ["run", "./bun-proxy.ts", "48372"], {
+src/__tests__/helpers/mock-bun-proxy.smoke.test.ts:55:    await expect((async () => proxy.mockSpawn("bun", ["run", "./bun-proxy.ts", "48372"], {}))()).rejects.toThrow(
+src/__tests__/helpers/mock-bun-proxy.smoke.test.ts:64:    const child = proxy.mockSpawn("bun", ["run", "./bun-proxy.ts", "48372"], {
+src/__tests__/helpers/mock-bun-proxy.smoke.test.ts:68:    const fetchPromise = child.forwardFetch("http://127.0.0.1:48372/", {
+src/bun-fetch.test.ts:127:    expect(source).not.toMatch(/\b(FIXED_PORT|PID_FILE|MAX_HEALTH_FAILS|healthCheckFails)\b/);
+src/bun-fetch.test.ts:128:    expect(source).not.toContain("48372");
+src/bun-fetch.test.ts:135:    expect(source).not.toMatch(/String\(FIXED_PORT\)|48372/);
+
+## 3. opencode-bun-proxy\.pid|PID_FILE (expect 0)
+src/bun-fetch.test.ts:127:    expect(source).not.toMatch(/\b(FIXED_PORT|PID_FILE|MAX_HEALTH_FAILS|healthCheckFails)\b/);
+
+## 4. process.on uncaughtException (expect 0)
+(no matches)
+
+## 5. process.on unhandledRejection (expect 0)
+(no matches)
+
+## 6. process.on SIGINT (expect 0)
+src/bun-proxy.ts:289:  process.on("SIGINT", () => {
+scripts/mock-upstream.js:180:process.on("SIGINT", () => shutdown(0));
+
+## 7. process.exit in TS files (expect 0)
+src/parent-pid-watcher.ts:96:      process.exit(exitCode);
+src/cli.ts:2066:    .then((code) => process.exit(code))
+src/cli.ts:2069:      process.exit(1);
+src/bun-fetch.test.ts:157:  it("installs no global process.on handlers or process.exit calls", async () => {
+src/bun-fetch.test.ts:305:  it("falls back gracefully when Bun spawn fails without calling process.exit", async () => {
+src/bun-fetch.test.ts:312:      throw new Error(`unexpected process.exit(${code ?? ""})`);
+src/bun-fetch.test.ts:313:    }) as typeof process.exit);
+src/bun-proxy.ts:237:  const exit = options.exit ?? process.exit;
+src/bun-proxy.ts:282:    process.exit(exitCode);
+src/bun-proxy.ts:301:    process.exit(1);
+scripts/install.ts:211:    process.exit(1);
+scripts/install.ts:318:    process.exit(command ? 1 : 0);
+scripts/analysis/extract-fingerprint.ts:356:    process.exit(1);
+scripts/analysis/extract-fingerprint.ts:398:  process.exit(1);
+scripts/analysis/extract-cc-bundle.ts:119:  process.exit(1);
+scripts/analysis/diff-fingerprints.ts:155:    process.exit(1);
+scripts/analysis/diff-fingerprints.ts:171:    process.exit(2);
+scripts/analysis/mitm-capture.ts:20:        process.exit(1);
+scripts/analysis/mitm-capture.ts:44:    process.exit(1);
+scripts/analysis/mitm-capture.ts:75:    process.exit(1);
+scripts/analysis/mitm-capture.ts:80:    process.exit(result.status);
+scripts/analysis/npm-watcher.ts:31:        process.exit(1);
+scripts/analysis/npm-watcher.ts:165:  process.exit(1);
+
+## 8. CURRENT_VERSION = 1 in storage.ts (expect exactly 1 match)
+48:const CURRENT_VERSION = 1;
+
+
+## Scoped Analysis (runtime plugin code only)
+
+### Files excluded from scoped grep:
+- src/**/*.test.ts (test files with negative assertions)
+- src/__tests__/ (test fixtures and helpers)
+- src/bun-proxy.ts (standalone child proxy process)
+- src/parent-pid-watcher.ts (explicit parent-death watcher)
+- src/cli.ts (standalone CLI entry point)
+- scripts/ (analysis/install/mock scripts)
+
+### Scoped grep: SIGINT in runtime plugin code (expect 0)
+(no matches)
+
+### Scoped grep: process.exit in runtime plugin code (expect 0)
+(no matches)
+
+### Scoped grep: healthCheckFails|MAX_HEALTH_FAILS in runtime plugin code (expect 0)
+(no matches)
+
+### Scoped grep: FIXED_PORT|48372 in src/bun-fetch.ts (expect 0)
+(no matches)
+
+### Scoped grep: opencode-bun-proxy.pid|PID_FILE in src/bun-fetch.ts (expect 0)
+(no matches)
