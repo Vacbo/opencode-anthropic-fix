@@ -1,10 +1,25 @@
-import { parseRetryAfterHeader, parseRetryAfterMsHeader, parseShouldRetryHeader } from "../backoff.js";
+import {
+  isRetriableNetworkError,
+  parseRetryAfterHeader,
+  parseRetryAfterMsHeader,
+  parseShouldRetryHeader,
+} from "../backoff.js";
 
 export interface RetryConfig {
   maxRetries: number;
   initialDelayMs: number;
   maxDelayMs: number;
   jitterFraction: number;
+}
+
+export interface RetryAttemptContext {
+  attempt: number;
+  forceFreshConnection: boolean;
+}
+
+export interface RetryOptions extends Partial<RetryConfig> {
+  shouldRetryError?: (error: unknown) => boolean;
+  shouldRetryResponse?: (response: Response) => boolean;
 }
 
 const DEFAULT_RETRY_CONFIG: RetryConfig = {
@@ -31,22 +46,41 @@ export function shouldRetryStatus(status: number, shouldRetryHeader: boolean | n
 }
 
 export async function fetchWithRetry(
-  doFetch: () => Promise<Response>,
-  config: Partial<RetryConfig> = {},
+  doFetch: (context: RetryAttemptContext) => Promise<Response>,
+  options: RetryOptions = {},
 ): Promise<Response> {
-  const resolvedConfig: RetryConfig = { ...DEFAULT_RETRY_CONFIG, ...config };
+  const resolvedConfig: RetryConfig = { ...DEFAULT_RETRY_CONFIG, ...options };
+  const shouldRetryError = options.shouldRetryError ?? isRetriableNetworkError;
+  const shouldRetryResponse =
+    options.shouldRetryResponse ??
+    ((response: Response) => {
+      const shouldRetryHeader = parseShouldRetryHeader(response);
+      return shouldRetryStatus(response.status, shouldRetryHeader);
+    });
+
+  let forceFreshConnection = false;
 
   for (let attempt = 0; ; attempt++) {
-    const response = await doFetch();
+    let response: Response;
+
+    try {
+      response = await doFetch({ attempt, forceFreshConnection });
+    } catch (error) {
+      if (!shouldRetryError(error) || attempt >= resolvedConfig.maxRetries) {
+        throw error;
+      }
+
+      const delayMs = calculateRetryDelay(attempt, resolvedConfig);
+      await waitFor(delayMs);
+      forceFreshConnection = true;
+      continue;
+    }
 
     if (response.ok) {
       return response;
     }
 
-    const shouldRetryHeader = parseShouldRetryHeader(response);
-    const shouldRetry = shouldRetryStatus(response.status, shouldRetryHeader);
-
-    if (!shouldRetry || attempt >= resolvedConfig.maxRetries) {
+    if (!shouldRetryResponse(response) || attempt >= resolvedConfig.maxRetries) {
       return response;
     }
 
@@ -56,5 +90,6 @@ export async function fetchWithRetry(
       calculateRetryDelay(attempt, resolvedConfig);
 
     await waitFor(delayMs);
+    forceFreshConnection = false;
   }
 }

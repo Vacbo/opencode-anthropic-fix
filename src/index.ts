@@ -518,12 +518,40 @@ export async function AnthropicAuthPlugin({
 
                 let response: Response;
                 const fetchInput = requestInput as string | URL | Request;
-                try {
-                  response = await fetchWithTransport(fetchInput, {
+                const buildTransportRequestInit = (
+                  headers: Headers,
+                  requestBody: RequestInit["body"],
+                  forceFreshConnection: boolean,
+                ): RequestInit => {
+                  const requestHeadersForTransport = new Headers(headers);
+                  if (forceFreshConnection) {
+                    requestHeadersForTransport.set("connection", "close");
+                    requestHeadersForTransport.set("x-proxy-disable-keepalive", "true");
+                  } else {
+                    requestHeadersForTransport.delete("connection");
+                    requestHeadersForTransport.delete("x-proxy-disable-keepalive");
+                  }
+
+                  return {
                     ...requestInit,
-                    body,
-                    headers: requestHeaders,
-                  });
+                    body: requestBody,
+                    headers: requestHeadersForTransport,
+                    ...(forceFreshConnection ? { keepalive: false } : {}),
+                  };
+                };
+
+                try {
+                  response = await fetchWithRetry(
+                    async ({ forceFreshConnection }) =>
+                      fetchWithTransport(
+                        fetchInput,
+                        buildTransportRequestInit(requestHeaders, body, forceFreshConnection),
+                      ),
+                    {
+                      maxRetries: 2,
+                      shouldRetryResponse: () => false,
+                    },
+                  );
                 } catch (err) {
                   const fetchError = err instanceof Error ? err : new Error(String(err));
                   if (accountManager && account) {
@@ -582,7 +610,7 @@ export async function AnthropicAuthPlugin({
 
                     let retryCount = 0;
                     const retried = await fetchWithRetry(
-                      async () => {
+                      async ({ forceFreshConnection }) => {
                         if (retryCount === 0) {
                           retryCount += 1;
                           return response;
@@ -596,11 +624,10 @@ export async function AnthropicAuthPlugin({
                           requestContext.preparedBody === undefined
                             ? undefined
                             : cloneBodyForRetry(requestContext.preparedBody);
-                        return fetchWithTransport(retryUrl, {
-                          ...requestInit,
-                          body: retryBody,
-                          headers: headersForRetry,
-                        });
+                        return fetchWithTransport(
+                          retryUrl,
+                          buildTransportRequestInit(headersForRetry, retryBody, forceFreshConnection),
+                        );
                       },
                       { maxRetries: 2 },
                     );

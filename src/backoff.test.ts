@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   calculateBackoffMs,
   isAccountSpecificError,
+  isRetriableNetworkError,
   parseRateLimitReason,
   parseRetryAfterHeader,
   parseRetryAfterMsHeader,
@@ -232,6 +233,30 @@ describe("parseRateLimitReason", () => {
       error: { message: "We're unable to verify your membership benefits" },
     });
     expect(parseRateLimitReason(403, body)).toBe("AUTH_FAILED");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isRetriableNetworkError
+// ---------------------------------------------------------------------------
+
+describe("isRetriableNetworkError", () => {
+  it("returns true for retryable connection reset codes", () => {
+    const error = Object.assign(new Error("socket died"), {
+      code: "ECONNRESET",
+    });
+
+    expect(isRetriableNetworkError(error)).toBe(true);
+  });
+
+  it("returns true for Bun proxy upstream reset messages", () => {
+    expect(isRetriableNetworkError(new Error("Bun proxy upstream error: Connection reset by server"))).toBe(true);
+  });
+
+  it("returns false for user abort errors", () => {
+    const error = new DOMException("The operation was aborted", "AbortError");
+
+    expect(isRetriableNetworkError(error)).toBe(false);
   });
 });
 

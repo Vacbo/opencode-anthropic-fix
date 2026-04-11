@@ -4,6 +4,26 @@ const QUOTA_EXHAUSTED_BACKOFFS = [60_000, 300_000, 1_800_000, 7_200_000];
 const AUTH_FAILED_BACKOFF = 5_000;
 const RATE_LIMIT_EXCEEDED_BACKOFF = 30_000;
 const MIN_BACKOFF_MS = 2_000;
+const RETRIABLE_NETWORK_ERROR_CODES = new Set(["ECONNRESET", "ECONNREFUSED", "EPIPE", "ETIMEDOUT", "UND_ERR_SOCKET"]);
+const NON_RETRIABLE_ERROR_NAMES = new Set(["AbortError", "TimeoutError", "APIUserAbortError"]);
+const RETRIABLE_NETWORK_ERROR_MESSAGES = [
+  "bun proxy upstream error",
+  "connection reset by peer",
+  "connection reset by server",
+  "econnreset",
+  "econnrefused",
+  "epipe",
+  "etimedout",
+  "fetch failed",
+  "network connection lost",
+  "socket hang up",
+  "und_err_socket",
+];
+
+interface ErrorWithCode extends Error {
+  code?: string;
+  cause?: unknown;
+}
 
 /**
  * Parse the Retry-After header from a response.
@@ -130,6 +150,69 @@ function bodyHasAccountError(body: string | object | null | undefined): boolean 
     messageSignals.some((signal) => message.includes(signal)) ||
     messageSignals.some((signal) => text.includes(signal))
   );
+}
+
+function collectErrorChain(error: unknown): ErrorWithCode[] {
+  const queue: unknown[] = [error];
+  const visited = new Set<unknown>();
+  const chain: ErrorWithCode[] = [];
+
+  while (queue.length > 0) {
+    const candidate = queue.shift();
+    if (candidate == null || visited.has(candidate)) {
+      continue;
+    }
+
+    visited.add(candidate);
+
+    if (candidate instanceof Error) {
+      const typedCandidate = candidate as ErrorWithCode;
+      chain.push(typedCandidate);
+      if (typedCandidate.cause !== undefined) {
+        queue.push(typedCandidate.cause);
+      }
+      continue;
+    }
+
+    if (typeof candidate === "object" && "cause" in candidate) {
+      queue.push((candidate as { cause?: unknown }).cause);
+    }
+  }
+
+  return chain;
+}
+
+/**
+ * Check whether an error represents a transient transport/network failure.
+ */
+export function isRetriableNetworkError(error: unknown): boolean {
+  if (typeof error === "string") {
+    const text = error.toLowerCase();
+    return RETRIABLE_NETWORK_ERROR_MESSAGES.some((signal) => text.includes(signal));
+  }
+
+  const chain = collectErrorChain(error);
+  if (chain.length === 0) {
+    return false;
+  }
+
+  for (const candidate of chain) {
+    if (NON_RETRIABLE_ERROR_NAMES.has(candidate.name)) {
+      return false;
+    }
+
+    const code = candidate.code?.toUpperCase();
+    if (code && RETRIABLE_NETWORK_ERROR_CODES.has(code)) {
+      return true;
+    }
+
+    const message = candidate.message.toLowerCase();
+    if (RETRIABLE_NETWORK_ERROR_MESSAGES.some((signal) => message.includes(signal))) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**

@@ -149,4 +149,31 @@ describe("fetchWithRetry", () => {
     expect(doFetch).toHaveBeenCalledTimes(2);
     expect(elapsedMs).toBeGreaterThanOrEqual(2900);
   });
+
+  it("retries thrown retryable network errors and marks the next attempt as fresh-connection", async () => {
+    const forceFreshConnectionByAttempt: boolean[] = [];
+    const doFetch = vi.fn(async ({ forceFreshConnection = false }: { forceFreshConnection?: boolean } = {}) => {
+      forceFreshConnectionByAttempt.push(forceFreshConnection);
+      if (forceFreshConnectionByAttempt.length === 1) {
+        throw Object.assign(new Error("Connection reset by server"), { code: "ECONNRESET" });
+      }
+
+      return makeResponse(200);
+    });
+
+    const response = await fetchWithRetry(doFetch, FAST_RETRY_CONFIG);
+
+    expect(response.status).toBe(200);
+    expect(doFetch).toHaveBeenCalledTimes(2);
+    expect(forceFreshConnectionByAttempt).toEqual([false, true]);
+  });
+
+  it("does not retry user abort errors", async () => {
+    const doFetch = vi.fn(async () => {
+      throw new DOMException("The operation was aborted", "AbortError");
+    });
+
+    await expect(fetchWithRetry(doFetch, FAST_RETRY_CONFIG)).rejects.toThrow(/aborted/i);
+    expect(doFetch).toHaveBeenCalledTimes(1);
+  });
 });

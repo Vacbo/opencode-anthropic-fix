@@ -8,6 +8,7 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 600_000;
 const DEFAULT_PARENT_EXIT_CODE = 1;
 const DEFAULT_PARENT_POLL_INTERVAL_MS = 5_000;
 const HEALTH_PATH = "/__health";
+const PROXY_DISABLE_KEEPALIVE_HEADER = "x-proxy-disable-keepalive";
 const DEBUG_ENABLED = process.env.OPENCODE_ANTHROPIC_DEBUG === "1";
 
 interface ProxyRequestHandlerOptions {
@@ -85,11 +86,16 @@ function createDefaultParentWatcherFactory(): ParentWatcherFactory {
     });
 }
 
-function sanitizeForwardHeaders(source: Headers): Headers {
+function sanitizeForwardHeaders(source: Headers, forceFreshConnection = false): Headers {
   const headers = new Headers(source);
-  ["x-proxy-url", "host", "connection", "content-length"].forEach((headerName) => {
+  [PROXY_DISABLE_KEEPALIVE_HEADER, "x-proxy-url", "host", "connection", "content-length"].forEach((headerName) => {
     headers.delete(headerName);
   });
+
+  if (forceFreshConnection) {
+    headers.set("connection", "close");
+  }
+
   return headers;
 }
 
@@ -161,11 +167,13 @@ async function createUpstreamInit(req: Request, signal: AbortSignal): Promise<Re
   const method = req.method || "GET";
   const hasBody = method !== "GET" && method !== "HEAD";
   const bodyText = hasBody ? await req.text() : "";
+  const forceFreshConnection = req.headers.get(PROXY_DISABLE_KEEPALIVE_HEADER) === "true";
 
   return {
     method,
-    headers: sanitizeForwardHeaders(req.headers),
+    headers: sanitizeForwardHeaders(req.headers, forceFreshConnection),
     signal,
+    ...(forceFreshConnection ? { keepalive: false } : {}),
     ...(hasBody && bodyText.length > 0 ? { body: bodyText } : {}),
   };
 }
