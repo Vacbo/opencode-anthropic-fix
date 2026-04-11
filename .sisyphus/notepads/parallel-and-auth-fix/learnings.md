@@ -407,3 +407,22 @@ Evidence: .sisyphus/evidence/task-6-conversation-smoke.txt
 - Native fallback is safer when it is treated as an explicit status event, not a silent branch: `onProxyStatus` now needs a distinct fallback signal plus the reason that forced degradation.
 - Pending-request queues should carry the fallback reason through to the final `globalThis.fetch(input, init)` call so hidden retry/body tests can prove the original `RequestInit` was not rewritten on the native path.
 - Once Bun availability is known to be false for an instance, short-circuiting future proxy starts avoids pointless spawn churn and makes breaker-open/native fallback behavior deterministic.
+
+## Task 26: Index fetch interceptor GREEN (2026-04-10)
+
+- Resolving `requestInit.body` before the account loop and keeping a request-scoped body clone makes service-wide retries deterministic for `Request` inputs and avoids consuming the original stream twice.
+- Reusing the already transformed attempt body for service retries keeps fingerprinted prompt content stable across retries; rebuilding from scratch changed the billing hash between attempts.
+- Per-request skip tracking should include account-specific HTTP failures (`429`/auth-style responses), not just refresh/fetch exceptions, or sticky selection can immediately pick the same bad account again inside the same request.
+- Wiring a per-plugin `createBunFetch()` instance works cleanly with tests when the interceptor falls back to the currently mocked `globalThis.fetch`; that keeps the proxy lifecycle isolated without breaking URL-based harness assertions.
+
+## Task 27: Stream completeness error propagation GREEN (2026-04-10)
+
+- Stream truncation is easier to reason about when EOF failures use a dedicated `StreamTruncatedError` with structured context instead of a plain `Error` string.
+- The most useful truncation context is the in-flight SSE label (`message_delta`, `content_block_start(tool_use)`, `content_block_delta(input_json_delta)`) plus any open block index; that makes consumer-side logs actionable without treating the failure like auth/account rotation.
+- Logging stream-completeness failures at the fetch-interceptor boundary should be observational only: emit `debugLog(...)`, preserve the original error, and keep account health state unchanged.
+
+## Task 28: Client disconnect abort propagation GREEN (2026-04-10)
+
+- Keeping the timeout controller manual in `bun-proxy.ts` still allows explicit `AbortSignal.any([req.signal, timeoutSignal])` composition without reintroducing the dangling timeout-listener behavior noted during T19.
+- `bun-fetch.ts` should resolve the proxy signal from `init.signal` first and fall back to `Request.signal` so both direct `fetch(url, { signal })` and `fetch(new Request(url, { signal }))` flows preserve disconnect cancellation into the local proxy hop.
+- A focused Vitest regression can assert disconnect propagation by capturing the upstream mock's `init.signal`, aborting the inbound controller, and expecting the proxy response to settle as `499` while that captured signal flips to `aborted`.

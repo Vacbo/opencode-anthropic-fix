@@ -41,7 +41,6 @@ type RequestInitWithDuplex = RequestInit & {
 };
 
 interface AbortContext {
-  signal: AbortSignal;
   timeoutSignal: AbortSignal;
   cancelTimeout(): void;
 }
@@ -121,7 +120,7 @@ function resolveTargetUrl(req: Request, allowedHosts: ReadonlySet<string>): URL 
   }
 }
 
-function createAbortContext(req: Request, requestTimeoutMs: number): AbortContext {
+function createAbortContext(requestTimeoutMs: number): AbortContext {
   const timeoutController = new AbortController();
   const timer = setTimeout(() => {
     timeoutController.abort(new DOMException("Upstream request timed out", "TimeoutError"));
@@ -130,7 +129,6 @@ function createAbortContext(req: Request, requestTimeoutMs: number): AbortContex
   timer.unref?.();
 
   return {
-    signal: AbortSignal.any([req.signal, timeoutController.signal]),
     timeoutSignal: timeoutController.signal,
     cancelTimeout(): void {
       clearTimeout(timer);
@@ -204,8 +202,9 @@ export function createProxyRequestHandler(options: ProxyRequestHandlerOptions): 
       return targetUrl;
     }
 
-    const abortContext = createAbortContext(req, requestTimeoutMs);
-    const upstreamInit = await createUpstreamInit(req, abortContext.signal);
+    const abortContext = createAbortContext(requestTimeoutMs);
+    const upstreamSignal = AbortSignal.any([req.signal, abortContext.timeoutSignal]);
+    const upstreamInit = await createUpstreamInit(req, upstreamSignal);
     logRequest(targetUrl, req);
 
     try {
@@ -216,7 +215,7 @@ export function createProxyRequestHandler(options: ProxyRequestHandlerOptions): 
         headers: copyResponseHeaders(upstreamResponse.headers),
       });
     } catch (error) {
-      if (abortContext.signal.aborted && isAbortError(error)) {
+      if (upstreamSignal.aborted && isAbortError(error)) {
         return createAbortResponse(req, abortContext.timeoutSignal);
       }
 

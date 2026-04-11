@@ -374,6 +374,39 @@ describe("bun-proxy parallel request contract (RED)", () => {
     });
   });
 
+  it("client disconnect aborts the upstream fetch signal", async () => {
+    let upstreamSignal: AbortSignal | null | undefined;
+    const upstreamResponse = createDeferred<Response>();
+    const fetchImpl = vi.fn((_input: string | URL | Request, init?: RequestInit) => {
+      upstreamSignal = init?.signal;
+      init?.signal?.addEventListener(
+        "abort",
+        () => {
+          upstreamResponse.reject(init.signal?.reason ?? new DOMException("client disconnected", "AbortError"));
+        },
+        { once: true },
+      );
+
+      return upstreamResponse.promise;
+    }) as typeof fetch;
+    const handler = await createProxyRequestHandler(fetchImpl);
+    const controller = new AbortController();
+    const responsePromise = handler(makeProxyRequest(123, { signal: controller.signal }));
+
+    await flushMicrotasks();
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(upstreamSignal).toBeDefined();
+    expect(upstreamSignal?.aborted).toBe(false);
+
+    controller.abort(new DOMException("client disconnected", "AbortError"));
+
+    await expect(responsePromise).resolves.toMatchObject({ status: 499 });
+    expect(upstreamSignal?.aborted).toBe(true);
+    expect(upstreamSignal?.reason).toBeInstanceOf(DOMException);
+    expect((upstreamSignal?.reason as DOMException | undefined)?.name).toBe("AbortError");
+  });
+
   it("releases all in-flight bookkeeping after repeated bursts to keep memory bounded", async () => {
     const proxy = createMockBunProxy({
       forwardToMockFetch: vi.fn(async (_input, init) => new Response(String(init?.body), { status: 200 })),

@@ -97,14 +97,24 @@ function toRequestUrl(input: FetchInput): string {
   return typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
 }
 
+function resolveProxySignal(input: FetchInput, init?: RequestInit): AbortSignal | undefined {
+  if (init?.signal) {
+    return init.signal;
+  }
+
+  return input instanceof Request ? input.signal : undefined;
+}
+
 function buildProxyRequestInit(input: FetchInput, init?: RequestInit): RequestInit {
   const targetUrl = toRequestUrl(input);
   const headers = toHeaders(init?.headers);
+  const signal = resolveProxySignal(input, init);
   headers.set("x-proxy-url", targetUrl);
 
   return {
     ...init,
     headers,
+    ...(signal ? { signal } : {}),
   };
 }
 
