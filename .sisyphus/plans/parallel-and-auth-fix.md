@@ -3254,7 +3254,7 @@ Run: `npx vitest run` + `npx tsc --noEmit` + `npm run build`. Expected: T10, T14
   - Files: `scripts/qa-parallel.sh`, `scripts/rotation-test.js`, `scripts/mock-upstream.js`, `README.md` (append usage note), `CHANGELOG.md` (append line)
   - Pre-commit: `chmod +x scripts/qa-parallel.sh && bash scripts/qa-parallel.sh && ANTHROPIC_ACCOUNTS_FILE=/tmp/rotation-test-$(date +%s).json node scripts/rotation-test.js`
 
-- [ ] 40. Bulk sweep: update cross-wave existing tests for new APIs (FULL SUITE GATE)
+- [x] 40. Bulk sweep: update cross-wave existing tests for new APIs (FULL SUITE GATE)
 
   **What to do**:
   - This is the FULL-SUITE reconciliation point. Run `npx vitest run` and capture all currently-failing tests that are NOT part of the Wave 2 RED→GREEN transitions (those should all be GREEN by now)
@@ -3308,7 +3308,7 @@ Run: `npx vitest run` + `npx tsc --noEmit` + `npm run build`. Expected: T10, T14
   - Files: whatever test files need updating
   - Pre-commit: `npx vitest run`
 
-- [ ] 41. Regression suite — final checkpoint before Final Verification Wave
+- [x] 41. Regression suite — final checkpoint before Final Verification Wave
 
   **What to do**:
   - Run the full regression suite and capture all evidence:

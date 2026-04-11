@@ -1,0 +1,36 @@
+1b4afe8 chore: final regression verification pass
+4c9b578 test: update existing tests for identity-first APIs and new lock constants
+d1353ab test(qa): scripts/qa-parallel.sh + rotation-test.js + mock-upstream.js for manual verification
+ca3ea53 docs(changelog): v0.1.0 entry for parallel-request and account-dedup fix
+af55df1 docs: rename agents.md to AGENTS.md and update README + mimese docs for per-instance proxy lifecycle
+c5dde4e fix(refresh-helpers): idle-to-foreground single-flight re-check after rejection
+2fea5e6 fix(refresh-lock): widen staleMs and timeoutMs to exceed CC refresh duration
+c03e79b fix(cli): deduplicate cmdLogin by stable identity, reuse cmdReauth pattern
+61daa47 fix(index): deduplicate CC and OAuth authorize flows by stable identity
+7cbe830 fix(storage): preserve source field on load and tolerate unknown version additively
+74cebf1 fix(accounts): saveToDisk unions disk-only accounts to prevent silent drops
+4c95b04 refactor(accounts): identity-first addAccount and preserve source in syncActiveIndexFromDisk
+9b5b0e6 feat(account-identity): AccountIdentity abstraction with email/label/legacy resolution
+5423630 fix(bun-proxy): tie upstream abort signal to client disconnect
+e19463e feat(streaming): propagate stream-completeness errors to consumer
+c76a5b0 refactor(index): body clone-before-use and per-request interceptor state
+11a7301 fix(body): runtime init.body invariant and double-prefix defense
+9da569f fix(mcp): add non-SSE JSON path for tool name de-prefixing
+ab13c5c refactor(streaming): event-framing SSE wrapper with message_stop terminal validation
+4a3fb48 fix(bun-fetch): harden native fetch fallback for graceful degradation
+f602847 fix(bun-fetch): per-instance proxy manager with circuit breaker integration
+114f98f feat(wave3): implement circuit-breaker, parent-pid-watcher, bun-proxy rewrite
+b929a78 test(index): add failing RED tests for concurrent fetch interceptor
+8d2d0ba test(bun-proxy): add failing RED tests for parallel request handling
+d3b6286 test(bun-fetch): add failing RED tests for per-instance proxy
+178656a test(streaming): add failing RED tests for SSE edge cases
+806cf0b test(accounts): add failing RED tests for identity-based dedup
+aaef454 test(parent-pid): add failing RED tests for parent death detection
+641c314 test(body): add failing RED tests for tool name drift defense
+1755ac5 test(account-identity): add failing RED tests for stable identity
+4c8b5e3 test(circuit-breaker): add failing RED tests for per-client breaker
+f45d33e test(infra): add plugin-fetch-harness helper for integration tests
+1abba3f test(infra): add helper test files and evidence for Wave 1
+35d8987 test(infra): register helper globs and complete Wave 1
+9a89d5b test(infra): add deferred helper for controllable promise races
+b2694e9 chore(plan): capture baseline state before parallel-and-auth-fix plan

@@ -1,0 +1,39 @@
+$ eslint .
+
+/Users/vacbo/Documents/Projects/opencode-anthropic-fix/src/__tests__/helpers/conversation-history.smoke.test.ts
+   22:8   warning  'Conversation' is defined but never used. Allowed unused vars must match /^_/u       @typescript-eslint/no-unused-vars
+   24:8   warning  'ToolUseBlock' is defined but never used. Allowed unused vars must match /^_/u       @typescript-eslint/no-unused-vars
+   25:8   warning  'ToolResultBlock' is defined but never used. Allowed unused vars must match /^_/u    @typescript-eslint/no-unused-vars
+  300:13  warning  'counter1' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+/Users/vacbo/Documents/Projects/opencode-anthropic-fix/src/__tests__/helpers/sse.ts
+  154:9  warning  'encoder' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+/Users/vacbo/Documents/Projects/opencode-anthropic-fix/src/accounts.dedup.test.ts
+   71:48  warning  `import()` type annotations are forbidden  @typescript-eslint/consistent-type-imports
+  141:48  warning  `import()` type annotations are forbidden  @typescript-eslint/consistent-type-imports
+
+/Users/vacbo/Documents/Projects/opencode-anthropic-fix/src/bun-fetch.test.ts
+  23:47  warning  `import()` type annotations are forbidden  @typescript-eslint/consistent-type-imports
+  35:38  warning  `import()` type annotations are forbidden  @typescript-eslint/consistent-type-imports
+  44:43  warning  `import()` type annotations are forbidden  @typescript-eslint/consistent-type-imports
+  73:43  warning  `import()` type annotations are forbidden  @typescript-eslint/consistent-type-imports
+
+/Users/vacbo/Documents/Projects/opencode-anthropic-fix/src/bun-fetch.ts
+    7:1   warning  Imports "CircuitState" are only used as type  @typescript-eslint/consistent-type-imports
+  177:7   warning  Unexpected console statement                  no-console
+  181:5   warning  Unexpected console statement                  no-console
+  400:9   warning  Unexpected console statement                  no-console
+  407:13  warning  Unexpected console statement                  no-console
+  410:11  warning  Unexpected console statement                  no-console
+
+/Users/vacbo/Documents/Projects/opencode-anthropic-fix/src/circuit-breaker.test.ts
+  1:36  warning  'beforeEach' is defined but never used. Allowed unused vars must match /^_/u      @typescript-eslint/no-unused-vars
+  2:32  warning  'CircuitBreaker' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+/Users/vacbo/Documents/Projects/opencode-anthropic-fix/src/storage.ts
+  320:7  warning  Unexpected console statement  no-console
+
+✖ 20 problems (0 errors, 20 warnings)
+  0 errors and 1 warning potentially fixable with the `--fix` option.
+

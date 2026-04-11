@@ -1,0 +1,60 @@
+=== 4c8b5e3 ===
+test(circuit-breaker): add failing RED tests for per-client breaker
+
+TDD RED phase. These tests are expected to fail until T17 lands.
+Bypassing pre-commit with --no-verify because tests MUST be committed failing.
+Paired GREEN task: T17
+
+- 19 tests covering circuit breaker state machine
+- Per-client isolation for account-specific handling
+- CLOSED -> OPEN -> HALF_OPEN -> CLOSED transitions
+- Configurable thresholds and timeouts
+
+
+
+=== 1755ac5 ===
+test(account-identity): add failing RED tests for stable identity
+
+
+
+=== 641c314 ===
+test(body): add failing RED tests for tool name drift defense
+
+
+
+=== aaef454 ===
+test(parent-pid): add failing RED tests for parent death detection
+
+TDD RED phase: this commit intentionally imports the future parent-pid-watcher module, so Vitest fails at module resolution until T18 lands.
+
+Using --no-verify because pre-commit would reject intentionally failing tests in the RED phase.
+
+Paired GREEN task: T18
+
+
+
+=== 806cf0b ===
+test(accounts): add failing RED tests for identity-based dedup
+
+
+
+=== 178656a ===
+test(streaming): add failing RED tests for SSE edge cases
+
+
+
+=== d3b6286 ===
+test(bun-fetch): add failing RED tests for per-instance proxy
+
+
+
+=== 8d2d0ba ===
+test(bun-proxy): add failing RED tests for parallel request handling
+
+
+
+=== b929a78 ===
+test(index): add failing RED tests for concurrent fetch interceptor
+
+
+

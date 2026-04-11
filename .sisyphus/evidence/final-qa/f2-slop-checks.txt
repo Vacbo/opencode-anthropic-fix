@@ -1,0 +1,84 @@
+=== AI-SLOP CHECK: as any ===
+
+=== AI-SLOP CHECK: @ts-ignore / @ts-expect-error ===
+
+=== AI-SLOP CHECK: empty catches ===
+
+=== AI-SLOP CHECK: leftover TODOs ===
+
+=== AI-SLOP CHECK: console.* outside tests ===
+src/env.ts:116:    console.error(
+src/index.ts:91:    console.error("[opencode-anthropic-auth]", ...args);
+src/accounts.ts:693:          console.error("[opencode-anthropic-auth] saveToDisk failed:", (err as Error).message);
+src/accounts.ts:1003:            console.error("[opencode-anthropic-auth] forced statsDeltas flush failed:", (err as Error).message);
+src/commands/prompts.ts:20:    console.log(`\n${accounts.length} account(s) configured:`);
+src/commands/prompts.ts:25:      console.log(`  ${acc.index + 1}. ${name}${active}${disabled}`);
+src/commands/prompts.ts:27:    console.log("");
+src/commands/prompts.ts:36:      console.log("Please enter 'a', 'f', 'm', or 'c'.");
+src/commands/prompts.ts:51:    console.log("\nManage accounts:");
+src/commands/prompts.ts:55:      console.log(`  ${acc.index + 1}. ${name} [${status}]`);
+src/commands/prompts.ts:57:    console.log("");
+src/commands/prompts.ts:71:          console.log(`Removed account ${idx + 1}.`);
+src/commands/prompts.ts:74:        console.log("Invalid account number.");
+src/commands/prompts.ts:82:        console.log(`Account ${num} is now ${newState ? "enabled" : "disabled"}.`);
+src/commands/prompts.ts:86:      console.log("Invalid input.");
+src/bun-fetch.ts:177:      console.error(message);
+src/bun-fetch.ts:181:    console.error(message);
+src/bun-fetch.ts:398:        console.error(`[opencode-anthropic-auth] Routing through Bun proxy at :${port} → ${url}`);
+src/bun-fetch.ts:405:            console.error("[opencode-anthropic-auth] Dumped request to /tmp/opencode-last-request.json");
+src/bun-fetch.ts:408:          console.error("[opencode-anthropic-auth] Failed to dump request:", error);
+src/cli.ts:749:      console.error("[opencode-anthropic-auth] failed to persist refreshed tokens:", err);
+src/cli.ts:855:    console.log("anthropic: no accounts configured");
+src/cli.ts:880:  console.log(line);
+src/cli.ts:1401:    console.log(c.yellow("No accounts configured."));
+src/cli.ts:1402:    console.log(c.dim("Run 'opencode auth login' and select 'Claude Pro/Max' to add accounts."));
+src/cli.ts:1407:    console.error(c.red("Error: 'manage' requires an interactive terminal."));
+src/cli.ts:1408:    console.error(c.dim("Use 'enable', 'disable', 'remove', 'switch' for non-interactive use."));
+src/cli.ts:1416:      console.log(c.dim("No accounts remaining."));
+src/cli.ts:1424:    console.log("");
+src/cli.ts:1425:    console.log(c.bold(`${accounts.length} account(s):`));
+src/cli.ts:1431:      console.log(`  ${c.bold(String(num))}. ${label}${active}${disabled}`);
+src/cli.ts:1433:    console.log("");
+src/cli.ts:1434:    console.log(c.dim(`Strategy: ${currentStrategy}`));
+src/cli.ts:1462:      console.log(c.green(`Strategy changed to '${strategy}'.`));
+src/cli.ts:1490:          console.log(c.yellow(`Account ${num} is disabled. Enable it first.`));
+src/cli.ts:1496:        console.log(c.green(`Switched to #${num} (${switchLabel}).`));
+src/cli.ts:1501:          console.log(c.dim(`Account ${num} is already enabled.`));
+src/cli.ts:1506:        console.log(c.green(`Enabled account #${num}.`));
+src/cli.ts:1511:          console.log(c.dim(`Account ${num} is already disabled.`));
+src/cli.ts:1516:          console.log(c.red("Cannot disable the last enabled account."));
+src/cli.ts:1525:        console.log(c.yellow(`Disabled account #${num}.`));
+src/cli.ts:1544:          console.log(c.green(`Removed account #${num}.`));
+src/cli.ts:1546:          console.log(c.dim("Cancelled."));
+src/cli.ts:1555:        console.log(c.green(`Reset tracking for account #${num}.`));
+src/cli.ts:1569:  console.log(`
+src/cli.ts:1654:const nativeConsoleLog = console.log.bind(console);
+src/cli.ts:1655:const nativeConsoleError = console.error.bind(console);
+src/cli.ts:1660:    console.log = (...args) => {
+src/cli.ts:1665:    console.error = (...args) => {
+src/cli.ts:1677:    console.log = nativeConsoleLog;
+src/cli.ts:1678:    console.error = nativeConsoleError;
+src/cli.ts:1705:      console.log(`
+src/cli.ts:1721:      console.log(`
+src/cli.ts:1738:      console.log(`
+src/cli.ts:1751:      console.log(`
+src/cli.ts:1763:      console.log(`
+src/cli.ts:1773:      console.error(c.red(`Unknown command group: ${group}`));
+src/cli.ts:1806:      console.error(c.red(`Unknown auth command: ${subcommand}`));
+src/cli.ts:1807:      console.error(c.dim("Run 'opencode-anthropic-auth auth help' for usage."));
+src/cli.ts:1845:      console.error(c.red(`Unknown account command: ${subcommand}`));
+src/cli.ts:1846:      console.error(c.dim("Run 'opencode-anthropic-auth account help' for usage."));
+src/cli.ts:1873:      console.error(c.red(`Unknown usage command: ${subcommand}`));
+src/cli.ts:1874:      console.error(c.dim("Run 'opencode-anthropic-auth usage help' for usage."));
+src/cli.ts:1900:      console.error(c.red(`Unknown config command: ${subcommand}`));
+src/cli.ts:1901:      console.error(c.dim("Run 'opencode-anthropic-auth config help' for usage."));
+src/cli.ts:1923:      console.error(c.red(`Unknown manage command: ${subcommand}`));
+src/cli.ts:1924:      console.error(c.dim("Run 'opencode-anthropic-auth manage help' for usage."));
+src/cli.ts:2026:      console.error(c.red(`Unknown command: ${command}`));
+src/cli.ts:2027:      console.error(c.dim("Run 'opencode-anthropic-auth help' for usage."));
+src/cli.ts:2068:      console.error(c.red(`Fatal: ${err.message}`));
+src/storage.ts:320:      console.warn(
+src/bun-proxy.ts:185:  console.error("\n[bun-proxy] === FORWARDED REQUEST ===");
+src/bun-proxy.ts:186:  console.error(`[bun-proxy] ${req.method} ${targetUrl.toString()}`);
+src/bun-proxy.ts:187:  console.error(`[bun-proxy] Headers: ${JSON.stringify(logHeaders, null, 2)}`);
+src/bun-proxy.ts:188:  console.error("[bun-proxy] =========================\n");
