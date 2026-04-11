@@ -298,6 +298,12 @@ Evidence: .sisyphus/evidence/task-6-conversation-smoke.txt
 - The current dedup bugs are easy to expose with identity-preserving assertions: count stays constant, original `id` survives token rotation, `source` remains intact, and in-flight object references stay stable.
 - `createInMemoryStorage().mutateDiskOnly()` is enough to model the save/sync failure modes: dropped disk-only accounts, stale numeric `activeIndex`, and sync rebuilds that replace objects instead of mutating them in place.
 
+## Task 23: Streaming SSE Rewrite (2026-04-10)
+
+- The safest SSE transform is block-oriented, not line-oriented: buffer until `\n\n`, parse the whole event, then emit one rewritten block.
+- `TextDecoder` needs `fatal: true` plus a final `decoder.decode()` flush to surface malformed trailing UTF-8 instead of silently dropping it.
+- Strict terminal validation can stay on the direct `transformResponse(response)` path while callback-enabled interceptor usage remains compatibility-friendly for older stream fixtures.
+
 ## Task 10: Account Identity RED Tests (2025-04-10)
 
 ### Completed

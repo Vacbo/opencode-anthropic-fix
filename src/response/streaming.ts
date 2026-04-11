@@ -4,7 +4,14 @@
 
 import { isAccountSpecificError, parseRateLimitReason } from "../backoff.js";
 import type { UsageStats } from "../types.js";
-import { stripMcpPrefixFromSSE } from "./mcp.js";
+import { stripMcpPrefixFromParsedEvent } from "./mcp.js";
+
+const MAX_UNTERMINATED_SSE_BUFFER = 256 * 1024;
+
+interface OpenContentBlockState {
+  type: string;
+  partialJson: string;
+}
 
 /**
  * Update running usage stats from a parsed SSE event.
@@ -59,6 +66,177 @@ export function getSSEDataPayload(eventBlock: string): string | null {
   return payload;
 }
 
+function getSSEEventType(eventBlock: string): string | null {
+  for (const line of eventBlock.split("\n")) {
+    if (!line.startsWith("event:")) continue;
+    const eventType = line.slice(6).trimStart();
+    if (eventType) return eventType;
+  }
+
+  return null;
+}
+
+function formatSSEEventBlock(eventType: string, parsed: unknown, prettyPrint: boolean): string {
+  const json = prettyPrint ? JSON.stringify(parsed, null, 2) : JSON.stringify(parsed);
+  const lines = [`event: ${eventType}`];
+
+  for (const line of json.split("\n")) {
+    lines.push(`data: ${line}`);
+  }
+
+  lines.push("", "");
+  return lines.join("\n");
+}
+
+function hasRecordedUsage(stats: UsageStats): boolean {
+  return stats.inputTokens > 0 || stats.outputTokens > 0 || stats.cacheReadTokens > 0 || stats.cacheWriteTokens > 0;
+}
+
+function getErrorMessage(parsed: unknown): string {
+  if (!parsed || typeof parsed !== "object") {
+    return "stream terminated with error event";
+  }
+
+  const error = (parsed as Record<string, unknown>).error;
+  if (!error || typeof error !== "object") {
+    return "stream terminated with error event";
+  }
+
+  const message = (error as Record<string, unknown>).message;
+  return typeof message === "string" && message ? message : "stream terminated with error event";
+}
+
+function getEventIndex(parsed: Record<string, unknown>, eventType: string): number {
+  const index = parsed.index;
+  if (typeof index !== "number") {
+    throw new Error(`invalid SSE ${eventType} event: missing numeric index`);
+  }
+
+  return index;
+}
+
+function validateEventState(
+  parsed: Record<string, unknown>,
+  eventType: string,
+  openContentBlocks: Map<number, OpenContentBlockState>,
+): void {
+  switch (eventType) {
+    case "content_block_start": {
+      const index = getEventIndex(parsed, eventType);
+      const contentBlock = parsed.content_block;
+      if (!contentBlock || typeof contentBlock !== "object") {
+        throw new Error("invalid SSE content_block_start event: missing content_block");
+      }
+
+      if (openContentBlocks.has(index)) {
+        throw new Error(`duplicate content_block_start for index ${index}`);
+      }
+
+      const blockType = (contentBlock as Record<string, unknown>).type;
+      if (typeof blockType !== "string" || !blockType) {
+        throw new Error("invalid SSE content_block_start event: missing content_block.type");
+      }
+
+      openContentBlocks.set(index, {
+        type: blockType,
+        partialJson: "",
+      });
+      return;
+    }
+
+    case "content_block_delta": {
+      const index = getEventIndex(parsed, eventType);
+      const blockState = openContentBlocks.get(index);
+      if (!blockState) {
+        throw new Error(`orphan content_block_delta for index ${index}`);
+      }
+
+      const delta = parsed.delta;
+      if (!delta || typeof delta !== "object") {
+        throw new Error("invalid SSE content_block_delta event: missing delta");
+      }
+
+      const deltaType = (delta as Record<string, unknown>).type;
+      if (deltaType === "input_json_delta") {
+        if (blockState.type !== "tool_use") {
+          throw new Error(`orphan input_json_delta for non-tool_use block ${index}`);
+        }
+
+        const partialJson = (delta as Record<string, unknown>).partial_json;
+        if (typeof partialJson !== "string") {
+          throw new Error("invalid SSE content_block_delta event: missing delta.partial_json");
+        }
+
+        blockState.partialJson += partialJson;
+      }
+
+      return;
+    }
+
+    case "content_block_stop": {
+      const index = getEventIndex(parsed, eventType);
+      const blockState = openContentBlocks.get(index);
+      if (!blockState) {
+        throw new Error(`orphan content_block_stop for index ${index}`);
+      }
+
+      if (blockState.type === "tool_use" && blockState.partialJson) {
+        try {
+          JSON.parse(blockState.partialJson);
+        } catch {
+          throw new Error(`incomplete tool_use partial_json for index ${index}`);
+        }
+      }
+
+      openContentBlocks.delete(index);
+      return;
+    }
+
+    default:
+      return;
+  }
+}
+
+function getOpenBlockError(openContentBlocks: Map<number, OpenContentBlockState>): Error | null {
+  for (const [index, blockState] of openContentBlocks) {
+    if (blockState.type === "tool_use") {
+      if (blockState.partialJson) {
+        return new Error(`incomplete tool_use partial_json for index ${index}`);
+      }
+
+      return new Error(`unfinished tool_use block at index ${index}`);
+    }
+  }
+
+  if (openContentBlocks.size > 0) {
+    return new Error("stream ended with unfinished content block");
+  }
+
+  return null;
+}
+
+function getMessageStopBlockError(openContentBlocks: Map<number, OpenContentBlockState>): Error | null {
+  for (const [index, blockState] of openContentBlocks) {
+    if (blockState.partialJson) {
+      return new Error(`incomplete tool_use partial_json for index ${index}`);
+    }
+  }
+
+  return null;
+}
+
+function normalizeChunk(text: string): string {
+  return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
+function toStreamError(error: unknown): Error {
+  if (error instanceof Error) {
+    return error;
+  }
+
+  return new Error(String(error));
+}
+
 /**
  * Parse one SSE event payload and return account-error details if present.
  */
@@ -103,12 +281,11 @@ export function transformResponse(
   onUsage?: ((stats: UsageStats) => void) | null,
   onAccountError?: ((details: { reason: string; invalidateToken: boolean }) => void) | null,
 ): Response {
-  if (!response.body) return response;
+  if (!response.body || !isEventStreamResponse(response)) return response;
 
   const reader = response.body.getReader();
-  const decoder = new TextDecoder();
+  const decoder = new TextDecoder("utf-8", { fatal: true });
   const encoder = new TextEncoder();
-  const EMPTY_CHUNK = new Uint8Array();
 
   const stats: UsageStats = {
     inputTokens: 0,
@@ -117,106 +294,163 @@ export function transformResponse(
     cacheWriteTokens: 0,
   };
   let sseBuffer = "";
-  let sseRewriteBuffer = "";
   let accountErrorHandled = false;
+  let hasSeenMessageStop = false;
+  let hasSeenError = false;
+  const strictEventValidation = !onUsage && !onAccountError;
+  const openContentBlocks = new Map<number, OpenContentBlockState>();
 
-  function processSSEBuffer(flush = false): void {
-    while (true) {
-      const boundary = sseBuffer.indexOf("\n\n");
+  function enqueueNormalizedEvent(controller: ReadableStreamDefaultController<Uint8Array>, eventBlock: string): void {
+    const payload = getSSEDataPayload(eventBlock);
+    if (!payload) {
+      return;
+    }
 
-      if (boundary === -1) {
-        if (!flush) return;
-        if (!sseBuffer.trim()) {
-          sseBuffer = "";
-          return;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(payload);
+    } catch {
+      throw new Error("invalid SSE event: malformed JSON payload");
+    }
+
+    const eventType =
+      getSSEEventType(eventBlock) ?? ((parsed as Record<string, unknown> | null)?.type as string | undefined);
+    if (typeof eventType !== "string" || !eventType) {
+      throw new Error("invalid SSE event: missing event type");
+    }
+
+    const parsedRecord = parsed as Record<string, unknown>;
+    if (strictEventValidation) {
+      validateEventState(parsedRecord, eventType, openContentBlocks);
+    }
+    stripMcpPrefixFromParsedEvent(parsedRecord);
+
+    if (onUsage) {
+      extractUsageFromSSEEvent(parsedRecord, stats);
+    }
+
+    if (onAccountError && !accountErrorHandled) {
+      const details = getMidStreamAccountError(parsedRecord);
+      if (details) {
+        accountErrorHandled = true;
+        onAccountError(details);
+      }
+    }
+
+    if (eventType === "message_stop") {
+      if (strictEventValidation) {
+        const openBlockError = getMessageStopBlockError(openContentBlocks);
+        if (openBlockError) {
+          throw openBlockError;
         }
+
+        openContentBlocks.clear();
       }
 
-      const eventBlock = boundary === -1 ? sseBuffer : sseBuffer.slice(0, boundary);
-      sseBuffer = boundary === -1 ? "" : sseBuffer.slice(boundary + 2);
+      hasSeenMessageStop = true;
+    }
 
-      const payload = getSSEDataPayload(eventBlock);
-      if (!payload) {
-        if (boundary === -1) return;
-        continue;
-      }
+    if (eventType === "error") {
+      hasSeenError = true;
+    }
 
-      try {
-        const parsed = JSON.parse(payload);
+    controller.enqueue(encoder.encode(formatSSEEventBlock(eventType, parsedRecord, strictEventValidation)));
 
-        if (onUsage) {
-          extractUsageFromSSEEvent(parsed, stats);
-        }
-
-        if (onAccountError && !accountErrorHandled) {
-          const details = getMidStreamAccountError(parsed);
-          if (details) {
-            accountErrorHandled = true;
-            onAccountError(details);
-          }
-        }
-      } catch {
-        // Ignore malformed event payloads.
-      }
-
-      if (boundary === -1) return;
+    if (eventType === "error" && strictEventValidation) {
+      throw new Error(getErrorMessage(parsedRecord));
     }
   }
 
-  function rewriteSSEChunk(chunk: string, flush = false): string {
-    sseRewriteBuffer += chunk;
+  function processBufferedEvents(controller: ReadableStreamDefaultController<Uint8Array>): boolean {
+    let emitted = false;
 
-    if (!flush) {
-      const boundary = sseRewriteBuffer.lastIndexOf("\n");
-      if (boundary === -1) return "";
-      const complete = sseRewriteBuffer.slice(0, boundary + 1);
-      sseRewriteBuffer = sseRewriteBuffer.slice(boundary + 1);
-      return stripMcpPrefixFromSSE(complete);
+    while (true) {
+      const boundary = sseBuffer.indexOf("\n\n");
+      if (boundary === -1) {
+        if (sseBuffer.length > MAX_UNTERMINATED_SSE_BUFFER) {
+          throw new Error("unterminated SSE event buffer exceeded limit");
+        }
+        return emitted;
+      }
+
+      const eventBlock = sseBuffer.slice(0, boundary);
+      sseBuffer = sseBuffer.slice(boundary + 2);
+
+      if (!eventBlock.trim()) {
+        continue;
+      }
+
+      enqueueNormalizedEvent(controller, eventBlock);
+      emitted = true;
     }
+  }
 
-    if (!sseRewriteBuffer) return "";
-    const finalText = stripMcpPrefixFromSSE(sseRewriteBuffer);
-    sseRewriteBuffer = "";
-    return finalText;
+  async function failStream(controller: ReadableStreamDefaultController<Uint8Array>, error: unknown): Promise<void> {
+    const streamError = toStreamError(error);
+
+    try {
+      await reader.cancel(streamError);
+    } catch {}
+
+    controller.error(streamError);
   }
 
   const stream = new ReadableStream({
     async pull(controller) {
-      const { done, value } = await reader.read();
-      if (done) {
-        processSSEBuffer(true);
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            const flushedText = decoder.decode();
+            if (flushedText) {
+              sseBuffer += normalizeChunk(flushedText);
+              processBufferedEvents(controller);
+            }
 
-        const rewrittenTail = rewriteSSEChunk("", true);
-        if (rewrittenTail) {
-          controller.enqueue(encoder.encode(rewrittenTail));
+            if (sseBuffer.trim()) {
+              if (strictEventValidation) {
+                throw new Error("stream truncated without message_stop");
+              }
+
+              enqueueNormalizedEvent(controller, sseBuffer);
+              sseBuffer = "";
+            }
+
+            if (strictEventValidation) {
+              const openBlockError = getOpenBlockError(openContentBlocks);
+              if (openBlockError) {
+                throw openBlockError;
+              }
+
+              if (!hasSeenMessageStop && !hasSeenError) {
+                throw new Error("stream truncated without message_stop");
+              }
+            }
+
+            if (onUsage && hasRecordedUsage(stats)) {
+              onUsage(stats);
+            }
+
+            controller.close();
+            return;
+          }
+
+          const text = decoder.decode(value, { stream: true });
+          if (!text) {
+            continue;
+          }
+
+          sseBuffer += normalizeChunk(text);
+          if (processBufferedEvents(controller)) {
+            return;
+          }
         }
-
-        if (
-          onUsage &&
-          (stats.inputTokens > 0 || stats.outputTokens > 0 || stats.cacheReadTokens > 0 || stats.cacheWriteTokens > 0)
-        ) {
-          onUsage(stats);
-        }
-        controller.close();
-        return;
+      } catch (error) {
+        await failStream(controller, error);
       }
-
-      const text = decoder.decode(value, { stream: true });
-
-      if (onUsage || onAccountError) {
-        // Normalize CRLF for parser only; preserve original bytes for passthrough.
-        sseBuffer += text.replace(/\r\n/g, "\n");
-        processSSEBuffer(false);
-      }
-
-      const rewrittenText = rewriteSSEChunk(text, false);
-      if (rewrittenText) {
-        controller.enqueue(encoder.encode(rewrittenText));
-      } else {
-        // Keep the pull/read loop progressing when this chunk only extends a
-        // partial line buffered for later rewrite.
-        controller.enqueue(EMPTY_CHUNK);
-      }
+    },
+    cancel(reason) {
+      return reader.cancel(reason);
     },
   });
 
