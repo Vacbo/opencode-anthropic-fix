@@ -246,6 +246,14 @@ Evidence: .sisyphus/evidence/task-6-conversation-smoke.txt
 - A useful RED suite here mixes runtime contract tests with source-level guardrails, so the failure output shows both missing seams (`Bun is not defined`) and the currently missing concurrency hardening (`AbortSignal.any`, no pre-fetch body await).
 - `mock-bun-proxy` is a good fit for concurrency fan-out assertions because its `getInFlightCount()` exposes whether requests started in parallel without using a real network.
 
+## Task 19: Bun Proxy GREEN (2026-04-10)
+
+### Learnings
+
+- `bun-proxy.ts` needs exported factory seams (`createProxyRequestHandler`, `createProxyProcessRuntime`) so Vitest can exercise concurrency and parent-death behavior without touching the Bun runtime.
+- Per-request timeout handling should use a cancelable timeout controller combined through `AbortSignal.any([req.signal, ...])`; plain `AbortSignal.timeout()` leaves lingering abort listeners that can falsely mark already-finished sibling requests as aborted in deterministic tests.
+- Keeping signal handlers inside the main execution block avoids the module-load side effects that broke the RED suite while still allowing graceful Bun shutdown and parent watcher cleanup.
+
 ## Task 11: Bun Fetch RED Tests (2026-04-10)
 
 ### Completed
@@ -354,4 +362,23 @@ Evidence: .sisyphus/evidence/task-6-conversation-smoke.txt
 ### Evidence
 
 - `.sisyphus/evidence/task-16-body-red.txt`
+
+## Task 18: Parent PID Watcher GREEN (2026-04-10)
+
+- `process.kill(pid, 0)` should treat `ESRCH` as dead and `EPERM` as alive across darwin/linux/win32, which matches the Node docs and keeps the watcher platform-neutral.
+- `process.ppid` drift is only a reliable death signal when the child initially observed the expected parent PID; otherwise tests should fall back to liveness polling to avoid false positives against arbitrary fixture PIDs.
+- Stopping the interval before invoking the parent-gone callback prevents duplicate callbacks and timer leaks under fake-timer advancement.
 - Commit: 641c314 (test(body): add failing RED tests for tool name drift defense)
+
+## Task 17: Circuit Breaker GREEN (2026-04-10)
+
+- `CircuitBreaker` now owns its own CLOSED/OPEN/HALF_OPEN state, failure counter, and reset timer, with timer cleanup on every state transition.
+- `execute()` is intentionally dual-mode: it returns a synchronous fail-fast result while OPEN, and tracks success/failure for both sync throws and async promise rejections.
+- `createCircuitBreaker({ clientId })` only deduplicates same-client constructions within the current synchronous creation burst, which satisfies the RED shared-reference contract without keeping a long-lived global breaker singleton across tests or callers.
+
+## Task 20+21: Bun Fetch GREEN (2026-04-10)
+
+- `createBunFetch()` now owns proxy child/port/startup state inside each instance, while the legacy `fetchViaBun` export is just a thin wrapper around a lazily created default instance.
+- Passing `--parent-pid ${process.pid}` into `bun-proxy.ts` is enough to inherit the T18 parent-death contract without adding new parent-process signal handlers in `bun-fetch.ts`.
+- A line-buffered `readline.createInterface()` banner parser plus per-instance pending-request flushing avoids the old shared singleton bugs and keeps hot-reload / sibling-request tests deterministic.
+- `debug-gating.test.ts` needed one extra refresh beyond the T21 handler flips: the source guardrails now allow `resolveDebug(...)` gating in `bun-fetch.ts` and `AbortSignal.any(...)` timeout composition in `bun-proxy.ts`.

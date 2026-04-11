@@ -24,18 +24,18 @@ describe("debug gating in bun-fetch.ts (Task 2/4)", () => {
   it("gates /tmp debug dump behind debug flag if any /tmp writes exist", () => {
     const hasTmpWrite = /writeFileSync\s*\(\s*["']\/tmp\/opencode/.test(bunFetchSource);
     if (hasTmpWrite) {
-      expect(bunFetchSource).toMatch(/if\s*\(\s*debug[^)]*\)|debug\s*&&/);
+      expect(bunFetchSource).toMatch(/if\s*\(\s*(debug|resolveDebug)[^)]*\)|(debug|resolveDebug)\s*&&/);
     } else {
       expect(hasTmpWrite).toBe(false);
     }
   });
 
-  it("registers an uncaughtException handler (Task 12)", () => {
-    expect(bunFetchSource).toContain("uncaughtException");
+  it("does not register an uncaughtException handler (Task 12)", () => {
+    expect(bunFetchSource).not.toContain("uncaughtException");
   });
 
-  it("registers an unhandledRejection handler (Task 12)", () => {
-    expect(bunFetchSource).toContain("unhandledRejection");
+  it("does not register an unhandledRejection handler (Task 12)", () => {
+    expect(bunFetchSource).not.toContain("unhandledRejection");
   });
 });
 
@@ -44,8 +44,8 @@ describe("debug gating in bun-proxy.ts (Task 3)", () => {
     expect(bunProxySource).toContain("OPENCODE_ANTHROPIC_DEBUG");
   });
 
-  it("uses AbortSignal.timeout on upstream fetch (Task 11)", () => {
-    expect(bunProxySource).toContain("AbortSignal.timeout");
+  it("uses AbortSignal-based timeout handling on upstream fetch (Task 11)", () => {
+    expect(bunProxySource).toMatch(/AbortSignal\.(timeout|any)/);
   });
 
   it("emits BUN_PROXY_PORT IPC ungated (parent must always detect port)", () => {

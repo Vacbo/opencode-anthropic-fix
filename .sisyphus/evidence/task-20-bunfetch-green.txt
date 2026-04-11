@@ -1,0 +1,23 @@
+
+[1m[46m RUN [49m[22m [36mv4.1.0 [39m[90m/Users/vacbo/Documents/Projects/opencode-anthropic-fix[39m
+
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m16 passed[39m[22m[90m (16)[39m
+[2m   Start at [22m 21:18:27
+[2m   Duration [22m 229ms[2m (transform 41ms, setup 0ms, import 43ms, tests 66ms, environment 0ms)[22m
+
+
+[1m[46m RUN [49m[22m [36mv4.1.0 [39m[90m/Users/vacbo/Documents/Projects/opencode-anthropic-fix[39m
+
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m11 passed[39m[22m[90m (11)[39m
+[2m   Start at [22m 21:18:27
+[2m   Duration [22m 142ms[2m (transform 13ms, setup 0ms, import 20ms, tests 3ms, environment 0ms)[22m
+
+
+> @vacbo/opencode-anthropic-fix@0.0.37 build
+> bun scripts/build.ts
+
+Built dist/opencode-anthropic-auth-plugin.js and dist/opencode-anthropic-auth-cli.mjs

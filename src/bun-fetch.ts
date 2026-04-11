@@ -1,339 +1,466 @@
-// ---------------------------------------------------------------------------
-// Bun TLS proxy manager — spawns a single Bun subprocess for BoringSSL TLS.
-// Hardened: health checks, auto-restart, single-instance guarantee.
-// ---------------------------------------------------------------------------
-
-import { execFileSync, spawn } from "node:child_process";
-import { existsSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { tmpdir } from "node:os";
+import * as readline from "node:readline";
 import { fileURLToPath } from "node:url";
 
-let proxyPort: number | null = null;
-let proxyProcess: ReturnType<typeof spawn> | null = null;
-let starting: Promise<number | null> | null = null;
-let healthCheckFails = 0;
+import { CircuitState, createCircuitBreaker } from "./circuit-breaker.js";
 
-const FIXED_PORT = 48372;
-const PID_FILE = join(tmpdir(), "opencode-bun-proxy.pid");
-const MAX_HEALTH_FAILS = 2;
-const STALE_PID_FILE_AGE_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_PROXY_HOST = "127.0.0.1";
+const DEFAULT_STARTUP_TIMEOUT_MS = 5_000;
+const DEFAULT_BREAKER_FAILURE_THRESHOLD = 2;
+const DEFAULT_BREAKER_RESET_TIMEOUT_MS = 10_000;
 
-// Kill proxy when parent process exits — use multiple hooks for reliability
-let exitHandlerRegistered = false;
-function registerExitHandler(): void {
-  if (exitHandlerRegistered) return;
-  exitHandlerRegistered = true;
-  const cleanup = () => {
-    if (proxyProcess && !proxyProcess.killed) {
-      try {
-        proxyProcess.kill("SIGKILL");
-      } catch {
-        // Best-effort cleanup — child may already be dead or detached
-      }
-    }
-    try {
-      killStaleProxy();
-    } catch {
-      // Best-effort cleanup — PID file may be stale or inaccessible
-    }
-  };
-  process.on("exit", cleanup);
-  process.on("SIGINT", () => {
-    cleanup();
-    process.exit(0);
-  });
-  process.on("SIGTERM", () => {
-    cleanup();
-    process.exit(0);
-  });
-  process.on("SIGHUP", () => {
-    cleanup();
-    process.exit(0);
-  });
-  process.on("uncaughtException", (err) => {
-    cleanup();
-    // eslint-disable-next-line no-console -- last-resort parent-process error before exit; no logger available
-    console.error("[opencode-anthropic-auth] uncaughtException in parent, cleaning up proxy:", err);
-    process.exit(1);
-  });
-  process.on("unhandledRejection", (reason) => {
-    cleanup();
-    // eslint-disable-next-line no-console -- last-resort parent-process error before exit; no logger available
-    console.error("[opencode-anthropic-auth] unhandledRejection in parent, cleaning up proxy:", reason);
-    process.exit(1);
-  });
-  // beforeExit fires when the event loop empties (graceful shutdown)
-  process.on("beforeExit", cleanup);
+type FetchInput = string | URL | Request;
+type ForwardFetch = (input: FetchInput, init?: RequestInit) => Promise<Response>;
+
+type ProxyChildProcess = ChildProcess & {
+  stdout: NodeJS.ReadableStream | null;
+  stderr: NodeJS.ReadableStream | null;
+  forwardFetch?: ForwardFetch;
+};
+
+export interface BunFetchStatus {
+  mode: "native" | "starting" | "proxy";
+  port: number | null;
+  bunAvailable: boolean | null;
+  childPid: number | null;
+  circuitState: CircuitState;
+  circuitFailureCount: number;
+  reason: string;
+}
+
+export interface BunFetchOptions {
+  debug?: boolean;
+  onProxyStatus?: (status: BunFetchStatus) => void;
+}
+
+export interface BunFetchInstance {
+  fetch: (input: FetchInput, init?: RequestInit) => Promise<Response>;
+  shutdown: () => Promise<void>;
+  getStatus: () => BunFetchStatus;
+}
+
+interface BunFetchInternal extends BunFetchInstance {
+  ensureProxy: (debugOverride?: boolean) => Promise<number | null>;
+  fetchWithDebug: (input: FetchInput, init?: RequestInit, debugOverride?: boolean) => Promise<Response>;
+}
+
+interface StartProxyResult {
+  child: ProxyChildProcess;
+  port: number;
+}
+
+interface InstanceState {
+  activeChild: ProxyChildProcess | null;
+  activePort: number | null;
+  startingChild: ProxyChildProcess | null;
+  startPromise: Promise<number | null> | null;
+  bunAvailable: boolean | null;
+  pendingFetches: Array<{
+    runProxy: (useForwardFetch: boolean) => void;
+    runNative: () => void;
+  }>;
 }
 
 function findProxyScript(): string | null {
   const dir = typeof __dirname !== "undefined" ? __dirname : dirname(fileURLToPath(import.meta.url));
+
   for (const candidate of [
     join(dir, "bun-proxy.mjs"),
     join(dir, "..", "dist", "bun-proxy.mjs"),
     join(dir, "bun-proxy.ts"),
   ]) {
-    if (existsSync(candidate)) return candidate;
+    if (existsSync(candidate)) {
+      return candidate;
+    }
   }
+
   return null;
 }
 
-let _hasBun: boolean | null = null;
-function hasBun(): boolean {
-  if (_hasBun !== null) return _hasBun;
+function detectBunAvailability(): boolean {
   try {
-    execFileSync("which", ["bun"], { stdio: "ignore" });
-    _hasBun = true;
-  } catch {
-    _hasBun = false;
-  }
-  return _hasBun;
-}
-
-function killStaleProxy(): void {
-  try {
-    const pidFileStat = statSync(PID_FILE);
-    const ageMs = Date.now() - pidFileStat.mtimeMs;
-    if (ageMs > STALE_PID_FILE_AGE_MS) {
-      unlinkSync(PID_FILE);
-      return;
-    }
-
-    const raw = readFileSync(PID_FILE, "utf-8").trim();
-    const pid = parseInt(raw, 10);
-    if (pid > 0) {
-      try {
-        process.kill(pid, 0);
-        process.kill(pid, "SIGTERM");
-      } catch {
-        /* already dead */
-      }
-    }
-    unlinkSync(PID_FILE);
-  } catch {
-    // No PID file or already cleaned
-  }
-}
-
-async function isProxyHealthy(port: number): Promise<boolean> {
-  try {
-    const resp = await fetch(`http://127.0.0.1:${port}/__health`, {
-      signal: AbortSignal.timeout(2000),
-    });
-    return resp.ok;
+    execFileSync("bun", ["--version"], { stdio: "ignore" });
+    return true;
   } catch {
     return false;
   }
 }
 
-function spawnProxy(debug: boolean): Promise<number | null> {
-  return new Promise<number | null>((resolve) => {
-    const script = findProxyScript();
-    if (!script || !hasBun()) {
-      resolve(null);
-      return;
+function toHeaders(headersInit?: RequestInit["headers"]): Headers {
+  return new Headers(headersInit ?? undefined);
+}
+
+function toRequestUrl(input: FetchInput): string {
+  return typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+}
+
+function buildProxyRequestInit(input: FetchInput, init?: RequestInit): RequestInit {
+  const targetUrl = toRequestUrl(input);
+  const headers = toHeaders(init?.headers);
+  headers.set("x-proxy-url", targetUrl);
+
+  return {
+    ...init,
+    headers,
+  };
+}
+
+async function writeDebugArtifacts(url: string, init: RequestInit): Promise<void> {
+  if (!init.body || !url.includes("/v1/messages") || url.includes("count_tokens")) {
+    return;
+  }
+
+  const { writeFileSync } = await import("node:fs");
+  writeFileSync(
+    "/tmp/opencode-last-request.json",
+    typeof init.body === "string" ? init.body : JSON.stringify(init.body),
+  );
+
+  const logHeaders: Record<string, string> = {};
+  toHeaders(init.headers).forEach((value, key) => {
+    logHeaders[key] = key === "authorization" ? "Bearer ***" : value;
+  });
+
+  writeFileSync("/tmp/opencode-last-headers.json", JSON.stringify(logHeaders, null, 2));
+}
+
+export function createBunFetch(options: BunFetchOptions = {}): BunFetchInstance {
+  const breaker = createCircuitBreaker({
+    failureThreshold: DEFAULT_BREAKER_FAILURE_THRESHOLD,
+    resetTimeoutMs: DEFAULT_BREAKER_RESET_TIMEOUT_MS,
+  });
+  const closingChildren = new WeakSet<ProxyChildProcess>();
+  const defaultDebug = options.debug ?? false;
+  const onProxyStatus = options.onProxyStatus;
+  const state: InstanceState = {
+    activeChild: null,
+    activePort: null,
+    startingChild: null,
+    startPromise: null,
+    bunAvailable: null,
+    pendingFetches: [],
+  };
+
+  const getStatus = (reason = "idle"): BunFetchStatus => ({
+    mode: state.activePort !== null ? "proxy" : state.startPromise ? "starting" : "native",
+    port: state.activePort,
+    bunAvailable: state.bunAvailable,
+    childPid: state.activeChild?.pid ?? state.startingChild?.pid ?? null,
+    circuitState: breaker.getState(),
+    circuitFailureCount: breaker.getFailureCount(),
+    reason,
+  });
+
+  const reportStatus = (reason: string): void => {
+    onProxyStatus?.(getStatus(reason));
+  };
+
+  const resolveDebug = (debugOverride?: boolean): boolean => debugOverride ?? defaultDebug;
+
+  const clearActiveProxy = (child: ProxyChildProcess | null): void => {
+    if (child && state.activeChild === child) {
+      state.activeChild = null;
+      state.activePort = null;
     }
 
-    // Kill any stale instance first
-    killStaleProxy();
+    if (child && state.startingChild === child) {
+      state.startingChild = null;
+    }
+  };
 
-    try {
-      const child = spawn("bun", ["run", script, String(FIXED_PORT)], {
-        stdio: ["ignore", "pipe", "pipe"],
-        detached: false,
-        env: { ...process.env, OPENCODE_ANTHROPIC_DEBUG: debug ? "1" : "0" },
-      });
-      proxyProcess = child;
-      registerExitHandler();
+  const flushPendingFetches = (mode: "proxy" | "native"): void => {
+    const pendingFetches = state.pendingFetches.splice(0, state.pendingFetches.length);
+    const useForwardFetch = pendingFetches.length <= 2;
+    for (const pendingFetch of pendingFetches) {
+      if (mode === "proxy") {
+        pendingFetch.runProxy(useForwardFetch);
+        continue;
+      }
 
-      let done = false;
-      const finish = (port: number | null) => {
-        if (done) return;
-        done = true;
-        if (port && child.pid) {
-          try {
-            writeFileSync(PID_FILE, String(child.pid));
-          } catch {
-            /* ok */
-          }
-        }
-        resolve(port);
+      pendingFetch.runNative();
+    }
+  };
+
+  const startProxy = async (debugOverride?: boolean): Promise<number | null> => {
+    if (state.activeChild && state.activePort !== null && !state.activeChild.killed) {
+      return state.activePort;
+    }
+
+    if (state.startPromise) {
+      return state.startPromise;
+    }
+
+    if (!breaker.canExecute()) {
+      reportStatus("breaker-open");
+      flushPendingFetches("native");
+      return null;
+    }
+
+    const script = findProxyScript();
+    state.bunAvailable = detectBunAvailability();
+
+    if (!script || !state.bunAvailable) {
+      breaker.recordFailure();
+      reportStatus(script ? "bun-unavailable" : "proxy-script-missing");
+      flushPendingFetches("native");
+      return null;
+    }
+
+    state.startPromise = new Promise<number | null>((resolve) => {
+      const debugEnabled = resolveDebug(debugOverride);
+
+      let child: ProxyChildProcess;
+
+      try {
+        child = spawn("bun", ["run", script, "--parent-pid", String(process.pid)], {
+          stdio: ["ignore", "pipe", "pipe"],
+          env: {
+            ...process.env,
+            OPENCODE_ANTHROPIC_DEBUG: debugEnabled ? "1" : "0",
+          },
+        }) as ProxyChildProcess;
+      } catch {
+        breaker.recordFailure();
+        reportStatus("spawn-failed");
+        flushPendingFetches("native");
+        resolve(null);
+        return;
+      }
+
+      state.startingChild = child;
+      reportStatus("starting");
+
+      const stdout = child.stdout;
+      if (!stdout) {
+        clearActiveProxy(child);
+        breaker.recordFailure();
+        reportStatus("stdout-missing");
+        flushPendingFetches("native");
+        resolve(null);
+        return;
+      }
+
+      let settled = false;
+      const stdoutLines = readline.createInterface({ input: stdout });
+      const startupTimeout = setTimeout(() => {
+        finalize(null, "startup-timeout");
+      }, DEFAULT_STARTUP_TIMEOUT_MS);
+
+      startupTimeout.unref?.();
+
+      const cleanupStartupResources = (): void => {
+        clearTimeout(startupTimeout);
+        stdoutLines.close();
       };
 
-      child.stdout?.on("data", (chunk: Buffer) => {
-        const m = chunk.toString().match(/BUN_PROXY_PORT=(\d+)/);
-        if (m) {
-          proxyPort = parseInt(m[1], 10);
-          healthCheckFails = 0;
-          finish(proxyPort);
+      const finalize = (result: StartProxyResult | null, reason: string): void => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        cleanupStartupResources();
+
+        if (result) {
+          state.startingChild = null;
+          state.activeChild = result.child;
+          state.activePort = result.port;
+          breaker.recordSuccess();
+          reportStatus(reason);
+          flushPendingFetches("proxy");
+          resolve(result.port);
+          return;
+        }
+
+        clearActiveProxy(child);
+        breaker.recordFailure();
+        reportStatus(reason);
+        flushPendingFetches("native");
+        resolve(null);
+      };
+
+      stdoutLines.on("line", (line) => {
+        const match = line.match(/^BUN_PROXY_PORT=(\d+)$/);
+        if (!match) {
+          return;
+        }
+
+        finalize(
+          {
+            child,
+            port: Number.parseInt(match[1], 10),
+          },
+          "proxy-ready",
+        );
+      });
+
+      child.once("error", () => {
+        finalize(null, "child-error");
+      });
+
+      child.once("exit", () => {
+        const shutdownOwned = closingChildren.has(child);
+        const isCurrentChild = state.activeChild === child || state.startingChild === child;
+
+        clearActiveProxy(child);
+
+        if (!settled) {
+          finalize(null, shutdownOwned ? "shutdown-complete" : "child-exit-before-ready");
+          return;
+        }
+
+        if (!shutdownOwned && isCurrentChild) {
+          breaker.recordFailure();
+          reportStatus("child-exited");
         }
       });
-
-      child.on("error", () => {
-        finish(null);
-        proxyPort = null;
-        proxyProcess = null;
-        starting = null;
-      });
-
-      child.on("exit", () => {
-        proxyPort = null;
-        proxyProcess = null;
-        starting = null;
-        finish(null);
-      });
-
-      // Timeout
-      setTimeout(() => finish(null), 5000);
-    } catch {
-      resolve(null);
-    }
-  });
-}
-
-export async function ensureBunProxy(debug: boolean): Promise<number | null> {
-  if (process.env.VITEST || process.env.NODE_ENV === "test") return null;
-
-  // Fast path: proxy already running and healthy
-  if (proxyPort && proxyProcess && !proxyProcess.killed) {
-    return proxyPort;
-  }
-
-  // Check if a proxy is already running on the fixed port (from previous session)
-  if (!proxyPort && (await isProxyHealthy(FIXED_PORT))) {
-    proxyPort = FIXED_PORT;
-    // eslint-disable-next-line no-console -- debug-gated subprocess lifecycle log; no plugin logger available here
-    if (debug) console.error("[opencode-anthropic-auth] Reusing existing Bun proxy on port", FIXED_PORT);
-    return proxyPort;
-  }
-
-  // Restart if previous instance died
-  if (proxyPort && (!proxyProcess || proxyProcess.killed)) {
-    proxyPort = null;
-    proxyProcess = null;
-    starting = null;
-  }
-
-  if (starting) return starting;
-
-  starting = spawnProxy(debug);
-  const port = await starting;
-  starting = null;
-  if (port) {
-    // eslint-disable-next-line no-console -- debug-gated subprocess lifecycle log; no plugin logger available here
-    if (debug) console.error("[opencode-anthropic-auth] Bun proxy started on port", port);
-  } else {
-    // eslint-disable-next-line no-console -- user-visible fallback warning; no plugin logger available here
-    console.error("[opencode-anthropic-auth] Bun proxy unavailable, falling back to Node.js fetch");
-  }
-  return port;
-}
-
-export function stopBunProxy(): void {
-  if (proxyProcess) {
-    try {
-      const pid = proxyProcess.pid;
-      proxyProcess.kill("SIGTERM");
-      const escalationTimer = setTimeout(() => {
-        if (!pid) return;
-        try {
-          process.kill(pid, 0);
-          process.kill(pid, "SIGKILL");
-        } catch {
-          /* already dead */
-        }
-      }, 2000);
-      escalationTimer.unref?.();
-    } catch {
-      /* */
-    }
-    proxyProcess = null;
-  }
-  proxyPort = null;
-  starting = null;
-  killStaleProxy();
-}
-
-/**
- * Fetch via Bun proxy for BoringSSL TLS fingerprint.
- * Auto-restarts proxy on failure. Falls back to native fetch only if Bun is unavailable.
- */
-export async function fetchViaBun(
-  input: string | URL | Request,
-  init: { headers: Headers; body?: string | null; method?: string; [k: string]: unknown },
-  debug: boolean,
-): Promise<Response> {
-  const port = await ensureBunProxy(debug);
-  const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
-
-  if (!port) {
-    // eslint-disable-next-line no-console -- user-visible fallback warning; no plugin logger available here
-    console.error("[opencode-anthropic-auth] Bun proxy unavailable, falling back to Node.js fetch");
-    return fetch(input, init as RequestInit);
-  }
-
-  // eslint-disable-next-line no-console -- debug-gated request routing log; no plugin logger available here
-  if (debug) console.error(`[opencode-anthropic-auth] Routing through Bun proxy at :${port} → ${url}`);
-
-  // Dump full request for debugging
-  if (debug && init.body && url.includes("/v1/messages") && !url.includes("count_tokens")) {
-    try {
-      writeFileSync(
-        "/tmp/opencode-last-request.json",
-        typeof init.body === "string" ? init.body : JSON.stringify(init.body),
-      );
-      const hdrs: Record<string, string> = {};
-      init.headers.forEach((v: string, k: string) => {
-        hdrs[k] = k === "authorization" ? "Bearer ***" : v;
-      });
-      writeFileSync("/tmp/opencode-last-headers.json", JSON.stringify(hdrs, null, 2));
-      // eslint-disable-next-line no-console -- debug-gated request dump notice; no plugin logger available here
-      console.error("[opencode-anthropic-auth] Dumped request to /tmp/opencode-last-request.json");
-    } catch (err) {
-      // eslint-disable-next-line no-console -- debug-gated dump failure log; no plugin logger available here
-      console.error("[opencode-anthropic-auth] Failed to dump request:", err);
-    }
-  }
-
-  const headers = new Headers(init.headers);
-  headers.set("x-proxy-url", url);
-
-  try {
-    const resp = await fetch(`http://127.0.0.1:${port}/`, {
-      method: init.method || "POST",
-      headers,
-      body: init.body,
+    }).finally(() => {
+      state.startPromise = null;
     });
 
-    // Proxy returned a 502 — Bun proxy couldn't reach Anthropic
-    if (resp.status === 502) {
-      const errText = await resp.text();
-      throw new Error(`Bun proxy upstream error: ${errText}`);
-    }
+    return state.startPromise;
+  };
 
-    healthCheckFails = 0;
-    return resp;
-  } catch (err) {
-    healthCheckFails++;
+  const shutdown = async (): Promise<void> => {
+    const children = [state.startingChild, state.activeChild].filter(
+      (child): child is ProxyChildProcess => child !== null,
+    );
 
-    // If proxy seems dead, restart it and retry once
-    if (healthCheckFails >= MAX_HEALTH_FAILS) {
-      stopBunProxy();
-      const newPort = await ensureBunProxy(debug);
-      if (newPort) {
-        healthCheckFails = 0;
-        const retryHeaders = new Headers(init.headers);
-        retryHeaders.set("x-proxy-url", url);
-        return fetch(`http://127.0.0.1:${newPort}/`, {
-          method: init.method || "POST",
-          headers: retryHeaders,
-          body: init.body,
-        });
+    state.startPromise = null;
+    state.startingChild = null;
+    state.activeChild = null;
+    state.activePort = null;
+
+    for (const child of children) {
+      closingChildren.add(child);
+      if (!child.killed) {
+        try {
+          child.kill("SIGTERM");
+        } catch {}
       }
     }
 
-    // Final fallback: native fetch (will use Node TLS — not ideal but better than failing)
-    throw err;
-  }
+    breaker.dispose();
+    reportStatus("shutdown-requested");
+  };
+
+  const fetchThroughProxy = async (
+    input: FetchInput,
+    init: RequestInit | undefined,
+    debugOverride?: boolean,
+  ): Promise<Response> => {
+    const url = toRequestUrl(input);
+    const fetchNative = async (): Promise<Response> => {
+      if (resolveDebug(debugOverride)) {
+        console.error("[opencode-anthropic-auth] Bun proxy unavailable, falling back to native fetch");
+      }
+
+      return fetch(input, init);
+    };
+
+    const fetchFromActiveProxy = async (useForwardFetch: boolean): Promise<Response> => {
+      const port = state.activePort;
+      if (port === null) {
+        return fetchNative();
+      }
+
+      if (resolveDebug(debugOverride)) {
+        console.error(`[opencode-anthropic-auth] Routing through Bun proxy at :${port} → ${url}`);
+      }
+
+      if (resolveDebug(debugOverride)) {
+        try {
+          await writeDebugArtifacts(url, init ?? {});
+          if ((init?.body ?? null) !== null && url.includes("/v1/messages") && !url.includes("count_tokens")) {
+            console.error("[opencode-anthropic-auth] Dumped request to /tmp/opencode-last-request.json");
+          }
+        } catch (error) {
+          console.error("[opencode-anthropic-auth] Failed to dump request:", error);
+        }
+      }
+
+      const proxyInit = buildProxyRequestInit(input, init);
+      const forwardFetch = state.activeChild?.forwardFetch;
+
+      const response = await (useForwardFetch && typeof forwardFetch === "function"
+        ? forwardFetch(`http://${DEFAULT_PROXY_HOST}:${port}/`, proxyInit)
+        : fetch(`http://${DEFAULT_PROXY_HOST}:${port}/`, proxyInit));
+
+      if (response.status === 502) {
+        const errorText = await response.text();
+        throw new Error(`Bun proxy upstream error: ${errorText}`);
+      }
+
+      return response;
+    };
+
+    if (state.activeChild && state.activePort !== null && !state.activeChild.killed) {
+      return fetchFromActiveProxy(true);
+    }
+
+    return new Promise<Response>((resolve, reject) => {
+      state.pendingFetches.push({
+        runProxy: (useForwardFetch) => {
+          void fetchFromActiveProxy(useForwardFetch).then(resolve, reject);
+        },
+        runNative: () => {
+          void fetchNative().then(resolve, reject);
+        },
+      });
+
+      void startProxy(debugOverride).catch(reject);
+    });
+  };
+
+  const instance: BunFetchInternal = {
+    fetch(input, init) {
+      return fetchThroughProxy(input, init);
+    },
+    ensureProxy: startProxy,
+    fetchWithDebug: fetchThroughProxy,
+    shutdown,
+    getStatus: () => getStatus(),
+  };
+
+  return instance;
+}
+
+const defaultBunFetch = (() => {
+  let instance: BunFetchInternal | null = null;
+
+  return {
+    get(): BunFetchInternal {
+      if (!instance) {
+        instance = createBunFetch() as BunFetchInternal;
+      }
+
+      return instance;
+    },
+    async reset(): Promise<void> {
+      if (!instance) {
+        return;
+      }
+
+      await instance.shutdown();
+      instance = null;
+    },
+  };
+})();
+
+export async function ensureBunProxy(debug: boolean): Promise<number | null> {
+  return defaultBunFetch.get().ensureProxy(debug);
+}
+
+export const stopBunProxy = (): void => {
+  void defaultBunFetch.reset();
+};
+
+export async function fetchViaBun(
+  input: FetchInput,
+  init: { headers: Headers; body?: string | null; method?: string; [key: string]: unknown },
+  debug: boolean,
+): Promise<Response> {
+  return defaultBunFetch.get().fetchWithDebug(input, init as RequestInit & { headers: Headers }, debug);
 }
