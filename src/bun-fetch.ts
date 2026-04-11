@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import * as readline from "node:readline";
 import { fileURLToPath } from "node:url";
 
-import type { CircuitState} from "./circuit-breaker.js";
+import type { CircuitState } from "./circuit-breaker.js";
 import { createCircuitBreaker } from "./circuit-breaker.js";
 
 const DEFAULT_PROXY_HOST = "127.0.0.1";
