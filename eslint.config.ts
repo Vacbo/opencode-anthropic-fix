@@ -60,7 +60,7 @@ export default tseslint.config(
   {
     // Test files and build scripts often use any for mocking and have
     // legitimate console output for debugging.
-    files: ["**/*.test.ts", "src/__tests__/**", "script/**", "scripts/**"],
+    files: ["**/*.test.ts", "src/__tests__/**", "script/**", "scripts/**", ".opencode/skills/**/scripts/**/*.mjs"],
     rules: {
       "no-console": "off",
       "@typescript-eslint/no-explicit-any": "off",

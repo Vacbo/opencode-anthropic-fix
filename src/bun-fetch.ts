@@ -172,6 +172,7 @@ export function createBunFetch(options: BunFetchOptions = {}): BunFetchInstance 
 
   const reportFallback = (reason: string, _debugOverride?: boolean): void => {
     onProxyStatus?.(getStatus(reason, "fallback"));
+    // eslint-disable-next-line no-console -- startup diagnostic for Bun unavailability; user-facing fallback notice
     console.error(
       `[opencode-anthropic-auth] Native fetch fallback engaged (${reason}); Bun proxy fingerprint mimicry disabled for this request`,
     );
@@ -393,6 +394,7 @@ export function createBunFetch(options: BunFetchOptions = {}): BunFetchInstance 
       }
 
       if (resolveDebug(debugOverride)) {
+        // eslint-disable-next-line no-console -- debug-gated proxy status log; only emits when OPENCODE_ANTHROPIC_DEBUG=1
         console.error(`[opencode-anthropic-auth] Routing through Bun proxy at :${port} → ${url}`);
       }
 
@@ -400,9 +402,11 @@ export function createBunFetch(options: BunFetchOptions = {}): BunFetchInstance 
         try {
           await writeDebugArtifacts(url, init ?? {});
           if ((init?.body ?? null) !== null && url.includes("/v1/messages") && !url.includes("count_tokens")) {
+            // eslint-disable-next-line no-console -- debug-gated diagnostic; confirms request artifact dump location
             console.error("[opencode-anthropic-auth] Dumped request to /tmp/opencode-last-request.json");
           }
         } catch (error) {
+          // eslint-disable-next-line no-console -- error-path diagnostic surfaced to stderr for operator visibility
           console.error("[opencode-anthropic-auth] Failed to dump request:", error);
         }
       }

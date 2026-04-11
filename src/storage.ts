@@ -317,6 +317,7 @@ export async function loadAccounts(): Promise<AccountStorage | null> {
     }
 
     if (data.version !== CURRENT_VERSION) {
+      // eslint-disable-next-line no-console -- operator diagnostic: storage version mismatch before migration attempt
       console.warn(
         `Storage version mismatch: ${String(data.version)} vs ${CURRENT_VERSION}. Attempting best-effort migration.`,
       );

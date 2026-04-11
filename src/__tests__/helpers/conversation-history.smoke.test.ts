@@ -19,10 +19,7 @@ import {
   validateConversationTools,
   generateToolUseId,
   resetIdCounter,
-  type Conversation,
   type Message,
-  type ToolUseBlock,
-  type ToolResultBlock,
 } from "./conversation-history.js";
 
 describe("conversation-history factories", () => {
@@ -296,8 +293,7 @@ describe("conversation-history factories", () => {
     });
 
     it("resets counter for deterministic tests", () => {
-      const tool1 = makeToolUse();
-      const counter1 = parseInt(tool1.id.split("_").pop() || "0", 10);
+      makeToolUse();
 
       resetIdCounter();
 

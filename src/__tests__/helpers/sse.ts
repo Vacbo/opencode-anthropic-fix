@@ -151,7 +151,6 @@ export function makeTruncatedSSEResponse(events: SSEEvent[], emitCount: number, 
   const eventsToEmit = events.slice(0, emitCount);
   const streamBody = encodeSSEStream(eventsToEmit);
 
-  const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       const chunks = chunkUtf8AtOffsets(streamBody, [1024, 2048, 4096]);

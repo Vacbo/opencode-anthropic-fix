@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite
 import { DEFAULT_CONFIG } from "./config.js";
 import type { AccountStorage } from "./storage.js";
 import { createInMemoryStorage, makeAccountsData, makeStoredAccount } from "./__tests__/helpers/in-memory-storage.js";
+import type * as StorageModule from "./storage.js";
+import type * as ConfigModule from "./config.js";
 
 type CCCredential = {
   accessToken: string;
@@ -68,7 +70,7 @@ async function loadManager(options: LoadManagerOptions = {}) {
   const createDefaultStats = vi.fn((now?: number) => makeStats(now ?? Date.now()));
 
   vi.doMock("./storage.js", async (importOriginal) => {
-    const actual = await importOriginal<typeof import("./storage.js")>();
+    const actual = await importOriginal<typeof StorageModule>();
 
     return {
       ...actual,
@@ -138,7 +140,7 @@ async function loadPlugin(options: LoadPluginOptions = {}) {
   }));
 
   vi.doMock("./config.js", async (importOriginal) => {
-    const actual = await importOriginal<typeof import("./config.js")>();
+    const actual = await importOriginal<typeof ConfigModule>();
 
     return {
       ...actual,

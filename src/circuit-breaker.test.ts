@@ -1,5 +1,5 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
-import { createCircuitBreaker, CircuitBreaker, CircuitState } from "./circuit-breaker.js";
+import { describe, expect, it, vi } from "vitest";
+import { createCircuitBreaker, CircuitState } from "./circuit-breaker.js";
 
 // ---------------------------------------------------------------------------
 // Circuit Breaker - Core State Tests

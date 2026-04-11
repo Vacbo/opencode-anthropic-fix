@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite
 
 import { createDeferred, createDeferredQueue } from "./__tests__/helpers/deferred.js";
 import { createMockBunProxy } from "./__tests__/helpers/mock-bun-proxy.js";
+import type * as FsModule from "node:fs";
+import type * as BunFetchModule from "./bun-fetch.js";
 
 let execFileSyncMock: Mock;
 let spawnMock: Mock;
@@ -20,7 +22,7 @@ vi.mock("node:child_process", () => ({
 }));
 
 vi.mock("node:fs", async () => {
-  const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+  const actual = await vi.importActual<typeof FsModule>("node:fs");
 
   return {
     ...actual,
@@ -32,7 +34,7 @@ vi.mock("node:fs", async () => {
   };
 });
 
-type BunFetchModule = Awaited<typeof import("./bun-fetch.js")> & {
+type BunFetchModuleType = Awaited<typeof BunFetchModule> & {
   createBunFetch?: (options?: { debug?: boolean; onProxyStatus?: (status: unknown) => void }) => {
     fetch: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
     shutdown: () => Promise<void>;
@@ -41,12 +43,12 @@ type BunFetchModule = Awaited<typeof import("./bun-fetch.js")> & {
 };
 
 async function readBunFetchSource(): Promise<string> {
-  const fs = await vi.importActual<typeof import("node:fs")>("node:fs");
+  const fs = await vi.importActual<typeof FsModule>("node:fs");
   return fs.readFileSync(new URL("./bun-fetch.ts", import.meta.url), "utf8");
 }
 
-async function loadBunFetchModule(): Promise<BunFetchModule> {
-  return import("./bun-fetch.js") as Promise<BunFetchModule>;
+async function loadBunFetchModule(): Promise<BunFetchModuleType> {
+  return import("./bun-fetch.js") as Promise<BunFetchModuleType>;
 }
 
 function installMockFetch(implementation?: Parameters<typeof vi.fn>[0]): ReturnType<typeof vi.fn> {
@@ -55,7 +57,7 @@ function installMockFetch(implementation?: Parameters<typeof vi.fn>[0]): ReturnT
   return fetchMock;
 }
 
-function getCreateBunFetch(moduleNs: BunFetchModule): NonNullable<BunFetchModule["createBunFetch"]> {
+function getCreateBunFetch(moduleNs: BunFetchModuleType): NonNullable<BunFetchModuleType["createBunFetch"]> {
   const createBunFetch = moduleNs.createBunFetch;
 
   expect(createBunFetch, "T20 must export createBunFetch() for per-instance lifecycle ownership").toBeTypeOf(
@@ -70,7 +72,7 @@ function getCreateBunFetch(moduleNs: BunFetchModule): NonNullable<BunFetchModule
 }
 
 beforeEach(async () => {
-  const fs = await vi.importActual<typeof import("node:fs")>("node:fs");
+  const fs = await vi.importActual<typeof FsModule>("node:fs");
 
   vi.resetModules();
   vi.useRealTimers();
