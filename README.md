@@ -489,7 +489,21 @@ Configuration is stored at `~/.config/opencode/anthropic-auth.json`. All setting
     // requests are replaced with a compact dedicated prompt.
     // "minimal" | "off"
     "prompt_compaction": "minimal",
+    // Run the legacy regex-based sanitizer that rewrites OpenCode / Sisyphus /
+    // morph_edit identifiers in system prompt text. Default false because the
+    // plugin's primary defense is now aggressive relocation: non-CC blocks are
+    // moved into the first user message wrapped in <system-instructions>, and
+    // CC's system prompt is kept byte-for-byte pristine. Set this to true if
+    // you want belt-and-suspenders rewriting on top of relocation. The new
+    // regex uses negative lookarounds for [\w\-/] so hyphenated identifiers
+    // and file paths survive verbatim.
+    "sanitize_system_prompt": false,
   },
+
+  // Top-level alias for signature_emulation.sanitize_system_prompt. When set,
+  // takes precedence over the nested value. Provided so you can flip the
+  // sanitizer without learning the nested schema.
+  "sanitize_system_prompt": false,
 
   // Context limit override for 1M-window models.
   // Prevents OpenCode from compacting too early when models.dev hasn't been
@@ -546,6 +560,7 @@ Configuration is stored at `~/.config/opencode/anthropic-auth.json`. All setting
 | `OPENCODE_ANTHROPIC_EMULATE_CLAUDE_CODE_SIGNATURE` | Set to `0` to disable Claude signature emulation (legacy mode).                                                                                           |
 | `OPENCODE_ANTHROPIC_FETCH_CLAUDE_CODE_VERSION`     | Set to `0` to skip npm version lookup at startup.                                                                                                         |
 | `OPENCODE_ANTHROPIC_PROMPT_COMPACTION`             | Set to `off` to disable default minimal system prompt compaction.                                                                                         |
+| `OPENCODE_ANTHROPIC_SANITIZE_SYSTEM_PROMPT`        | Set to `1`/`true` to enable the legacy regex-based sanitizer (default off). Overrides both nested and top-level config values.                            |
 | `OPENCODE_ANTHROPIC_DEBUG_SYSTEM_PROMPT`           | Set to `1` to log the final transformed `system` prompt to stderr (title-generator requests are skipped).                                                 |
 | `OPENCODE_ANTHROPIC_OVERRIDE_MODEL_LIMITS`         | Set to `0` to disable context limit overrides for 1M-window models (e.g. when models.dev has been updated).                                               |
 | `OPENCODE_ANTHROPIC_INITIAL_ACCOUNT`               | Pin this session to a specific account (1-based index or email). Overrides strategy to `sticky`. See [Round-Robin Limitations](#round-robin-limitations). |
@@ -584,11 +599,12 @@ The plugin also:
 
 - Zeros out model costs (your subscription covers usage)
 - Emulates Claude-style request headers and beta flags by default
-- Sanitizes "OpenCode" references to "Claude Code" in system prompts (required by Anthropic's API)
+- **Keeps Claude Code's system prompt byte-for-byte pristine.** `parsed.system` is reduced to exactly two blocks — the billing header and the canonical identity string — matching what genuine Claude Code emits. Every other block (OpenCode behavior, plugin instructions, agent system prompts, env blocks, AGENTS.md content, etc.) is moved into the first user message wrapped in `<system-instructions>` with an explicit instruction telling the model to treat the wrapped content with the same authority as a system prompt. Claude (and Claude Code itself) misbehaves when third-party content is appended to its system prompt, so we route it through the user channel instead.
+- Optionally rewrites `OpenCode`/`Sisyphus`/`morph_edit` identifiers via regex when `sanitize_system_prompt` is set to `true` (default `false`). The regex uses negative lookarounds for `[\w\-/]` so hyphenated identifiers and file paths like `opencode-anthropic-fix` and `/Users/.../opencode/dist` are preserved verbatim. Provided as a belt-and-suspenders option on top of the relocation strategy.
 - In `prompt_compaction="minimal"`, deduplicates repeated/contained system blocks and uses a compact dedicated prompt for internal title-generation requests
 - Adds `?beta=true` to `/v1/messages` and `/v1/messages/count_tokens` requests
 
-When signature emulation is disabled (`signature_emulation.enabled=false`), the plugin falls back to legacy behavior including the Claude Code system prompt prefix.
+When signature emulation is disabled (`signature_emulation.enabled=false`), the plugin falls back to legacy behavior: the relocation pass is skipped and incoming system blocks are forwarded as-is alongside the injected Claude Code identity prefix.
 
 ## Files
 

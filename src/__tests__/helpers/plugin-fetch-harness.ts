@@ -141,6 +141,7 @@ const DEFAULT_TEST_CONFIG: AnthropicAuthConfig = {
     enabled: true,
     fetch_claude_code_version_on_startup: false,
     prompt_compaction: "minimal",
+    sanitize_system_prompt: false,
   },
   override_model_limits: {
     enabled: false,

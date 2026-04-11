@@ -62,4 +62,64 @@ describe("sanitizeSystemText word boundaries", () => {
     expect(result).not.toContain("morph_edit");
     expect(result).toContain("edit");
   });
+
+  // ---------------------------------------------------------------------
+  // Regressions for the hyphen/slash word boundary fix.
+  // The previous regex used \b which treats `-` and `/` as word boundaries,
+  // so `opencode-anthropic-fix` and `/Users/.../opencode/dist` were getting
+  // rewritten in place. The new regex uses negative lookarounds for
+  // [\w\-/] on both sides so these forms survive verbatim.
+  // ---------------------------------------------------------------------
+
+  it("does NOT rewrite 'opencode-anthropic-fix' (hyphen on the right)", () => {
+    const result = sanitizeSystemText("Loaded opencode-anthropic-fix from disk", true);
+    expect(result).toContain("opencode-anthropic-fix");
+    expect(result).not.toContain("Claude-anthropic-fix");
+  });
+
+  it("does NOT rewrite 'pre-opencode' (hyphen on the left)", () => {
+    const result = sanitizeSystemText("the pre-opencode hook fired", true);
+    expect(result).toContain("pre-opencode");
+  });
+
+  it("does NOT corrupt path-like strings containing /opencode/", () => {
+    const input = "Working dir: /Users/rmk/projects/opencode-auth/src";
+    const result = sanitizeSystemText(input, true);
+    expect(result).toBe(input);
+  });
+
+  it("does NOT corrupt deep paths with multiple opencode segments", () => {
+    const input = "/home/user/.config/opencode/plugin/opencode-anthropic-auth-plugin.js";
+    const result = sanitizeSystemText(input, true);
+    expect(result).toBe(input);
+  });
+
+  it("does NOT rewrite the PascalCase form inside hyphenated identifiers", () => {
+    const result = sanitizeSystemText("the OpenCode-Plugin loader", true);
+    expect(result).toContain("OpenCode-Plugin");
+    expect(result).not.toContain("Claude Code-Plugin");
+  });
+
+  it("still rewrites a standalone PascalCase 'OpenCode' next to a hyphenated form", () => {
+    const result = sanitizeSystemText("OpenCode loaded opencode-anthropic-fix", true);
+    expect(result).toContain("Claude Code loaded");
+    expect(result).toContain("opencode-anthropic-fix");
+  });
+
+  it("defaults to enabled=false (no second arg means no rewriting)", () => {
+    const result = sanitizeSystemText("use OpenCode and opencode and Sisyphus and morph_edit");
+    expect(result).toBe("use OpenCode and opencode and Sisyphus and morph_edit");
+  });
+
+  it("explicit enabled=false preserves text verbatim", () => {
+    const input = "Path: /Users/rmk/projects/opencode-anthropic-fix";
+    const result = sanitizeSystemText(input, false);
+    expect(result).toBe(input);
+  });
+
+  it("explicit enabled=true rewrites the standalone forms", () => {
+    const result = sanitizeSystemText("use opencode for tasks", true);
+    expect(result).toContain("Claude");
+    expect(result).not.toContain("opencode");
+  });
 });

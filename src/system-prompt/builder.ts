@@ -51,7 +51,10 @@ export function buildSystemPromptBlocks(
 
   let sanitized: SystemBlock[] = system.map((item) => ({
     ...item,
-    text: compactSystemText(sanitizeSystemText(item.text), signature.promptCompactionMode),
+    text: compactSystemText(
+      sanitizeSystemText(item.text, signature.sanitizeSystemPrompt === true),
+      signature.promptCompactionMode,
+    ),
   }));
 
   if (titleGeneratorRequest) {

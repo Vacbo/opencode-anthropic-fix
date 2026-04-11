@@ -71,6 +71,7 @@ export async function AnthropicAuthPlugin({
   const signatureEmulationEnabled = config.signature_emulation.enabled;
   const promptCompactionMode =
     config.signature_emulation.prompt_compaction === "off" ? ("off" as const) : ("minimal" as const);
+  const signatureSanitizeSystemPrompt = config.signature_emulation.sanitize_system_prompt === true;
   const shouldFetchClaudeCodeVersion =
     signatureEmulationEnabled && config.signature_emulation.fetch_claude_code_version_on_startup;
 
@@ -456,6 +457,7 @@ export async function AnthropicAuthPlugin({
                       enabled: signatureEmulationEnabled,
                       claudeCliVersion,
                       promptCompactionMode,
+                      sanitizeSystemPrompt: signatureSanitizeSystemPrompt,
                     },
                     {
                       persistentUserId: signatureUserId,
@@ -479,6 +481,7 @@ export async function AnthropicAuthPlugin({
                   enabled: signatureEmulationEnabled,
                   claudeCliVersion,
                   promptCompactionMode,
+                  sanitizeSystemPrompt: signatureSanitizeSystemPrompt,
                   customBetas: config.custom_betas,
                   strategy: config.account_selection_strategy,
                 });

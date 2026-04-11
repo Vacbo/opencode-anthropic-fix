@@ -41,6 +41,10 @@ describe("DEFAULT_CONFIG", () => {
     expect(DEFAULT_CONFIG.signature_emulation.prompt_compaction).toBe("minimal");
   });
 
+  it("disables sanitize_system_prompt by default", () => {
+    expect(DEFAULT_CONFIG.signature_emulation.sanitize_system_prompt).toBe(false);
+  });
+
   it("has toast defaults", () => {
     expect(DEFAULT_CONFIG.toasts.quiet).toBe(false);
     expect(DEFAULT_CONFIG.toasts.debounce_seconds).toBe(30);
@@ -389,5 +393,115 @@ describe("loadConfig", () => {
     const config = loadConfig();
     expect(config.cc_credential_reuse.enabled).toBe(false);
     expect(config.cc_credential_reuse.auto_detect).toBe(false);
+  });
+});
+
+describe("loadConfig - sanitize_system_prompt field", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    delete process.env.OPENCODE_ANTHROPIC_SANITIZE_SYSTEM_PROMPT;
+  });
+
+  afterEach(() => {
+    delete process.env.OPENCODE_ANTHROPIC_SANITIZE_SYSTEM_PROMPT;
+  });
+
+  it("honors nested signature_emulation.sanitize_system_prompt = true", () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
+      JSON.stringify({
+        signature_emulation: { sanitize_system_prompt: true },
+      }),
+    );
+    const config = loadConfig();
+    expect(config.signature_emulation.sanitize_system_prompt).toBe(true);
+  });
+
+  it("honors nested signature_emulation.sanitize_system_prompt = false", () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
+      JSON.stringify({
+        signature_emulation: { sanitize_system_prompt: false },
+      }),
+    );
+    const config = loadConfig();
+    expect(config.signature_emulation.sanitize_system_prompt).toBe(false);
+  });
+
+  it("honors top-level sanitize_system_prompt alias = true", () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
+      JSON.stringify({
+        sanitize_system_prompt: true,
+      }),
+    );
+    const config = loadConfig();
+    expect(config.signature_emulation.sanitize_system_prompt).toBe(true);
+  });
+
+  it("honors top-level sanitize_system_prompt alias = false (the user's existing config)", () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
+      JSON.stringify({
+        debug: false,
+        sanitize_system_prompt: false,
+      }),
+    );
+    const config = loadConfig();
+    expect(config.signature_emulation.sanitize_system_prompt).toBe(false);
+    expect(config.debug).toBe(false);
+  });
+
+  it("top-level alias takes precedence over nested signature_emulation.sanitize_system_prompt", () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
+      JSON.stringify({
+        signature_emulation: { sanitize_system_prompt: true },
+        sanitize_system_prompt: false,
+      }),
+    );
+    const config = loadConfig();
+    expect(config.signature_emulation.sanitize_system_prompt).toBe(false);
+  });
+
+  it("ignores non-boolean top-level sanitize_system_prompt value", () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
+      JSON.stringify({
+        sanitize_system_prompt: "yes",
+      }),
+    );
+    const config = loadConfig();
+    expect(config.signature_emulation.sanitize_system_prompt).toBe(false);
+  });
+
+  it("OPENCODE_ANTHROPIC_SANITIZE_SYSTEM_PROMPT=1 forces it on", () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(JSON.stringify({ sanitize_system_prompt: false }));
+    process.env.OPENCODE_ANTHROPIC_SANITIZE_SYSTEM_PROMPT = "1";
+    const config = loadConfig();
+    expect(config.signature_emulation.sanitize_system_prompt).toBe(true);
+  });
+
+  it("OPENCODE_ANTHROPIC_SANITIZE_SYSTEM_PROMPT=0 forces it off", () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(JSON.stringify({ sanitize_system_prompt: true }));
+    process.env.OPENCODE_ANTHROPIC_SANITIZE_SYSTEM_PROMPT = "0";
+    const config = loadConfig();
+    expect(config.signature_emulation.sanitize_system_prompt).toBe(false);
+  });
+
+  it("OPENCODE_ANTHROPIC_SANITIZE_SYSTEM_PROMPT=true forces it on", () => {
+    mockExistsSync.mockReturnValue(false);
+    process.env.OPENCODE_ANTHROPIC_SANITIZE_SYSTEM_PROMPT = "true";
+    const config = loadConfig();
+    expect(config.signature_emulation.sanitize_system_prompt).toBe(true);
+  });
+
+  it("OPENCODE_ANTHROPIC_SANITIZE_SYSTEM_PROMPT=false forces it off", () => {
+    mockExistsSync.mockReturnValue(false);
+    process.env.OPENCODE_ANTHROPIC_SANITIZE_SYSTEM_PROMPT = "false";
+    const config = loadConfig();
+    expect(config.signature_emulation.sanitize_system_prompt).toBe(false);
   });
 });

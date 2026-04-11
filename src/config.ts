@@ -60,6 +60,7 @@ export interface AnthropicAuthConfig {
     enabled: boolean;
     fetch_claude_code_version_on_startup: boolean;
     prompt_compaction: "minimal" | "off";
+    sanitize_system_prompt: boolean;
   };
   override_model_limits: OverrideModelLimitsConfig;
   custom_betas: string[];
@@ -83,6 +84,7 @@ export const DEFAULT_CONFIG: AnthropicAuthConfig = {
     enabled: true,
     fetch_claude_code_version_on_startup: true,
     prompt_compaction: "minimal",
+    sanitize_system_prompt: false,
   },
   override_model_limits: {
     enabled: true,
@@ -193,7 +195,19 @@ function validateConfig(raw: Record<string, unknown>): AnthropicAuthConfig {
         se.prompt_compaction === "off" || se.prompt_compaction === "minimal"
           ? se.prompt_compaction
           : DEFAULT_CONFIG.signature_emulation.prompt_compaction,
+      sanitize_system_prompt:
+        typeof se.sanitize_system_prompt === "boolean"
+          ? se.sanitize_system_prompt
+          : DEFAULT_CONFIG.signature_emulation.sanitize_system_prompt,
     };
+  }
+
+  // Top-level alias: `sanitize_system_prompt` is honored as a convenience so
+  // users can flip it on/off without learning the nested signature_emulation
+  // schema. The top-level value, when set, takes precedence over the nested
+  // one because it's the more specific user intent.
+  if (typeof raw.sanitize_system_prompt === "boolean") {
+    config.signature_emulation.sanitize_system_prompt = raw.sanitize_system_prompt;
   }
 
   if (raw.override_model_limits && typeof raw.override_model_limits === "object") {
@@ -366,6 +380,19 @@ function applyEnvOverrides(config: AnthropicAuthConfig): AnthropicAuthConfig {
   }
   if (env.OPENCODE_ANTHROPIC_PROMPT_COMPACTION === "minimal") {
     config.signature_emulation.prompt_compaction = "minimal";
+  }
+
+  if (
+    env.OPENCODE_ANTHROPIC_SANITIZE_SYSTEM_PROMPT === "1" ||
+    env.OPENCODE_ANTHROPIC_SANITIZE_SYSTEM_PROMPT === "true"
+  ) {
+    config.signature_emulation.sanitize_system_prompt = true;
+  }
+  if (
+    env.OPENCODE_ANTHROPIC_SANITIZE_SYSTEM_PROMPT === "0" ||
+    env.OPENCODE_ANTHROPIC_SANITIZE_SYSTEM_PROMPT === "false"
+  ) {
+    config.signature_emulation.sanitize_system_prompt = false;
   }
 
   if (env.OPENCODE_ANTHROPIC_OVERRIDE_MODEL_LIMITS === "1" || env.OPENCODE_ANTHROPIC_OVERRIDE_MODEL_LIMITS === "true") {

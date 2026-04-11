@@ -99,19 +99,42 @@ export function logTransformedSystemPrompt(body: string | undefined): void {
     const parsed = JSON.parse(body);
     if (!Object.hasOwn(parsed, "system")) return;
     // Avoid circular import: inline the title-check here
+    const isTitleGeneratorText = (text: unknown): boolean => {
+      if (typeof text !== "string") return false;
+      const lowered = text.trim().toLowerCase();
+      return lowered.includes("you are a title generator") || lowered.includes("generate a brief title");
+    };
+
     const system = parsed.system;
     if (
       Array.isArray(system) &&
-      system.some(
-        (item: { type?: string; text?: string }) =>
-          item.type === "text" &&
-          typeof item.text === "string" &&
-          (item.text.trim().toLowerCase().includes("you are a title generator") ||
-            item.text.trim().toLowerCase().includes("generate a brief title")),
-      )
+      system.some((item: { type?: string; text?: string }) => item.type === "text" && isTitleGeneratorText(item.text))
     ) {
       return;
     }
+
+    // The plugin relocates non-CC system blocks into the first user message
+    // wrapped in <system-instructions>. Check there too so title-generator
+    // requests are still suppressed from the debug log after the relocation
+    // pass runs.
+    const messages = parsed.messages;
+    if (Array.isArray(messages) && messages.length > 0) {
+      const firstMsg = messages[0];
+      if (firstMsg && firstMsg.role === "user") {
+        const content = firstMsg.content;
+        if (typeof content === "string" && isTitleGeneratorText(content)) {
+          return;
+        }
+        if (Array.isArray(content)) {
+          for (const block of content) {
+            if (block && typeof block === "object" && isTitleGeneratorText((block as { text?: unknown }).text)) {
+              return;
+            }
+          }
+        }
+      }
+    }
+
     // eslint-disable-next-line no-console -- explicit debug logger gated by OPENCODE_ANTHROPIC_DEBUG_SYSTEM_PROMPT
     console.error(
       "[opencode-anthropic-auth][system-debug] transformed system:",

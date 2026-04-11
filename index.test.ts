@@ -854,17 +854,25 @@ describe("fetch interceptor", () => {
       method: "POST",
       body: JSON.stringify({
         system: [{ type: "text", text: "You are OpenCode, an opencode assistant." }],
-        messages: [],
+        messages: [{ role: "user", content: "hello" }],
       }),
     });
 
     const [, init] = mockFetch.mock.calls[0];
     const body = JSON.parse(init.body);
-    const payloadText = body.system.map((item) => item.text);
-    expect(payloadText).toContain("You are Claude Code, an Claude assistant.");
+    // System prompt is now pristine: only billing + identity, no relocated content.
+    const systemTexts = body.system.map((item) => item.text);
+    expect(systemTexts.some((text: string) => text === "You are OpenCode, an opencode assistant.")).toBe(false);
+    // The original third-party text was relocated to the first user message
+    // wrapped in <system-instructions>. Sanitize is now off by default, so the
+    // original "OpenCode" and "opencode" strings are preserved verbatim.
+    const firstUserContent = body.messages[0].content;
+    const wrappedText = typeof firstUserContent === "string" ? firstUserContent : firstUserContent[0].text;
+    expect(wrappedText).toContain("<system-instructions>");
+    expect(wrappedText).toContain("You are OpenCode, an opencode assistant.");
   });
 
-  it("redacts opencode mentions inside path-like text in system prompt", async () => {
+  it("preserves opencode mentions inside path-like text in system prompt", async () => {
     mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
 
     await fetchFn("https://api.anthropic.com/v1/messages", {
@@ -876,15 +884,21 @@ describe("fetch interceptor", () => {
             text: "Working dir: /Users/rmk/projects/opencode-auth",
           },
         ],
-        messages: [],
+        messages: [{ role: "user", content: "hello" }],
       }),
     });
 
     const [, init] = mockFetch.mock.calls[0];
     const body = JSON.parse(init.body);
-    const payloadText = body.system.map((item) => item.text);
-    expect(payloadText).toContain("Working dir: /Users/rmk/projects/Claude-auth");
-    expect(payloadText.join("\n")).not.toMatch(/opencode/i);
+    // The path-like block is no longer in parsed.system at all (only billing + identity remain).
+    const systemTexts = body.system.map((item) => item.text);
+    expect(systemTexts.some((text: string) => text.includes("Working dir:"))).toBe(false);
+    // The original path is preserved verbatim in the relocated wrapper —
+    // no more `/Users/rmk/projects/opencode-auth` → `/Users/rmk/projects/Claude-auth` corruption.
+    const firstUserContent = body.messages[0].content;
+    const wrappedText = typeof firstUserContent === "string" ? firstUserContent : firstUserContent[0].text;
+    expect(wrappedText).toContain("Working dir: /Users/rmk/projects/opencode-auth");
+    expect(wrappedText).not.toContain("Claude-auth");
   });
 
   it("compacts verbose system instructions in minimal mode (default)", async () => {
@@ -893,7 +907,7 @@ describe("fetch interceptor", () => {
     await fetchFn("https://api.anthropic.com/v1/messages", {
       method: "POST",
       body: JSON.stringify({
-        messages: [],
+        messages: [{ role: "user", content: "hello" }],
         system: [
           {
             type: "text",
@@ -905,11 +919,14 @@ describe("fetch interceptor", () => {
 
     const [, init] = mockFetch.mock.calls[0];
     const body = JSON.parse(init.body);
-    const userBlock = body.system[2].text;
-    expect(userBlock).not.toContain("<example>");
-    expect(userBlock).toContain("Rule A");
-    expect(userBlock).toContain("Rule B");
-    expect(userBlock).not.toContain("\n\n\n");
+    // The compacted block is relocated into the first user message wrapper.
+    const firstUserContent = body.messages[0].content;
+    const wrappedText = typeof firstUserContent === "string" ? firstUserContent : firstUserContent[0].text;
+    expect(wrappedText).toContain("<system-instructions>");
+    expect(wrappedText).not.toContain("<example>");
+    expect(wrappedText).toContain("Rule A");
+    expect(wrappedText).toContain("Rule B");
+    expect(wrappedText).not.toContain("\n\n\n");
   });
 
   it("deduplicates nested repeated instruction blocks in minimal mode", async () => {
@@ -933,8 +950,15 @@ describe("fetch interceptor", () => {
 
     const [, init] = mockFetch.mock.calls[0];
     const body = JSON.parse(init.body);
-    const joined = body.system.map((item) => item.text).join("\n\n");
-    const occurrences = (joined.match(/## Model Delegation Protocol/g) || []).length;
+    // The dedup happens during the build phase; the deduplicated content then
+    // gets relocated into the first user message wrapper. Verify the
+    // delegation protocol still appears exactly once across all reachable
+    // text in the request body.
+    const systemJoined = body.system.map((item) => item.text).join("\n\n");
+    const firstUserContent = body.messages[0].content;
+    const wrappedText = typeof firstUserContent === "string" ? firstUserContent : firstUserContent[0].text;
+    const fullJoined = `${systemJoined}\n\n${wrappedText}`;
+    const occurrences = (fullJoined.match(/## Model Delegation Protocol/g) || []).length;
     expect(occurrences).toBe(1);
   });
 
@@ -960,13 +984,18 @@ describe("fetch interceptor", () => {
 
     const [, init] = mockFetch.mock.calls[0];
     const body = JSON.parse(init.body);
-    const textBlocks = body.system.map((item) => item.text);
-
-    expect(textBlocks.join("\n")).not.toContain("Model Delegation Protocol");
-    expect(textBlocks.join("\n")).not.toContain("Delegate with Task(");
-    expect(textBlocks.join("\n")).toContain("You are a title generator. You output ONLY a thread title. Nothing else.");
-    expect(textBlocks.join("\n")).toContain("- Keep the title at or below 50 characters.");
-    expect(textBlocks.join("\n")).not.toContain("<task>");
+    // Title-generator detection runs before relocation, so the compact dedicated
+    // prompt replaces the verbose title-generator system blocks. The compact
+    // prompt then gets relocated into the first user message wrapper.
+    const systemJoined = body.system.map((item) => item.text).join("\n");
+    const firstUserContent = body.messages[0].content;
+    const wrappedText = typeof firstUserContent === "string" ? firstUserContent : firstUserContent[0].text;
+    const fullJoined = `${systemJoined}\n${wrappedText}`;
+    expect(fullJoined).not.toContain("Model Delegation Protocol");
+    expect(fullJoined).not.toContain("Delegate with Task(");
+    expect(fullJoined).toContain("You are a title generator. You output ONLY a thread title. Nothing else.");
+    expect(fullJoined).toContain("- Keep the title at or below 50 characters.");
+    expect(fullJoined).not.toContain("<task>");
   });
 
   it("preserves verbose system instructions when prompt compaction is off", async () => {
@@ -995,7 +1024,7 @@ describe("fetch interceptor", () => {
     await result.fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       body: JSON.stringify({
-        messages: [],
+        messages: [{ role: "user", content: "hello" }],
         system: [
           {
             type: "text",
@@ -1007,7 +1036,11 @@ describe("fetch interceptor", () => {
 
     const [, init] = mockFetch.mock.calls[0];
     const body = JSON.parse(init.body);
-    expect(body.system[2].text).toContain("<example>keep me</example>");
+    // With compaction off, <example> blocks should survive verbatim in the
+    // relocated wrapper.
+    const firstUserContent = body.messages[0].content;
+    const wrappedText = typeof firstUserContent === "string" ? firstUserContent : firstUserContent[0].text;
+    expect(wrappedText).toContain("<example>keep me</example>");
   });
 
   it("prefixes tool names with mcp_ in request", async () => {
@@ -3634,10 +3667,16 @@ describe("header handling", () => {
       text: "You are Claude Code, Anthropic's official CLI for Claude.",
       cache_control: { type: "ephemeral" },
     });
-    expect(parsed.system[2].text).toBe("Use Claude Code defaults");
+    // System prompt is now pristine: billing + identity only. The original
+    // "Use OpenCode defaults" text was relocated into the first user message
+    // wrapper verbatim — sanitize is off by default, so no rewrite happens.
+    expect(parsed.system).toHaveLength(2);
+    const firstUserContent = parsed.messages[0].content;
+    const wrappedText = typeof firstUserContent === "string" ? firstUserContent : firstUserContent[0].text;
+    expect(wrappedText).toContain("Use OpenCode defaults");
   });
 
-  it("redacts opencode mentions and compacts duplicated identity prefix", async () => {
+  it("preserves opencode mentions verbatim in relocated user wrapper", async () => {
     process.env.CLAUDE_CODE_ENTRYPOINT = "cli";
     mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
 
@@ -3658,13 +3697,22 @@ describe("header handling", () => {
     const [, init] = mockFetch.mock.calls[0];
     const parsed = JSON.parse(init.body);
 
-    // identity block is injected once by the plugin
+    // identity block is injected once by the plugin in system
     expect(parsed.system[1].text).toBe("You are Claude Code, Anthropic's official CLI for Claude.");
-    // original block is compacted and redacted
-    expect(parsed.system[2].text.startsWith("You are Claude Code, Anthropic's official CLI for Claude.")).toBe(false);
-    expect(parsed.system[2].text).toContain("Use Claude Code defaults");
-    expect(parsed.system[2].text).not.toMatch(/opencode/i);
-    expect(parsed.system[2].text).not.toContain("\n\n\n");
+    // System prompt is now pristine: billing + identity only.
+    expect(parsed.system).toHaveLength(2);
+
+    // The original third-party text was compacted (duplicate identity prefix
+    // removed, blank lines collapsed) but NOT regex-sanitized — sanitization
+    // is off by default. Original "OpenCode" / "opencode" strings survive
+    // verbatim in the relocated wrapper.
+    const firstUserContent = parsed.messages[0].content;
+    const wrappedText = typeof firstUserContent === "string" ? firstUserContent : firstUserContent[0].text;
+    expect(wrappedText.startsWith("<system-instructions>")).toBe(true);
+    expect(wrappedText).toContain("Use OpenCode defaults");
+    expect(wrappedText).toContain("https://opencode.ai/docs");
+    expect(wrappedText).toContain("github.com/anomalyco/opencode");
+    expect(wrappedText).not.toContain("\n\n\n");
   });
 
   it("does not inject billing block when CLAUDE_CODE_ATTRIBUTION_HEADER=0", async () => {
@@ -3818,9 +3866,12 @@ describe("header handling", () => {
       }),
     });
 
+    // The debug log fires for non-title-generator requests. The transformed
+    // system block contains billing + identity (no third-party content,
+    // because the sample text was relocated into the first user message).
     expect(consoleSpy).toHaveBeenCalledWith(
       "[opencode-anthropic-auth][system-debug] transformed system:",
-      expect.stringContaining("Use Claude Code defaults"),
+      expect.stringContaining("You are Claude Code, Anthropic's official CLI for Claude."),
     );
     consoleSpy.mockRestore();
   });

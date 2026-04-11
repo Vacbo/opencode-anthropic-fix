@@ -3,3 +3,8 @@ dist
 .DS_Store
 .mitm
 .omc
+.sisyphus
+.ruff_cache
+.planning
+.claude
+.opencode

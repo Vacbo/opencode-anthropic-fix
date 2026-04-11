@@ -27,6 +27,14 @@ export interface SignatureConfig {
   enabled: boolean;
   claudeCliVersion: string;
   promptCompactionMode: PromptCompactionMode;
+  /**
+   * When true, runs the legacy regex-based sanitization on system prompt text
+   * (rewrites OpenCode/Sisyphus/Morph identifiers). Defaults to false because
+   * the plugin's primary defense is now to relocate non-CC blocks into a
+   * user-message <system-instructions> wrapper. Opt in via the
+   * `sanitize_system_prompt` config field for double-belt-and-suspenders.
+   */
+  sanitizeSystemPrompt?: boolean;
   strategy?: AccountSelectionStrategy;
   customBetas?: string[];
 }
