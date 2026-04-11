@@ -22,7 +22,7 @@ import { transformRequestBody } from "./request/body.js";
 import { extractFileIds, getAccountIdentifier } from "./request/metadata.js";
 import { fetchWithRetry } from "./request/retry.js";
 import { transformRequestUrl } from "./request/url.js";
-import { isEventStreamResponse, transformResponse } from "./response/streaming.js";
+import { isEventStreamResponse, stripMcpPrefixFromJsonBody, transformResponse } from "./response/index.js";
 import { readCCCredentials } from "./cc-credentials.js";
 import { clearAccounts, loadAccounts } from "./storage.js";
 import type { OpenCodeClient } from "./token-refresh.js";
@@ -31,6 +31,23 @@ import type { UsageStats } from "./types.js";
 import { fetchViaBun } from "./bun-fetch.js";
 import { createPluginHelpers } from "./plugin-helpers.js";
 import { createRefreshHelpers } from "./refresh-helpers.js";
+
+async function finalizeResponse(
+  response: Response,
+  onUsage?: ((stats: UsageStats) => void) | null,
+  onAccountError?: ((details: { reason: string; invalidateToken: boolean }) => void) | null,
+): Promise<Response> {
+  if (!isEventStreamResponse(response)) {
+    const body = stripMcpPrefixFromJsonBody(await response.text());
+    return new Response(body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: new Headers(response.headers),
+    });
+  }
+
+  return transformResponse(response, onUsage, onAccountError);
+}
 
 // ---------------------------------------------------------------------------
 // Plugin factory
@@ -535,7 +552,7 @@ export async function AnthropicAuthPlugin({
                     );
 
                     if (!retried.ok) {
-                      return transformResponse(retried);
+                      return finalizeResponse(retried);
                     }
 
                     response = retried;
@@ -543,7 +560,7 @@ export async function AnthropicAuthPlugin({
                     debugLog("non-account-specific response error, returning directly", {
                       status: response.status,
                     });
-                    return transformResponse(response);
+                    return finalizeResponse(response);
                   }
                 }
 
@@ -570,7 +587,7 @@ export async function AnthropicAuthPlugin({
                     }
                   : null;
 
-                return transformResponse(response, usageCallback, accountErrorCallback);
+                return finalizeResponse(response, usageCallback, accountErrorCallback);
               }
 
               if (lastError) throw lastError;

@@ -1,4 +1,4 @@
-export { stripMcpPrefixFromParsedEvent, stripMcpPrefixFromSSE } from "./mcp.js";
+export { stripMcpPrefixFromJsonBody, stripMcpPrefixFromParsedEvent, stripMcpPrefixFromSSE } from "./mcp.js";
 export {
   extractUsageFromSSEEvent,
   getMidStreamAccountError,

@@ -199,6 +199,12 @@ Evidence: .sisyphus/evidence/task-6-conversation-smoke.txt
 
 ### Key Test Patterns
 
+## Task 24: Non-SSE MCP JSON Rewrite (2026-04-10)
+
+- Keep SSE and non-SSE tool-name rewriting on separate paths: `transformResponse()` should remain event-stream only, while buffered JSON responses are normalized before returning from `src/index.ts`.
+- The non-SSE rewrite needs to walk both top-level `content[]` and nested `messages[].content[]` arrays so prefixed `tool_use.name` values stay consistent across current and future Anthropic payload shapes.
+- When rebuilding a buffered non-SSE response, preserve status/statusText/headers and only change the body string after JSON normalization.
+
 - State enum: CircuitState.CLOSED, .OPEN, .HALF_OPEN
 - Factory function: createCircuitBreaker(options)
 - State transitions tested with recordFailure(), recordSuccess()
