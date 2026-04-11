@@ -23,6 +23,7 @@ import { extractFileIds, getAccountIdentifier } from "./request/metadata.js";
 import { fetchWithRetry } from "./request/retry.js";
 import { transformRequestUrl } from "./request/url.js";
 import { isEventStreamResponse, stripMcpPrefixFromJsonBody, transformResponse } from "./response/index.js";
+import { StreamTruncatedError } from "./response/streaming.js";
 import { readCCCredentials } from "./cc-credentials.js";
 import { clearAccounts, loadAccounts } from "./storage.js";
 import type { OpenCodeClient } from "./token-refresh.js";
@@ -36,6 +37,7 @@ async function finalizeResponse(
   response: Response,
   onUsage?: ((stats: UsageStats) => void) | null,
   onAccountError?: ((details: { reason: string; invalidateToken: boolean }) => void) | null,
+  onStreamError?: ((error: Error) => void) | null,
 ): Promise<Response> {
   if (!isEventStreamResponse(response)) {
     const body = stripMcpPrefixFromJsonBody(await response.text());
@@ -46,7 +48,7 @@ async function finalizeResponse(
     });
   }
 
-  return transformResponse(response, onUsage, onAccountError);
+  return transformResponse(response, onUsage, onAccountError, onStreamError);
 }
 
 // ---------------------------------------------------------------------------
@@ -630,8 +632,22 @@ export async function AnthropicAuthPlugin({
                       accountManager!.markRateLimited(account, details.reason, null);
                     }
                   : null;
+                const streamErrorCallback =
+                  response.ok && isEventStreamResponse(response)
+                    ? (error: Error) => {
+                        if (!(error instanceof StreamTruncatedError)) {
+                          return;
+                        }
 
-                return finalizeResponse(response, usageCallback, accountErrorCallback);
+                        debugLog("stream truncated during response consumption", {
+                          accountIndex: account?.index,
+                          message: error.message,
+                          context: error.context,
+                        });
+                      }
+                    : null;
+
+                return finalizeResponse(response, usageCallback, accountErrorCallback, streamErrorCallback);
               }
 
               if (lastError) throw lastError;

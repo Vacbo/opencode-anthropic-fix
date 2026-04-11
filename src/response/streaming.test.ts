@@ -12,7 +12,7 @@ import {
   messageStartEvent,
   messageStopEvent,
 } from "../__tests__/helpers/sse.js";
-import { transformResponse } from "./streaming.js";
+import { StreamTruncatedError, transformResponse } from "./streaming.js";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -207,7 +207,7 @@ describe("transformResponse RED - SSE termination and framing", () => {
 });
 
 describe("transformResponse RED - truncation and validation", () => {
-  it("rejects a stream that ends after message_delta without message_stop", async () => {
+  it("rejects a truncated stream that ends after message_delta without message_stop", async () => {
     const stream = encodeSSEStream([
       messageStartEvent(),
       contentBlockStartEvent(0),
@@ -216,7 +216,17 @@ describe("transformResponse RED - truncation and validation", () => {
       messageDeltaEvent(),
     ]);
 
-    await expect(transformResponse(makeSSEResponse(stream)).text()).rejects.toThrow(/message_stop|truncated/i);
+    const error = await transformResponse(makeSSEResponse(stream))
+      .text()
+      .catch((streamError: unknown) => streamError);
+
+    expect(error).toBeInstanceOf(StreamTruncatedError);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as StreamTruncatedError).message).toMatch(/message_stop|truncated/i);
+    expect((error as StreamTruncatedError).context).toMatchObject({
+      inFlightEvent: "message_delta",
+      lastEventType: "message_delta",
+    });
   });
 
   it("rejects a final message_stop event that is missing its terminating blank line", async () => {
@@ -269,7 +279,7 @@ describe("transformResponse RED - truncation and validation", () => {
     await expect(transformResponse(makeSSEResponse(stream)).text()).rejects.toThrow(/orphan|content_block_stop/i);
   });
 
-  it("rejects an unfinished tool_use block at EOF", async () => {
+  it("rejects a truncated tool_use block at EOF", async () => {
     const stream = encodeSSEStream([
       messageStartEvent(),
       contentBlockStartEvent(0, {
@@ -283,7 +293,17 @@ describe("transformResponse RED - truncation and validation", () => {
       messageDeltaEvent(),
     ]);
 
-    await expect(transformResponse(makeSSEResponse(stream)).text()).rejects.toThrow(/unfinished tool_use|truncated/i);
+    const error = await transformResponse(makeSSEResponse(stream))
+      .text()
+      .catch((streamError: unknown) => streamError);
+
+    expect(error).toBeInstanceOf(StreamTruncatedError);
+    expect((error as StreamTruncatedError).message).toMatch(/truncated/i);
+    expect((error as StreamTruncatedError).context).toMatchObject({
+      inFlightEvent: "content_block_start(tool_use)",
+      openContentBlockIndex: 0,
+      hasPartialJson: false,
+    });
   });
 
   it("rejects incomplete input_json_delta tool payloads even if message_stop arrives", async () => {

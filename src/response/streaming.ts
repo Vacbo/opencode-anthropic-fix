@@ -13,6 +13,23 @@ interface OpenContentBlockState {
   partialJson: string;
 }
 
+interface StreamTruncatedContext {
+  inFlightEvent?: string;
+  lastEventType?: string;
+  openContentBlockIndex?: number;
+  hasPartialJson?: boolean;
+}
+
+export class StreamTruncatedError extends Error {
+  readonly context: StreamTruncatedContext;
+
+  constructor(message: string, context: StreamTruncatedContext = {}) {
+    super(message);
+    this.name = "StreamTruncatedError";
+    this.context = context;
+  }
+}
+
 /**
  * Update running usage stats from a parsed SSE event.
  */
@@ -115,6 +132,77 @@ function getEventIndex(parsed: Record<string, unknown>, eventType: string): numb
   return index;
 }
 
+function getEventLabel(parsed: Record<string, unknown>, eventType: string): string {
+  switch (eventType) {
+    case "content_block_start": {
+      const contentBlock = parsed.content_block;
+      const blockType =
+        contentBlock && typeof contentBlock === "object" ? (contentBlock as Record<string, unknown>).type : undefined;
+      return typeof blockType === "string" && blockType ? `content_block_start(${blockType})` : eventType;
+    }
+
+    case "content_block_delta": {
+      const delta = parsed.delta;
+      const deltaType = delta && typeof delta === "object" ? (delta as Record<string, unknown>).type : undefined;
+      return typeof deltaType === "string" && deltaType ? `content_block_delta(${deltaType})` : eventType;
+    }
+
+    default:
+      return eventType;
+  }
+}
+
+function getOpenBlockContext(openContentBlocks: Map<number, OpenContentBlockState>): StreamTruncatedContext | null {
+  for (const [index, blockState] of openContentBlocks) {
+    if (blockState.type === "tool_use") {
+      return {
+        inFlightEvent: blockState.partialJson
+          ? "content_block_delta(input_json_delta)"
+          : "content_block_start(tool_use)",
+        openContentBlockIndex: index,
+        hasPartialJson: blockState.partialJson.length > 0,
+      };
+    }
+  }
+
+  const firstOpenBlock = openContentBlocks.entries().next().value as [number, OpenContentBlockState] | undefined;
+  if (!firstOpenBlock) {
+    return null;
+  }
+
+  const [index, blockState] = firstOpenBlock;
+  return {
+    inFlightEvent: `content_block_start(${blockState.type})`,
+    openContentBlockIndex: index,
+    hasPartialJson: blockState.partialJson.length > 0,
+  };
+}
+
+function createStreamTruncatedError(context: StreamTruncatedContext = {}): StreamTruncatedError {
+  return new StreamTruncatedError("Stream truncated without message_stop", context);
+}
+
+function getBufferedEventContext(eventBlock: string, lastEventType: string | null): StreamTruncatedContext {
+  const context: StreamTruncatedContext = {
+    lastEventType: lastEventType ?? undefined,
+  };
+
+  const payload = getSSEDataPayload(eventBlock);
+  if (!payload) {
+    return context;
+  }
+
+  try {
+    const parsed = JSON.parse(payload) as Record<string, unknown>;
+    const eventType = getSSEEventType(eventBlock) ?? (typeof parsed.type === "string" ? parsed.type : null);
+    if (eventType) {
+      context.inFlightEvent = getEventLabel(parsed, eventType);
+    }
+  } catch {}
+
+  return context;
+}
+
 function validateEventState(
   parsed: Record<string, unknown>,
   eventType: string,
@@ -198,21 +286,8 @@ function validateEventState(
 }
 
 function getOpenBlockError(openContentBlocks: Map<number, OpenContentBlockState>): Error | null {
-  for (const [index, blockState] of openContentBlocks) {
-    if (blockState.type === "tool_use") {
-      if (blockState.partialJson) {
-        return new Error(`incomplete tool_use partial_json for index ${index}`);
-      }
-
-      return new Error(`unfinished tool_use block at index ${index}`);
-    }
-  }
-
-  if (openContentBlocks.size > 0) {
-    return new Error("stream ended with unfinished content block");
-  }
-
-  return null;
+  const openBlockContext = getOpenBlockContext(openContentBlocks);
+  return openBlockContext ? createStreamTruncatedError(openBlockContext) : null;
 }
 
 function getMessageStopBlockError(openContentBlocks: Map<number, OpenContentBlockState>): Error | null {
@@ -280,6 +355,7 @@ export function transformResponse(
   response: Response,
   onUsage?: ((stats: UsageStats) => void) | null,
   onAccountError?: ((details: { reason: string; invalidateToken: boolean }) => void) | null,
+  onStreamError?: ((error: Error) => void) | null,
 ): Response {
   if (!response.body || !isEventStreamResponse(response)) return response;
 
@@ -297,6 +373,7 @@ export function transformResponse(
   let accountErrorHandled = false;
   let hasSeenMessageStop = false;
   let hasSeenError = false;
+  let lastEventType: string | null = null;
   const strictEventValidation = !onUsage && !onAccountError;
   const openContentBlocks = new Map<number, OpenContentBlockState>();
 
@@ -320,6 +397,7 @@ export function transformResponse(
     }
 
     const parsedRecord = parsed as Record<string, unknown>;
+    lastEventType = getEventLabel(parsedRecord, eventType);
     if (strictEventValidation) {
       validateEventState(parsedRecord, eventType, openContentBlocks);
     }
@@ -388,6 +466,12 @@ export function transformResponse(
   async function failStream(controller: ReadableStreamDefaultController<Uint8Array>, error: unknown): Promise<void> {
     const streamError = toStreamError(error);
 
+    if (onStreamError) {
+      try {
+        onStreamError(streamError);
+      } catch {}
+    }
+
     try {
       await reader.cancel(streamError);
     } catch {}
@@ -409,7 +493,7 @@ export function transformResponse(
 
             if (sseBuffer.trim()) {
               if (strictEventValidation) {
-                throw new Error("stream truncated without message_stop");
+                throw createStreamTruncatedError(getBufferedEventContext(sseBuffer, lastEventType));
               }
 
               enqueueNormalizedEvent(controller, sseBuffer);
@@ -423,7 +507,10 @@ export function transformResponse(
               }
 
               if (!hasSeenMessageStop && !hasSeenError) {
-                throw new Error("stream truncated without message_stop");
+                throw createStreamTruncatedError({
+                  inFlightEvent: lastEventType ?? undefined,
+                  lastEventType: lastEventType ?? undefined,
+                });
               }
             }
 
