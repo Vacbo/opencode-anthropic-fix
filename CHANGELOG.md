@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-04-11
+
+### Fixed
+
+- Dead conditional in `bun-fetch.ts` `reportFallback` function where both if/else branches executed identical `console.error` calls
+- 16 lint errors: 12 CommonJS `require()` calls in `scripts/mock-upstream.js` and `scripts/rotation-test.js` converted to ESM `import`
+- 4 empty catch blocks in `src/bun-fetch.ts` and `src/response/streaming.ts` annotated with explanatory comments
+
+### Notes
+
+- This is the first published release of the 0.1.x line. Version 0.1.0 was the plan completion checkpoint but was not published to npm; 0.1.1 is what ships with post-review fixes applied.
+
+[0.1.1]: https://github.com/marco-jardim/opencode-anthropic-fix/releases/tag/v0.1.1
+
 ## [0.1.0] - 2026-04-10
 
 ### Fixed
