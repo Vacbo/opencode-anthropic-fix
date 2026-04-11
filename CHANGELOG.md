@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-04-11
+
+### Fixed
+
+- Removed `./` prefix from `main` and `bin` paths in `package.json` to silence npm publish warnings about "bin[X] script name ... was invalid and removed". The entries were never actually removed — npm's normalizer was auto-stripping the `./` prefix and warning about the diff between `package.json` and the registry manifest. This cosmetic fix aligns both.
+
+### Notes
+
+- No runtime behavior changes. `npm install @vacbo/opencode-anthropic-fix` continues to create working symlinks for `opencode-anthropic-auth` and `oaa` in `node_modules/.bin` (verified in 0.1.1 and unchanged in 0.1.2).
+
+[0.1.2]: https://github.com/marco-jardim/opencode-anthropic-fix/releases/tag/v0.1.2
+
 ## [0.1.1] - 2026-04-11
 
 ### Fixed
