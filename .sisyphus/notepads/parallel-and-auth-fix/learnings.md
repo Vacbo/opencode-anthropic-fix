@@ -446,3 +446,9 @@ Evidence: .sisyphus/evidence/task-6-conversation-smoke.txt
 - The save path is easiest to keep consistent when account matching lives in one storage-level helper set: match by `id`, then stable identity, then legacy `addedAt` / refresh-token fallbacks.
 - Union-on-save should stay asymmetric: when there are in-memory accounts, append unmatched disk-only accounts; when the caller writes an empty account list, keep the existing "do not resurrect removed accounts" behavior.
 - Account-manager tests that fully mock `./storage.js` need to spread the real module once new helper exports are consumed internally; otherwise save-path regressions fail before the behavior under test runs.
+
+## Task 32: Storage version tolerance and source preservation (2026-04-10)
+
+- loadAccounts must warn and continue on unknown storage versions; returning null on additive schema drift wipes persisted account state.
+- Storage deserialization should preserve source exactly as stored and leave missing values as undefined; downstream identity resolution decides how to interpret legacy records.
+- Targeted storage tests should cover both best-effort unknown-version reads and missing-source preservation to lock in additive compatibility.

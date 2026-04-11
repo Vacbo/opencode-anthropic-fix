@@ -317,8 +317,9 @@ export async function loadAccounts(): Promise<AccountStorage | null> {
     }
 
     if (data.version !== CURRENT_VERSION) {
-      // Future: handle migrations here
-      return null;
+      console.warn(
+        `Storage version mismatch: ${String(data.version)} vs ${CURRENT_VERSION}. Attempting best-effort migration.`,
+      );
     }
 
     const now = Date.now();
