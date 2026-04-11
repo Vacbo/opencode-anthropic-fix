@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const http = require("node:http");
+import http from "node:http";
 
 const HOST = "127.0.0.1";
 const DEFAULT_GRACEFUL_SHUTDOWN_MS = 60_000;

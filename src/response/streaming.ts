@@ -198,7 +198,9 @@ function getBufferedEventContext(eventBlock: string, lastEventType: string | nul
     if (eventType) {
       context.inFlightEvent = getEventLabel(parsed, eventType);
     }
-  } catch {}
+  } catch {
+    // JSON parse failed; context will be returned without inFlightEvent
+  }
 
   return context;
 }
@@ -469,12 +471,16 @@ export function transformResponse(
     if (onStreamError) {
       try {
         onStreamError(streamError);
-      } catch {}
+      } catch {
+        // Error handler failed; continue with cleanup
+      }
     }
 
     try {
       await reader.cancel(streamError);
-    } catch {}
+    } catch {
+      // Reader cancel failed; stream may already be closed
+    }
 
     controller.error(streamError);
   }

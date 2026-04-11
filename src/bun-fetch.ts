@@ -4,7 +4,8 @@ import { dirname, join } from "node:path";
 import * as readline from "node:readline";
 import { fileURLToPath } from "node:url";
 
-import { CircuitState, createCircuitBreaker } from "./circuit-breaker.js";
+import type { CircuitState} from "./circuit-breaker.js";
+import { createCircuitBreaker } from "./circuit-breaker.js";
 
 const DEFAULT_PROXY_HOST = "127.0.0.1";
 const DEFAULT_STARTUP_TIMEOUT_MS = 5_000;
@@ -169,16 +170,11 @@ export function createBunFetch(options: BunFetchOptions = {}): BunFetchInstance 
     onProxyStatus?.(getStatus(reason));
   };
 
-  const reportFallback = (reason: string, debugOverride?: boolean): void => {
+  const reportFallback = (reason: string, _debugOverride?: boolean): void => {
     onProxyStatus?.(getStatus(reason, "fallback"));
-
-    const message = `[opencode-anthropic-auth] Native fetch fallback engaged (${reason}); Bun proxy fingerprint mimicry disabled for this request`;
-    if (resolveDebug(debugOverride)) {
-      console.error(message);
-      return;
-    }
-
-    console.error(message);
+    console.error(
+      `[opencode-anthropic-auth] Native fetch fallback engaged (${reason}); Bun proxy fingerprint mimicry disabled for this request`,
+    );
   };
 
   const resolveDebug = (debugOverride?: boolean): boolean => debugOverride ?? defaultDebug;
@@ -368,7 +364,9 @@ export function createBunFetch(options: BunFetchOptions = {}): BunFetchInstance 
       if (!child.killed) {
         try {
           child.kill("SIGTERM");
-        } catch {}
+        } catch {
+          // Process may have already exited; ignore kill failures
+        }
       }
     }
 

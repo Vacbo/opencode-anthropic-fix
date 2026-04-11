@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
-const fs = require("node:fs/promises");
-const http = require("node:http");
-const os = require("node:os");
-const path = require("node:path");
-const { pathToFileURL } = require("node:url");
+import fs from "node:fs/promises";
+import http from "node:http";
+import os from "node:os";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 const DEFAULT_ACCOUNTS_FILE = path.join(os.tmpdir(), "rotation-test.json");
 
