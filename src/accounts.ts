@@ -1,7 +1,12 @@
 import type { RateLimitReason } from "./backoff.js";
 import { calculateBackoffMs } from "./backoff.js";
 import { readCCCredentials } from "./cc-credentials.js";
-import type { AccountIdentity } from "./account-identity.js";
+import {
+  findByIdentity,
+  resolveIdentity,
+  resolveIdentityFromCCCredential,
+  type AccountIdentity,
+} from "./account-identity.js";
 import type { AnthropicAuthConfig } from "./config.js";
 import { HealthScoreTracker, selectAccount, TokenBucketTracker } from "./rotation.js";
 import type { AccountMetadata, AccountStats, AccountStorage } from "./storage.js";
@@ -43,6 +48,167 @@ export interface StatsDelta {
 const MAX_ACCOUNTS = 10;
 const RATE_LIMIT_KEY = "anthropic";
 
+type ManagedAccountSource = ManagedAccount["source"];
+
+type AddAccountOptions = {
+  identity?: AccountIdentity;
+  label?: string;
+  source?: ManagedAccountSource;
+};
+
+type ManagedAccountInit = {
+  id?: string;
+  index: number;
+  email?: string;
+  identity?: AccountIdentity;
+  label?: string;
+  refreshToken: string;
+  access?: string;
+  expires?: number;
+  tokenUpdatedAt?: number;
+  addedAt?: number;
+  lastUsed?: number;
+  enabled?: boolean;
+  rateLimitResetTimes?: Record<string, number>;
+  consecutiveFailures?: number;
+  lastFailureTime?: number | null;
+  lastSwitchReason?: string;
+  stats?: AccountStats;
+  source?: ManagedAccountSource;
+  now?: number;
+};
+
+function resolveAccountIdentity(params: {
+  refreshToken: string;
+  email?: string;
+  identity?: AccountIdentity;
+  label?: string;
+  source?: ManagedAccountSource;
+}): AccountIdentity {
+  if (params.identity) {
+    return params.identity;
+  }
+
+  if ((params.source === "cc-keychain" || params.source === "cc-file") && params.label) {
+    return {
+      kind: "cc",
+      source: params.source,
+      label: params.label,
+    };
+  }
+
+  if (params.email) {
+    return {
+      kind: "oauth",
+      email: params.email,
+    };
+  }
+
+  return {
+    kind: "legacy",
+    refreshToken: params.refreshToken,
+  };
+}
+
+function createManagedAccount(init: ManagedAccountInit): ManagedAccount {
+  const now = init.now ?? Date.now();
+  const addedAt = init.addedAt ?? now;
+  const tokenUpdatedAt = init.tokenUpdatedAt ?? addedAt;
+  const identity = resolveAccountIdentity({
+    refreshToken: init.refreshToken,
+    email: init.email,
+    identity: init.identity,
+    label: init.label,
+    source: init.source,
+  });
+  const email = init.email ?? (identity.kind === "oauth" ? identity.email : undefined);
+  const label = init.label ?? (identity.kind === "cc" ? identity.label : undefined);
+  const source = init.source ?? (identity.kind === "cc" ? identity.source : "oauth");
+
+  return {
+    id: init.id ?? `${addedAt}:${init.refreshToken.slice(0, 12)}`,
+    index: init.index,
+    email,
+    identity,
+    label,
+    refreshToken: init.refreshToken,
+    access: init.access,
+    expires: init.expires,
+    tokenUpdatedAt,
+    addedAt,
+    lastUsed: init.lastUsed ?? 0,
+    enabled: init.enabled ?? true,
+    rateLimitResetTimes: { ...(init.rateLimitResetTimes ?? {}) },
+    consecutiveFailures: init.consecutiveFailures ?? 0,
+    lastFailureTime: init.lastFailureTime ?? null,
+    lastSwitchReason: init.lastSwitchReason ?? "initial",
+    stats: init.stats ?? createDefaultStats(addedAt),
+    source,
+  };
+}
+
+function findMatchingAccount(
+  accounts: ManagedAccount[],
+  params: {
+    id?: string;
+    identity?: AccountIdentity;
+    refreshToken?: string;
+  },
+): ManagedAccount | null {
+  if (params.id) {
+    const byId = accounts.find((account) => account.id === params.id);
+    if (byId) return byId;
+  }
+
+  if (params.identity) {
+    const byIdentity = findByIdentity(accounts, params.identity);
+    if (byIdentity) return byIdentity;
+  }
+
+  if (params.refreshToken) {
+    return accounts.find((account) => account.refreshToken === params.refreshToken) ?? null;
+  }
+
+  return null;
+}
+
+function reindexAccounts(accounts: ManagedAccount[]): void {
+  accounts.forEach((account, index) => {
+    account.index = index;
+  });
+}
+
+function updateManagedAccountFromStorage(existing: ManagedAccount, account: AccountMetadata, index: number): void {
+  const source = account.source || existing.source || "oauth";
+  const label = account.label ?? existing.label;
+  const email = account.email ?? existing.email;
+
+  existing.id = account.id || existing.id || `${account.addedAt}:${account.refreshToken.slice(0, 12)}`;
+  existing.index = index;
+  existing.email = email;
+  existing.label = label;
+  existing.identity = resolveAccountIdentity({
+    refreshToken: account.refreshToken,
+    email,
+    identity: account.identity ?? existing.identity,
+    label,
+    source,
+  });
+  existing.refreshToken = account.refreshToken;
+  existing.access = account.access ?? existing.access;
+  existing.expires = account.expires ?? existing.expires;
+  existing.tokenUpdatedAt = account.token_updated_at ?? existing.tokenUpdatedAt ?? account.addedAt;
+  existing.addedAt = account.addedAt;
+  existing.lastUsed = account.lastUsed;
+  existing.enabled = account.enabled;
+  existing.rateLimitResetTimes = { ...account.rateLimitResetTimes };
+  existing.consecutiveFailures = account.consecutiveFailures;
+  existing.lastFailureTime = account.lastFailureTime;
+  existing.lastSwitchReason = account.lastSwitchReason || existing.lastSwitchReason || "initial";
+  existing.stats = account.stats ?? existing.stats ?? createDefaultStats(account.addedAt);
+  existing.source = source;
+}
+
 export class AccountManager {
   #accounts: ManagedAccount[] = [];
   #cursor = 0;
@@ -66,6 +232,11 @@ export class AccountManager {
     this.#tokenTracker = new TokenBucketTracker(config.token_bucket);
   }
 
+  #rebuildTrackers(): void {
+    this.#healthTracker = new HealthScoreTracker(this.#config.health_score);
+    this.#tokenTracker = new TokenBucketTracker(this.#config.token_bucket);
+  }
+
   /**
    * Load accounts from disk, optionally merging with an OpenCode auth fallback.
    */
@@ -82,32 +253,41 @@ export class AccountManager {
 
     // If storage exists (even with zero accounts), treat disk as authoritative.
     if (stored) {
-      manager.#accounts = stored.accounts.map((acc, index) => ({
-        id: acc.id || `${acc.addedAt}:${acc.refreshToken.slice(0, 12)}`,
-        index,
-        email: acc.email,
-        identity: acc.identity,
-        label: acc.label,
-        refreshToken: acc.refreshToken,
-        access: acc.access,
-        expires: acc.expires,
-        tokenUpdatedAt: acc.token_updated_at,
-        addedAt: acc.addedAt,
-        lastUsed: acc.lastUsed,
-        enabled: acc.enabled,
-        rateLimitResetTimes: acc.rateLimitResetTimes,
-        consecutiveFailures: acc.consecutiveFailures,
-        lastFailureTime: acc.lastFailureTime,
-        lastSwitchReason: acc.lastSwitchReason,
-        stats: acc.stats ?? createDefaultStats(acc.addedAt),
-        source: acc.source || "oauth",
-      }));
+      manager.#accounts = stored.accounts.map((acc, index) =>
+        createManagedAccount({
+          id: acc.id || `${acc.addedAt}:${acc.refreshToken.slice(0, 12)}`,
+          index,
+          email: acc.email,
+          identity: acc.identity,
+          label: acc.label,
+          refreshToken: acc.refreshToken,
+          access: acc.access,
+          expires: acc.expires,
+          tokenUpdatedAt: acc.token_updated_at,
+          addedAt: acc.addedAt,
+          lastUsed: acc.lastUsed,
+          enabled: acc.enabled,
+          rateLimitResetTimes: acc.rateLimitResetTimes,
+          consecutiveFailures: acc.consecutiveFailures,
+          lastFailureTime: acc.lastFailureTime,
+          lastSwitchReason: acc.lastSwitchReason,
+          stats: acc.stats,
+          source: acc.source || "oauth",
+        }),
+      );
 
       manager.#currentIndex =
         manager.#accounts.length > 0 ? Math.min(stored.activeIndex, manager.#accounts.length - 1) : -1;
 
       if (authFallback && manager.#accounts.length > 0) {
-        const match = manager.#accounts.find((acc) => acc.refreshToken === authFallback.refresh);
+        const fallbackIdentity = resolveAccountIdentity({
+          refreshToken: authFallback.refresh,
+          source: "oauth",
+        });
+        const match = findMatchingAccount(manager.#accounts, {
+          identity: fallbackIdentity,
+          refreshToken: authFallback.refresh,
+        });
         if (match) {
           const fallbackHasAccess = typeof authFallback.access === "string" && authFallback.access.length > 0;
           const fallbackExpires = typeof authFallback.expires === "number" ? authFallback.expires : 0;
@@ -127,23 +307,17 @@ export class AccountManager {
     } else if (authFallback && authFallback.refresh) {
       const now = Date.now();
       manager.#accounts = [
-        {
+        createManagedAccount({
           id: `${now}:${authFallback.refresh.slice(0, 12)}`,
           index: 0,
-          email: undefined,
           refreshToken: authFallback.refresh,
           access: authFallback.access,
           expires: authFallback.expires,
           tokenUpdatedAt: now,
           addedAt: now,
-          lastUsed: 0,
-          enabled: true,
-          rateLimitResetTimes: {},
-          consecutiveFailures: 0,
-          lastFailureTime: null,
           lastSwitchReason: "initial",
-          stats: createDefaultStats(now),
-        },
+          source: "oauth",
+        }),
       ];
       manager.#currentIndex = 0;
     }
@@ -159,18 +333,38 @@ export class AccountManager {
       })();
 
       for (const ccCredential of ccCredentials) {
-        const existingMatch = manager.#accounts.find((account) => account.refreshToken === ccCredential.refreshToken);
-        if (existingMatch) {
-          // Adopt CC source tag so getCCAccounts() recognizes it
-          if (!existingMatch.source || existingMatch.source === "oauth") {
-            existingMatch.source = ccCredential.source;
+        const ccIdentity = resolveIdentityFromCCCredential(ccCredential);
+        let existingMatch = findMatchingAccount(manager.#accounts, {
+          identity: ccIdentity,
+          refreshToken: ccCredential.refreshToken,
+        });
+
+        if (!existingMatch) {
+          const legacyUnlabeledMatches = manager.#accounts.filter(
+            (account) => account.source === ccCredential.source && !account.label && !account.email,
+          );
+          if (legacyUnlabeledMatches.length === 1) {
+            existingMatch = legacyUnlabeledMatches[0]!;
           }
+        }
+
+        if (existingMatch) {
+          existingMatch.refreshToken = ccCredential.refreshToken;
+          existingMatch.identity = ccIdentity;
+          existingMatch.source = ccCredential.source;
           existingMatch.label = ccCredential.label;
-          // Adopt fresh access token from CC if available
-          if (ccCredential.accessToken && ccCredential.expiresAt > (existingMatch.expires ?? 0)) {
+          existingMatch.enabled = true;
+          if (ccCredential.accessToken) {
             existingMatch.access = ccCredential.accessToken;
+          }
+          if (ccCredential.expiresAt >= (existingMatch.expires ?? 0)) {
             existingMatch.expires = ccCredential.expiresAt;
           }
+          existingMatch.tokenUpdatedAt = Math.max(existingMatch.tokenUpdatedAt || 0, ccCredential.expiresAt || 0);
+          continue;
+        }
+
+        if (manager.#accounts.length >= MAX_ACCOUNTS) {
           continue;
         }
 
@@ -183,25 +377,19 @@ export class AccountManager {
         }
 
         const now = Date.now();
-        const ccAccount: ManagedAccount = {
+        const ccAccount = createManagedAccount({
           id: `cc-${ccCredential.source}-${now}:${ccCredential.refreshToken.slice(0, 12)}`,
           index: manager.#accounts.length,
-          email: undefined,
-          label: ccCredential.label,
           refreshToken: ccCredential.refreshToken,
           access: ccCredential.accessToken,
           expires: ccCredential.expiresAt,
           tokenUpdatedAt: now,
           addedAt: now,
-          lastUsed: 0,
-          enabled: true,
-          rateLimitResetTimes: {},
-          consecutiveFailures: 0,
-          lastFailureTime: null,
+          identity: ccIdentity,
+          label: ccCredential.label,
           lastSwitchReason: "cc-auto-detected",
-          stats: createDefaultStats(now),
           source: ccCredential.source,
-        };
+        });
 
         manager.#accounts.push(ccAccount);
       }
@@ -210,9 +398,7 @@ export class AccountManager {
         manager.#accounts = [...manager.getCCAccounts(), ...manager.getOAuthAccounts()];
       }
 
-      manager.#accounts.forEach((account, index) => {
-        account.index = index;
-      });
+      reindexAccounts(manager.#accounts);
 
       if (config.cc_credential_reuse.prefer_over_oauth && manager.getCCAccounts().length > 0) {
         manager.#currentIndex = 0;
@@ -384,39 +570,56 @@ export class AccountManager {
    * Add a new account to the pool.
    * @returns The new account, or null if at capacity
    */
-  addAccount(refreshToken: string, accessToken: string, expires: number, email?: string): ManagedAccount | null {
-    if (this.#accounts.length >= MAX_ACCOUNTS) return null;
+  addAccount(
+    refreshToken: string,
+    accessToken: string,
+    expires: number,
+    email?: string,
+    options?: AddAccountOptions,
+  ): ManagedAccount | null {
+    const identity = resolveAccountIdentity({
+      refreshToken,
+      email,
+      identity: options?.identity,
+      label: options?.label,
+      source: options?.source ?? "oauth",
+    });
+    const existing = findMatchingAccount(this.#accounts, {
+      identity,
+      refreshToken,
+    });
 
-    const existing = this.#accounts.find((acc) => acc.refreshToken === refreshToken);
     if (existing) {
+      existing.refreshToken = refreshToken;
       existing.access = accessToken;
       existing.expires = expires;
       existing.tokenUpdatedAt = Date.now();
-      if (email) existing.email = email;
-      existing.source = "oauth";
+      existing.email = email ?? existing.email;
+      existing.identity = identity;
+      existing.label = options?.label ?? existing.label;
+      existing.source = options?.source ?? existing.source ?? "oauth";
       existing.enabled = true;
+      this.requestSaveToDisk();
       return existing;
     }
 
+    if (this.#accounts.length >= MAX_ACCOUNTS) return null;
+
     const now = Date.now();
-    const account: ManagedAccount = {
+    const account = createManagedAccount({
       id: `${now}:${refreshToken.slice(0, 12)}`,
       index: this.#accounts.length,
-      email,
       refreshToken,
       access: accessToken,
       expires,
       tokenUpdatedAt: now,
       addedAt: now,
-      lastUsed: 0,
-      enabled: true,
-      rateLimitResetTimes: {},
-      consecutiveFailures: 0,
-      lastFailureTime: null,
       lastSwitchReason: "initial",
-      stats: createDefaultStats(now),
-      source: "oauth",
-    };
+      email,
+      identity,
+      label: options?.label,
+      source: options?.source ?? "oauth",
+    });
 
     this.#accounts.push(account);
 
@@ -436,9 +639,7 @@ export class AccountManager {
 
     this.#accounts.splice(index, 1);
 
-    this.#accounts.forEach((acc, i) => {
-      acc.index = i;
-    });
+    reindexAccounts(this.#accounts);
 
     if (this.#accounts.length === 0) {
       this.#currentIndex = -1;
@@ -452,9 +653,7 @@ export class AccountManager {
       }
     }
 
-    for (let i = 0; i < this.#accounts.length; i++) {
-      this.#healthTracker.reset(i);
-    }
+    this.#rebuildTrackers();
     this.requestSaveToDisk();
     return true;
   }
@@ -506,9 +705,11 @@ export class AccountManager {
     let diskAccountsById: Map<string, AccountMetadata> | null = null;
     let diskAccountsByAddedAt: Map<number, AccountMetadata[]> | null = null;
     let diskAccountsByRefreshToken: Map<string, AccountMetadata> | null = null;
+    let diskAccounts: AccountMetadata[] = [];
     try {
       const diskData = await loadAccounts();
       if (diskData) {
+        diskAccounts = diskData.accounts;
         diskAccountsById = new Map(diskData.accounts.map((a) => [a.id, a]));
         diskAccountsByAddedAt = new Map();
         diskAccountsByRefreshToken = new Map();
@@ -527,6 +728,9 @@ export class AccountManager {
       const byId = diskAccountsById?.get(account.id);
       if (byId) return byId;
 
+      const byIdentity = findByIdentity(diskAccounts, resolveIdentity(account));
+      if (byIdentity) return byIdentity;
+
       const byAddedAt = diskAccountsByAddedAt?.get(account.addedAt);
       if (byAddedAt?.length === 1) return byAddedAt[0]!;
 
@@ -537,80 +741,101 @@ export class AccountManager {
       return null;
     };
 
+    const matchedDiskAccounts = new Set<AccountMetadata>();
+    const activeAccountId = this.#accounts[this.#currentIndex]?.id ?? null;
+    const accountsToPersist = this.#accounts.filter((account) => account.enabled || !!findDiskAccount(account));
+
+    const persistedAccounts = accountsToPersist.map((acc) => {
+      const delta = this.#statsDeltas.get(acc.id);
+      let mergedStats = acc.stats;
+      const diskAcc = findDiskAccount(acc);
+
+      if (diskAcc) {
+        matchedDiskAccounts.add(diskAcc);
+      }
+
+      if (delta) {
+        const diskStats = diskAcc?.stats;
+
+        if (delta.isReset) {
+          mergedStats = {
+            requests: delta.requests,
+            inputTokens: delta.inputTokens,
+            outputTokens: delta.outputTokens,
+            cacheReadTokens: delta.cacheReadTokens,
+            cacheWriteTokens: delta.cacheWriteTokens,
+            lastReset: delta.resetTimestamp ?? acc.stats.lastReset,
+          };
+        } else if (diskStats) {
+          mergedStats = {
+            requests: diskStats.requests + delta.requests,
+            inputTokens: diskStats.inputTokens + delta.inputTokens,
+            outputTokens: diskStats.outputTokens + delta.outputTokens,
+            cacheReadTokens: diskStats.cacheReadTokens + delta.cacheReadTokens,
+            cacheWriteTokens: diskStats.cacheWriteTokens + delta.cacheWriteTokens,
+            lastReset: diskStats.lastReset,
+          };
+        }
+      }
+
+      const memTokenUpdatedAt = acc.tokenUpdatedAt || 0;
+      const diskTokenUpdatedAt = diskAcc?.token_updated_at || 0;
+      const freshestAuth =
+        diskAcc && diskTokenUpdatedAt > memTokenUpdatedAt
+          ? {
+              refreshToken: diskAcc.refreshToken,
+              access: diskAcc.access,
+              expires: diskAcc.expires,
+              tokenUpdatedAt: diskTokenUpdatedAt,
+            }
+          : {
+              refreshToken: acc.refreshToken,
+              access: acc.access,
+              expires: acc.expires,
+              tokenUpdatedAt: memTokenUpdatedAt,
+            };
+
+      acc.refreshToken = freshestAuth.refreshToken;
+      acc.access = freshestAuth.access;
+      acc.expires = freshestAuth.expires;
+      acc.tokenUpdatedAt = freshestAuth.tokenUpdatedAt;
+
+      return {
+        id: acc.id,
+        email: acc.email,
+        identity: acc.identity,
+        label: acc.label,
+        refreshToken: freshestAuth.refreshToken,
+        access: freshestAuth.access,
+        expires: freshestAuth.expires,
+        token_updated_at: freshestAuth.tokenUpdatedAt,
+        addedAt: acc.addedAt,
+        lastUsed: acc.lastUsed,
+        enabled: acc.enabled,
+        rateLimitResetTimes: Object.keys(acc.rateLimitResetTimes).length > 0 ? acc.rateLimitResetTimes : {},
+        consecutiveFailures: acc.consecutiveFailures,
+        lastFailureTime: acc.lastFailureTime,
+        lastSwitchReason: acc.lastSwitchReason,
+        stats: mergedStats,
+        source: acc.source,
+      };
+    });
+
+    const diskOnlyAccounts = diskAccounts.filter((account) => !matchedDiskAccounts.has(account));
+    const allAccounts = [...persistedAccounts, ...diskOnlyAccounts];
+    const resolvedActiveIndex = activeAccountId
+      ? allAccounts.findIndex((account) => account.id === activeAccountId)
+      : -1;
+
     const storage: AccountStorage = {
       version: 1,
-      accounts: this.#accounts.map((acc) => {
-        const delta = this.#statsDeltas.get(acc.id);
-        let mergedStats = acc.stats;
-        const diskAcc = findDiskAccount(acc);
-
-        if (delta) {
-          const diskStats = diskAcc?.stats;
-
-          if (delta.isReset) {
-            mergedStats = {
-              requests: delta.requests,
-              inputTokens: delta.inputTokens,
-              outputTokens: delta.outputTokens,
-              cacheReadTokens: delta.cacheReadTokens,
-              cacheWriteTokens: delta.cacheWriteTokens,
-              lastReset: delta.resetTimestamp ?? acc.stats.lastReset,
-            };
-          } else if (diskStats) {
-            mergedStats = {
-              requests: diskStats.requests + delta.requests,
-              inputTokens: diskStats.inputTokens + delta.inputTokens,
-              outputTokens: diskStats.outputTokens + delta.outputTokens,
-              cacheReadTokens: diskStats.cacheReadTokens + delta.cacheReadTokens,
-              cacheWriteTokens: diskStats.cacheWriteTokens + delta.cacheWriteTokens,
-              lastReset: diskStats.lastReset,
-            };
-          }
-        }
-
-        const memTokenUpdatedAt = acc.tokenUpdatedAt || 0;
-        const diskTokenUpdatedAt = diskAcc?.token_updated_at || 0;
-        const freshestAuth =
-          diskAcc && diskTokenUpdatedAt > memTokenUpdatedAt
-            ? {
-                refreshToken: diskAcc.refreshToken,
-                access: diskAcc.access,
-                expires: diskAcc.expires,
-                tokenUpdatedAt: diskTokenUpdatedAt,
-              }
-            : {
-                refreshToken: acc.refreshToken,
-                access: acc.access,
-                expires: acc.expires,
-                tokenUpdatedAt: memTokenUpdatedAt,
-              };
-
-        acc.refreshToken = freshestAuth.refreshToken;
-        acc.access = freshestAuth.access;
-        acc.expires = freshestAuth.expires;
-        acc.tokenUpdatedAt = freshestAuth.tokenUpdatedAt;
-
-        return {
-          id: acc.id,
-          email: acc.email,
-          identity: acc.identity,
-          label: acc.label,
-          refreshToken: freshestAuth.refreshToken,
-          access: freshestAuth.access,
-          expires: freshestAuth.expires,
-          token_updated_at: freshestAuth.tokenUpdatedAt,
-          addedAt: acc.addedAt,
-          lastUsed: acc.lastUsed,
-          enabled: acc.enabled,
-          rateLimitResetTimes: Object.keys(acc.rateLimitResetTimes).length > 0 ? acc.rateLimitResetTimes : {},
-          consecutiveFailures: acc.consecutiveFailures,
-          lastFailureTime: acc.lastFailureTime,
-          lastSwitchReason: acc.lastSwitchReason,
-          stats: mergedStats,
-          source: acc.source,
-        };
-      }),
-      activeIndex: Math.max(0, this.#currentIndex),
+      accounts: allAccounts,
+      activeIndex:
+        resolvedActiveIndex >= 0
+          ? resolvedActiveIndex
+          : allAccounts.length > 0
+            ? Math.max(0, Math.min(this.#currentIndex, allAccounts.length - 1))
+            : 0,
     };
 
     await saveAccounts(storage);
@@ -632,71 +857,108 @@ export class AccountManager {
     const stored = await loadAccounts();
     if (!stored) return;
 
-    const existingByTokenForSnapshot = new Map(this.#accounts.map((acc) => [acc.refreshToken, acc]));
-    const memSnapshot = this.#accounts.map((acc) => `${acc.id}:${acc.refreshToken}:${acc.enabled ? 1 : 0}`).join("|");
+    const matchedAccounts = new Set<ManagedAccount>();
+    const reconciledAccounts: ManagedAccount[] = [];
+    let structuralChange = false;
 
-    const diskSnapshot = stored.accounts
-      .map((acc) => {
-        const resolvedId = acc.id || existingByTokenForSnapshot.get(acc.refreshToken)?.id || acc.refreshToken;
-        return `${resolvedId}:${acc.refreshToken}:${acc.enabled ? 1 : 0}`;
-      })
-      .join("|");
-
-    if (diskSnapshot !== memSnapshot) {
-      const existingById = new Map(this.#accounts.map((acc) => [acc.id, acc]));
-      const existingByToken = new Map(this.#accounts.map((acc) => [acc.refreshToken, acc]));
-
-      this.#accounts = stored.accounts.map((acc, index) => {
-        const existing =
-          (acc.id && existingById.get(acc.id)) || (!acc.id ? existingByToken.get(acc.refreshToken) : null);
-        return {
-          id: acc.id || existing?.id || `${acc.addedAt}:${acc.refreshToken.slice(0, 12)}`,
-          index,
-          email: acc.email ?? existing?.email,
-          identity: acc.identity ?? existing?.identity,
-          label: acc.label ?? existing?.label,
-          refreshToken: acc.refreshToken,
-          access: acc.access ?? existing?.access,
-          expires: acc.expires ?? existing?.expires,
-          tokenUpdatedAt: acc.token_updated_at ?? existing?.tokenUpdatedAt ?? acc.addedAt,
-          addedAt: acc.addedAt,
-          lastUsed: acc.lastUsed,
-          enabled: acc.enabled,
-          rateLimitResetTimes: acc.rateLimitResetTimes,
-          consecutiveFailures: acc.consecutiveFailures,
-          lastFailureTime: acc.lastFailureTime,
-          lastSwitchReason: acc.lastSwitchReason || existing?.lastSwitchReason || "initial",
-          stats: acc.stats ?? existing?.stats ?? createDefaultStats(),
-          source: acc.source || existing?.source || "oauth",
-        };
+    for (const [index, storedAccount] of stored.accounts.entries()) {
+      const existing = findMatchingAccount(this.#accounts, {
+        id: storedAccount.id,
+        identity: resolveIdentity(storedAccount),
+        refreshToken: storedAccount.refreshToken,
       });
 
-      this.#healthTracker = new HealthScoreTracker(this.#config.health_score);
-      this.#tokenTracker = new TokenBucketTracker(this.#config.token_bucket);
-
-      const currentIds = new Set(this.#accounts.map((a) => a.id));
-      for (const id of this.#statsDeltas.keys()) {
-        if (!currentIds.has(id)) this.#statsDeltas.delete(id);
+      if (existing) {
+        updateManagedAccountFromStorage(existing, storedAccount, index);
+        matchedAccounts.add(existing);
+        reconciledAccounts.push(existing);
+        continue;
       }
 
-      if (this.#accounts.length === 0) {
-        this.#currentIndex = -1;
-        this.#cursor = 0;
-        return;
+      const addedAccount = createManagedAccount({
+        id: storedAccount.id,
+        index,
+        email: storedAccount.email,
+        identity: storedAccount.identity,
+        label: storedAccount.label,
+        refreshToken: storedAccount.refreshToken,
+        access: storedAccount.access,
+        expires: storedAccount.expires,
+        tokenUpdatedAt: storedAccount.token_updated_at,
+        addedAt: storedAccount.addedAt,
+        lastUsed: storedAccount.lastUsed,
+        enabled: storedAccount.enabled,
+        rateLimitResetTimes: storedAccount.rateLimitResetTimes,
+        consecutiveFailures: storedAccount.consecutiveFailures,
+        lastFailureTime: storedAccount.lastFailureTime,
+        lastSwitchReason: storedAccount.lastSwitchReason,
+        stats: storedAccount.stats,
+        source: storedAccount.source || "oauth",
+      });
+      matchedAccounts.add(addedAccount);
+      reconciledAccounts.push(addedAccount);
+      structuralChange = true;
+    }
+
+    for (const account of this.#accounts) {
+      if (matchedAccounts.has(account)) {
+        continue;
+      }
+
+      if (account.enabled) {
+        account.enabled = false;
+        structuralChange = true;
+      }
+
+      reconciledAccounts.push(account);
+    }
+
+    const orderChanged =
+      reconciledAccounts.length !== this.#accounts.length ||
+      reconciledAccounts.some((account, index) => this.#accounts[index] !== account);
+
+    this.#accounts = reconciledAccounts;
+    reindexAccounts(this.#accounts);
+
+    if (orderChanged || structuralChange) {
+      this.#rebuildTrackers();
+    }
+
+    const currentIds = new Set(this.#accounts.map((account) => account.id));
+    for (const id of this.#statsDeltas.keys()) {
+      if (!currentIds.has(id)) {
+        this.#statsDeltas.delete(id);
       }
     }
 
-    const diskIndex = Math.min(stored.activeIndex, this.#accounts.length - 1);
-    if (diskIndex >= 0 && diskIndex !== this.#currentIndex) {
-      const diskAccount = stored.accounts[diskIndex];
-      if (!diskAccount || !diskAccount.enabled) return;
+    const enabledAccounts = this.#accounts.filter((account) => account.enabled);
+    if (enabledAccounts.length === 0) {
+      this.#currentIndex = -1;
+      this.#cursor = 0;
+      return;
+    }
 
-      const account = this.#accounts[diskIndex];
-      if (account && account.enabled) {
-        this.#currentIndex = diskIndex;
-        this.#cursor = diskIndex;
-        this.#healthTracker.reset(diskIndex);
+    const diskIndex = Math.min(stored.activeIndex, stored.accounts.length - 1);
+    const diskAccount = diskIndex >= 0 ? stored.accounts[diskIndex] : undefined;
+    if (!diskAccount || !diskAccount.enabled) {
+      if (!this.#accounts[this.#currentIndex]?.enabled) {
+        const fallback = enabledAccounts[0]!;
+        this.#currentIndex = fallback.index;
+        this.#cursor = fallback.index;
       }
+      return;
+    }
+
+    const activeAccount = findMatchingAccount(this.#accounts, {
+      id: diskAccount.id,
+      identity: resolveIdentity(diskAccount),
+      refreshToken: diskAccount.refreshToken,
+    });
+
+    if (activeAccount && activeAccount.enabled && activeAccount.index !== this.#currentIndex) {
+      this.#currentIndex = activeAccount.index;
+      this.#cursor = activeAccount.index;
+      this.#healthTracker.reset(activeAccount.index);
     }
   }
 

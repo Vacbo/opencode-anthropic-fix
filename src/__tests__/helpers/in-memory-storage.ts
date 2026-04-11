@@ -104,8 +104,10 @@ export function createInMemoryStorage(initial?: AccountStorage): InMemoryStorage
 export function makeStoredAccount(overrides: Partial<AccountMetadata> & { refreshToken: string }): AccountMetadata {
   const now = Date.now();
   return {
-    id: `acct-${Math.random().toString(36).slice(2, 8)}`,
+    id: overrides.id ?? `acct-${Math.random().toString(36).slice(2, 8)}`,
     email: overrides.email,
+    identity: overrides.identity,
+    label: overrides.label,
     refreshToken: overrides.refreshToken,
     access: overrides.access ?? "access-token",
     expires: overrides.expires ?? now + 3600_000,
@@ -115,6 +117,7 @@ export function makeStoredAccount(overrides: Partial<AccountMetadata> & { refres
     rateLimitResetTimes: overrides.rateLimitResetTimes ?? {},
     consecutiveFailures: overrides.consecutiveFailures ?? 0,
     lastFailureTime: overrides.lastFailureTime ?? null,
+    lastSwitchReason: overrides.lastSwitchReason,
     token_updated_at: overrides.token_updated_at ?? 0,
     stats: overrides.stats ?? {
       requests: 0,
@@ -124,6 +127,7 @@ export function makeStoredAccount(overrides: Partial<AccountMetadata> & { refres
       cacheWriteTokens: 0,
       lastReset: now,
     },
+    source: overrides.source,
   };
 }
 

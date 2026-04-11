@@ -422,6 +422,13 @@ Evidence: .sisyphus/evidence/task-6-conversation-smoke.txt
 - Per-request skip tracking should include account-specific HTTP failures (`429`/auth-style responses), not just refresh/fetch exceptions, or sticky selection can immediately pick the same bad account again inside the same request.
 - Wiring a per-plugin `createBunFetch()` instance works cleanly with tests when the interceptor falls back to the currently mocked `globalThis.fetch`; that keeps the proxy lifecycle isolated without breaking URL-based harness assertions.
 
+## Task 30: Accounts identity-first sync GREEN (2026-04-10)
+
+- `AccountManager` dedup is now safest when identity resolution happens before legacy refresh-token matching; this keeps OAuth refresh rotation and CC credential rotation updating existing objects in place instead of replacing them.
+- `syncActiveIndexFromDisk()` can preserve in-flight account references by reconciling stored records onto existing `ManagedAccount` objects, then only rebuilding trackers when the account set/order changes structurally.
+- `saveToDisk()` needs a disk-union pass so concurrent/disk-only accounts are preserved, while disabled accounts that no longer exist on disk can still stay in memory without being re-persisted.
+- The in-memory storage helper must preserve additive account fields like `id`, `source`, `identity`, `label`, and `lastSwitchReason`; otherwise dedup tests exercise helper lossiness instead of real account-manager behavior.
+
 ## Task 27: Stream completeness error propagation GREEN (2026-04-10)
 
 - Stream truncation is easier to reason about when EOF failures use a dedicated `StreamTruncatedError` with structured context instead of a plain `Error` string.
