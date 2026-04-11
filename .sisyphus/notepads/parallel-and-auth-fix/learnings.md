@@ -382,3 +382,9 @@ Evidence: .sisyphus/evidence/task-6-conversation-smoke.txt
 - Passing `--parent-pid ${process.pid}` into `bun-proxy.ts` is enough to inherit the T18 parent-death contract without adding new parent-process signal handlers in `bun-fetch.ts`.
 - A line-buffered `readline.createInterface()` banner parser plus per-instance pending-request flushing avoids the old shared singleton bugs and keeps hot-reload / sibling-request tests deterministic.
 - `debug-gating.test.ts` needed one extra refresh beyond the T21 handler flips: the source guardrails now allow `resolveDebug(...)` gating in `bun-fetch.ts` and `AbortSignal.any(...)` timeout composition in `bun-proxy.ts`.
+
+## Task 22: Bun Fetch Fallback Hardening (2026-04-10)
+
+- Native fallback is safer when it is treated as an explicit status event, not a silent branch: `onProxyStatus` now needs a distinct fallback signal plus the reason that forced degradation.
+- Pending-request queues should carry the fallback reason through to the final `globalThis.fetch(input, init)` call so hidden retry/body tests can prove the original `RequestInit` was not rewritten on the native path.
+- Once Bun availability is known to be false for an instance, short-circuiting future proxy starts avoids pointless spawn churn and makes breaker-open/native fallback behavior deterministic.

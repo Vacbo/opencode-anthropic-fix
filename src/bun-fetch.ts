@@ -21,6 +21,7 @@ type ProxyChildProcess = ChildProcess & {
 };
 
 export interface BunFetchStatus {
+  status: "state" | "fallback";
   mode: "native" | "starting" | "proxy";
   port: number | null;
   bunAvailable: boolean | null;
@@ -59,7 +60,7 @@ interface InstanceState {
   bunAvailable: boolean | null;
   pendingFetches: Array<{
     runProxy: (useForwardFetch: boolean) => void;
-    runNative: () => void;
+    runNative: (reason: string) => void;
   }>;
 }
 
@@ -143,7 +144,8 @@ export function createBunFetch(options: BunFetchOptions = {}): BunFetchInstance 
     pendingFetches: [],
   };
 
-  const getStatus = (reason = "idle"): BunFetchStatus => ({
+  const getStatus = (reason = "idle", status: BunFetchStatus["status"] = "state"): BunFetchStatus => ({
+    status,
     mode: state.activePort !== null ? "proxy" : state.startPromise ? "starting" : "native",
     port: state.activePort,
     bunAvailable: state.bunAvailable,
@@ -155,6 +157,18 @@ export function createBunFetch(options: BunFetchOptions = {}): BunFetchInstance 
 
   const reportStatus = (reason: string): void => {
     onProxyStatus?.(getStatus(reason));
+  };
+
+  const reportFallback = (reason: string, debugOverride?: boolean): void => {
+    onProxyStatus?.(getStatus(reason, "fallback"));
+
+    const message = `[opencode-anthropic-auth] Native fetch fallback engaged (${reason}); Bun proxy fingerprint mimicry disabled for this request`;
+    if (resolveDebug(debugOverride)) {
+      console.error(message);
+      return;
+    }
+
+    console.error(message);
   };
 
   const resolveDebug = (debugOverride?: boolean): boolean => debugOverride ?? defaultDebug;
@@ -170,7 +184,7 @@ export function createBunFetch(options: BunFetchOptions = {}): BunFetchInstance 
     }
   };
 
-  const flushPendingFetches = (mode: "proxy" | "native"): void => {
+  const flushPendingFetches = (mode: "proxy" | "native", reason = "proxy-unavailable"): void => {
     const pendingFetches = state.pendingFetches.splice(0, state.pendingFetches.length);
     const useForwardFetch = pendingFetches.length <= 2;
     for (const pendingFetch of pendingFetches) {
@@ -179,7 +193,7 @@ export function createBunFetch(options: BunFetchOptions = {}): BunFetchInstance 
         continue;
       }
 
-      pendingFetch.runNative();
+      pendingFetch.runNative(reason);
     }
   };
 
@@ -194,7 +208,13 @@ export function createBunFetch(options: BunFetchOptions = {}): BunFetchInstance 
 
     if (!breaker.canExecute()) {
       reportStatus("breaker-open");
-      flushPendingFetches("native");
+      flushPendingFetches("native", "breaker-open");
+      return null;
+    }
+
+    if (state.bunAvailable === false) {
+      reportStatus("bun-unavailable");
+      flushPendingFetches("native", "bun-unavailable");
       return null;
     }
 
@@ -204,7 +224,7 @@ export function createBunFetch(options: BunFetchOptions = {}): BunFetchInstance 
     if (!script || !state.bunAvailable) {
       breaker.recordFailure();
       reportStatus(script ? "bun-unavailable" : "proxy-script-missing");
-      flushPendingFetches("native");
+      flushPendingFetches("native", script ? "bun-unavailable" : "proxy-script-missing");
       return null;
     }
 
@@ -224,7 +244,7 @@ export function createBunFetch(options: BunFetchOptions = {}): BunFetchInstance 
       } catch {
         breaker.recordFailure();
         reportStatus("spawn-failed");
-        flushPendingFetches("native");
+        flushPendingFetches("native", "spawn-failed");
         resolve(null);
         return;
       }
@@ -237,7 +257,7 @@ export function createBunFetch(options: BunFetchOptions = {}): BunFetchInstance 
         clearActiveProxy(child);
         breaker.recordFailure();
         reportStatus("stdout-missing");
-        flushPendingFetches("native");
+        flushPendingFetches("native", "stdout-missing");
         resolve(null);
         return;
       }
@@ -277,7 +297,7 @@ export function createBunFetch(options: BunFetchOptions = {}): BunFetchInstance 
         clearActiveProxy(child);
         breaker.recordFailure();
         reportStatus(reason);
-        flushPendingFetches("native");
+        flushPendingFetches("native", reason);
         resolve(null);
       };
 
@@ -352,18 +372,16 @@ export function createBunFetch(options: BunFetchOptions = {}): BunFetchInstance 
     debugOverride?: boolean,
   ): Promise<Response> => {
     const url = toRequestUrl(input);
-    const fetchNative = async (): Promise<Response> => {
-      if (resolveDebug(debugOverride)) {
-        console.error("[opencode-anthropic-auth] Bun proxy unavailable, falling back to native fetch");
-      }
+    const fetchNative = async (reason: string): Promise<Response> => {
+      reportFallback(reason, debugOverride);
 
-      return fetch(input, init);
+      return globalThis.fetch(input, init);
     };
 
     const fetchFromActiveProxy = async (useForwardFetch: boolean): Promise<Response> => {
       const port = state.activePort;
       if (port === null) {
-        return fetchNative();
+        return fetchNative("proxy-port-missing");
       }
 
       if (resolveDebug(debugOverride)) {
@@ -401,16 +419,32 @@ export function createBunFetch(options: BunFetchOptions = {}): BunFetchInstance 
     }
 
     return new Promise<Response>((resolve, reject) => {
-      state.pendingFetches.push({
-        runProxy: (useForwardFetch) => {
+      let settled = false;
+      const pendingFetch: InstanceState["pendingFetches"][number] = {
+        runProxy: (useForwardFetch: boolean) => {
+          if (settled) {
+            return;
+          }
+
+          settled = true;
           void fetchFromActiveProxy(useForwardFetch).then(resolve, reject);
         },
-        runNative: () => {
-          void fetchNative().then(resolve, reject);
-        },
-      });
+        runNative: (reason: string) => {
+          if (settled) {
+            return;
+          }
 
-      void startProxy(debugOverride).catch(reject);
+          settled = true;
+          void fetchNative(reason).then(resolve, reject);
+        },
+      };
+
+      state.pendingFetches.push(pendingFetch);
+
+      void startProxy(debugOverride).catch(() => {
+        state.pendingFetches = state.pendingFetches.filter((candidate) => candidate !== pendingFetch);
+        pendingFetch.runNative("proxy-start-error");
+      });
     });
   };
 
