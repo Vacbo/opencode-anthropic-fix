@@ -290,6 +290,14 @@ function makeAccountsData(accountOverrides = [{}], extra = {}) {
   };
 }
 
+function useMutableAccountsData(initialData) {
+  let stored = structuredClone(initialData);
+  mockLoadAccounts.mockImplementation(async () => structuredClone(stored));
+  mockSaveAccounts.mockImplementation(async (nextData) => {
+    stored = structuredClone(nextData);
+  });
+}
+
 /**
  * Bootstrap a plugin with loaded accounts and return the fetch interceptor.
  * Accepts an array of account overrides (one per account) and optional auth overrides.
@@ -314,14 +322,17 @@ async function setupFetchFn(client, accountOverrides = [{}], authOverrides = {})
 
 /** Shorthand for a successful token refresh mock response */
 function mockTokenRefresh(token = "access-new", refresh = "refresh-new") {
-  return {
-    ok: true,
-    json: async () => ({
+  return new Response(
+    JSON.stringify({
       access_token: token,
       refresh_token: refresh,
       expires_in: 3600,
     }),
-  };
+    {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    },
+  );
 }
 
 function getFetchHeaders(callIndex) {
@@ -2802,10 +2813,7 @@ describe("fetch interceptor — account exhaustion", () => {
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
 
     try {
-      mockLoadAccounts.mockResolvedValue(
-        makeAccountsData([{ access: "stale-access", expires: Date.now() + 3600_000 }]),
-      );
-      mockSaveAccounts.mockResolvedValue(undefined);
+      useMutableAccountsData(makeAccountsData([{ access: "stale-access", expires: Date.now() + 3600_000 }]));
 
       const plugin = await AnthropicAuthPlugin({ client });
       const getAuth = vi.fn().mockResolvedValue({
@@ -2858,13 +2866,12 @@ describe("fetch interceptor — account exhaustion", () => {
   });
 
   it("tries next account when fetch throws a network error", async () => {
-    mockLoadAccounts.mockResolvedValue(
+    useMutableAccountsData(
       makeAccountsData([
         { access: "access-1", expires: Date.now() + 3600_000 },
         { access: "access-2", expires: Date.now() + 3600_000 },
       ]),
     );
-    mockSaveAccounts.mockResolvedValue(undefined);
 
     const plugin = await AnthropicAuthPlugin({ client });
     const getAuth = vi.fn().mockResolvedValue({
@@ -4188,112 +4195,128 @@ describe("markSuccess wiring", () => {
   });
 
   it("detects whitespace-formatted mid-stream error events and switches account on next request", async () => {
-    vi.resetAllMocks();
-    const client = makeClient();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
 
-    mockLoadAccounts.mockResolvedValue(
-      makeAccountsData([
-        { access: "access-1", expires: Date.now() + 3600_000 },
-        { access: "access-2", expires: Date.now() + 3600_000 },
-      ]),
-    );
-    mockSaveAccounts.mockResolvedValue(undefined);
+    try {
+      vi.resetAllMocks();
+      const client = makeClient();
 
-    const plugin = await AnthropicAuthPlugin({ client });
-    const getAuth = vi.fn().mockResolvedValue({
-      type: "oauth",
-      refresh: "refresh-1",
-      access: "access-1",
-      expires: Date.now() + 3600_000,
-    });
-    const result = await plugin.auth.loader(getAuth, makeProvider());
+      useMutableAccountsData(
+        makeAccountsData([
+          { access: "access-1", expires: Date.now() + 3600_000 },
+          { access: "access-2", expires: Date.now() + 3600_000 },
+        ]),
+      );
 
-    const sseBody = [
-      "event: error",
-      'data: { "type": "error", "error": { "type": "rate_limit_error", "message": "Rate limit exceeded" } }',
-      "",
-    ].join("\n");
+      const plugin = await AnthropicAuthPlugin({ client });
+      const getAuth = vi.fn().mockResolvedValue({
+        type: "oauth",
+        refresh: "refresh-1",
+        access: "access-1",
+        expires: Date.now() + 3600_000,
+      });
+      const result = await plugin.auth.loader(getAuth, makeProvider());
 
-    mockFetch.mockResolvedValueOnce(
-      new Response(sseBody, {
-        status: 200,
-        headers: { "content-type": "text/event-stream" },
-      }),
-    );
-    mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
+      const sseBody = [
+        "event: error",
+        'data: { "type": "error", "error": { "type": "rate_limit_error", "message": "Rate limit exceeded" } }',
+        "",
+      ].join("\n");
 
-    const first = await result.fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      body: JSON.stringify({ messages: [{ role: "user", content: "Hi" }] }),
-    });
-    await first.text();
+      mockFetch.mockResolvedValueOnce(
+        new Response(sseBody, {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        }),
+      );
+      mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
 
-    const second = await result.fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      body: JSON.stringify({ messages: [{ role: "user", content: "Again" }] }),
-    });
+      const first = await result.fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        body: JSON.stringify({ messages: [{ role: "user", content: "Hi" }] }),
+      });
+      await first.text();
 
-    expect(second.status).toBe(200);
-    expect(mockFetch).toHaveBeenCalledTimes(2);
-    const secondHeaders = mockFetch.mock.calls[1][1].headers;
-    expect(secondHeaders.get("authorization")).toBe("Bearer access-2");
+      await vi.advanceTimersByTimeAsync(1_100);
+
+      const second = await result.fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        body: JSON.stringify({ messages: [{ role: "user", content: "Again" }] }),
+      });
+
+      expect(second.status).toBe(200);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      const secondHeaders = mockFetch.mock.calls[1][1].headers;
+      expect(secondHeaders.get("authorization")).toBe("Bearer access-2");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("detects chunk-split mid-stream error events and switches account on next request", async () => {
-    vi.resetAllMocks();
-    const client = makeClient();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
 
-    mockLoadAccounts.mockResolvedValue(
-      makeAccountsData([
-        { access: "access-1", expires: Date.now() + 3600_000 },
-        { access: "access-2", expires: Date.now() + 3600_000 },
-      ]),
-    );
-    mockSaveAccounts.mockResolvedValue(undefined);
+    try {
+      vi.resetAllMocks();
+      const client = makeClient();
 
-    const plugin = await AnthropicAuthPlugin({ client });
-    const getAuth = vi.fn().mockResolvedValue({
-      type: "oauth",
-      refresh: "refresh-1",
-      access: "access-1",
-      expires: Date.now() + 3600_000,
-    });
-    const result = await plugin.auth.loader(getAuth, makeProvider());
+      useMutableAccountsData(
+        makeAccountsData([
+          { access: "access-1", expires: Date.now() + 3600_000 },
+          { access: "access-2", expires: Date.now() + 3600_000 },
+        ]),
+      );
 
-    const encoder = new TextEncoder();
-    const splitStream = new ReadableStream({
-      start(controller) {
-        controller.enqueue(encoder.encode("event: error\n"));
-        controller.enqueue(encoder.encode('data: {"type":"error","error":{"type":"rate_'));
-        controller.enqueue(encoder.encode('limit_error","message":"Rate limit exceeded"}}\n'));
-        controller.enqueue(encoder.encode("\n"));
-        controller.close();
-      },
-    });
+      const plugin = await AnthropicAuthPlugin({ client });
+      const getAuth = vi.fn().mockResolvedValue({
+        type: "oauth",
+        refresh: "refresh-1",
+        access: "access-1",
+        expires: Date.now() + 3600_000,
+      });
+      const result = await plugin.auth.loader(getAuth, makeProvider());
 
-    mockFetch.mockResolvedValueOnce(
-      new Response(splitStream, {
-        status: 200,
-        headers: { "content-type": "text/event-stream" },
-      }),
-    );
-    mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
+      const encoder = new TextEncoder();
+      const splitStream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode("event: error\n"));
+          controller.enqueue(encoder.encode('data: {"type":"error","error":{"type":"rate_'));
+          controller.enqueue(encoder.encode('limit_error","message":"Rate limit exceeded"}}\n'));
+          controller.enqueue(encoder.encode("\n"));
+          controller.close();
+        },
+      });
 
-    const first = await result.fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      body: JSON.stringify({ messages: [{ role: "user", content: "Hi" }] }),
-    });
-    await first.text();
+      mockFetch.mockResolvedValueOnce(
+        new Response(splitStream, {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        }),
+      );
+      mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
 
-    const second = await result.fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      body: JSON.stringify({ messages: [{ role: "user", content: "Again" }] }),
-    });
+      const first = await result.fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        body: JSON.stringify({ messages: [{ role: "user", content: "Hi" }] }),
+      });
+      await first.text();
 
-    expect(second.status).toBe(200);
-    expect(mockFetch).toHaveBeenCalledTimes(2);
-    const secondHeaders = mockFetch.mock.calls[1][1].headers;
-    expect(secondHeaders.get("authorization")).toBe("Bearer access-2");
+      await vi.advanceTimersByTimeAsync(1_100);
+
+      const second = await result.fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        body: JSON.stringify({ messages: [{ role: "user", content: "Again" }] }),
+      });
+
+      expect(second.status).toBe(200);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      const secondHeaders = mockFetch.mock.calls[1][1].headers;
+      expect(secondHeaders.get("authorization")).toBe("Bearer access-2");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does not switch account on mid-stream service-wide overloaded error", async () => {
@@ -4410,10 +4433,7 @@ describe("markSuccess wiring", () => {
       vi.resetAllMocks();
       const client = makeClient();
 
-      mockLoadAccounts.mockResolvedValue(
-        makeAccountsData([{ access: "stale-access", expires: Date.now() + 3600_000 }]),
-      );
-      mockSaveAccounts.mockResolvedValue(undefined);
+      useMutableAccountsData(makeAccountsData([{ access: "stale-access", expires: Date.now() + 3600_000 }]));
 
       const plugin = await AnthropicAuthPlugin({ client });
       const getAuth = vi.fn().mockResolvedValue({
@@ -4475,8 +4495,7 @@ describe("markSuccess wiring", () => {
       vi.resetAllMocks();
       const client = makeClient();
 
-      mockLoadAccounts.mockResolvedValue(makeAccountsData([{ access: "access-1", expires: Date.now() + 3600_000 }]));
-      mockSaveAccounts.mockResolvedValue(undefined);
+      useMutableAccountsData(makeAccountsData([{ access: "access-1", expires: Date.now() + 3600_000 }]));
 
       const plugin = await AnthropicAuthPlugin({ client });
       const getAuth = vi.fn().mockResolvedValue({

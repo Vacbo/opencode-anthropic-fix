@@ -1,0 +1,144 @@
+
+[1m[46m RUN [49m[22m [36mv4.1.0 [39m[90m/Users/vacbo/Documents/Projects/opencode-anthropic-fix[39m
+
+ [31m❯[39m src/__tests__/fingerprint-regression.test.ts [2m([22m[2m73 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 11[2mms[22m[39m
+[31m     [31m×[31m appends version hash derived from first user message[39m[32m 3[2mms[22m[39m
+ [31m❯[39m src/__tests__/helpers/plugin-fetch-harness.smoke.test.ts [2m([22m[2m9 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 207[2mms[22m[39m
+[31m     [31m×[31m should use custom mock responses[39m[32m 2[2mms[22m[39m
+ [31m❯[39m index.test.ts [2m([22m[2m132 tests[22m[2m | [22m[31m5 failed[39m[2m)[22m[32m 111[2mms[22m[39m
+[31m     [31m×[31m clears token state on 401 so next attempt refreshes token[39m[32m 5[2mms[22m[39m
+[31m     [31m×[31m detects whitespace-formatted mid-stream error events and switches account on next request[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m detects chunk-split mid-stream error events and switches account on next request[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m clears token and refreshes after mid-stream auth error cooldown[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m applies quota-style cooldown for mid-stream billing errors[39m[32m 2[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 7 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m index.test.ts[2m > [22mfetch interceptor — account exhaustion[2m > [22mclears token state on 401 so next attempt refreshes token
+[31m[1mTypeError[22m: Cannot read properties of undefined (reading 'get')[39m
+[36m [2m❯[22m isEventStreamResponse src/response/streaming.ts:[2m555:40[22m[39m
+    [90m553|[39m  */[39m
+    [90m554|[39m [35mexport[39m [35mfunction[39m [34misEventStreamResponse[39m(response[33m:[39m [33mResponse[39m)[33m:[39m boolean {
+    [90m555|[39m   [35mconst[39m contentType [33m=[39m response[33m.[39mheaders[33m.[39m[35mget[39m([32m"content-type"[39m) [33m||[39m [32m""[39m[33m;[39m
+    [90m   |[39m                                        [31m^[39m
+    [90m556|[39m   [35mreturn[39m contentType[33m.[39m[34mtoLowerCase[39m()[33m.[39m[34mincludes[39m([32m"text/event-stream"[39m)[33m;[39m
+    [90m557|[39m }
+[90m [2m❯[22m Object.fetch src/index.ts:[2m623:89[22m[39m
+[90m [2m❯[22m index.test.ts:[2m2845:24[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/7]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m index.test.ts[2m > [22mmarkSuccess wiring[2m > [22mdetects whitespace-formatted mid-stream error events and switches account on next request
+[31m[1mAssertionError[22m: expected 'Bearer access-1' to be 'Bearer access-2' // Object.is equality[39m
+
+Expected: [32m"Bearer access-[7m2[27m"[39m
+Received: [31m"Bearer access-[7m1[27m"[39m
+
+[36m [2m❯[22m index.test.ts:[2m4239:48[22m[39m
+    [90m4237|[39m     expect(mockFetch).toHaveBeenCalledTimes(2);
+    [90m4238|[39m     const secondHeaders = mockFetch.mock.calls[1][1].headers;
+    [90m4239|[39m     expect(secondHeaders.get("authorization")).toBe("Bearer access-2");
+    [90m   |[39m                                                [31m^[39m
+    [90m4240|[39m   });
+    [90m4241|[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/7]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m index.test.ts[2m > [22mmarkSuccess wiring[2m > [22mdetects chunk-split mid-stream error events and switches account on next request
+[31m[1mAssertionError[22m: expected 'Bearer access-1' to be 'Bearer access-2' // Object.is equality[39m
+
+Expected: [32m"Bearer access-[7m2[27m"[39m
+Received: [31m"Bearer access-[7m1[27m"[39m
+
+[36m [2m❯[22m index.test.ts:[2m4296:48[22m[39m
+    [90m4294|[39m     expect(mockFetch).toHaveBeenCalledTimes(2);
+    [90m4295|[39m     const secondHeaders = mockFetch.mock.calls[1][1].headers;
+    [90m4296|[39m     expect(secondHeaders.get("authorization")).toBe("Bearer access-2");
+    [90m   |[39m                                                [31m^[39m
+    [90m4297|[39m   });
+    [90m4298|[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/7]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m index.test.ts[2m > [22mmarkSuccess wiring[2m > [22mclears token and refreshes after mid-stream auth error cooldown
+[31m[1mTypeError[22m: Cannot read properties of undefined (reading 'get')[39m
+[36m [2m❯[22m isEventStreamResponse src/response/streaming.ts:[2m555:40[22m[39m
+    [90m553|[39m  */[39m
+    [90m554|[39m [35mexport[39m [35mfunction[39m [34misEventStreamResponse[39m(response[33m:[39m [33mResponse[39m)[33m:[39m boolean {
+    [90m555|[39m   [35mconst[39m contentType [33m=[39m response[33m.[39mheaders[33m.[39m[35mget[39m([32m"content-type"[39m) [33m||[39m [32m""[39m[33m;[39m
+    [90m   |[39m                                        [31m^[39m
+    [90m556|[39m   [35mreturn[39m contentType[33m.[39m[34mtoLowerCase[39m()[33m.[39m[34mincludes[39m([32m"text/event-stream"[39m)[33m;[39m
+    [90m557|[39m }
+[90m [2m❯[22m Object.fetch src/index.ts:[2m623:89[22m[39m
+[90m [2m❯[22m index.test.ts:[2m4453:22[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/7]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m index.test.ts[2m > [22mmarkSuccess wiring[2m > [22mapplies quota-style cooldown for mid-stream billing errors
+[31m[1mAssertionError[22m: expected [Function] to throw error matching /No available Anthropic account|All ac…/ but got 'Cannot read properties of undefined (…'[39m
+
+[32m- Expected:[39m
+/No available Anthropic account|All accounts exhausted/
+
+[31m+ Received:[39m
+"Cannot read properties of undefined (reading 'ok')"
+
+[36m [2m❯[22m index.test.ts:[2m4519:8[22m[39m
+    [90m4517|[39m           }),
+    [90m4518|[39m         }),
+    [90m4519|[39m       ).rejects.toThrow(/No available Anthropic account|All accounts e…
+    [90m   |[39m        [31m^[39m
+    [90m4520|[39m
+    [90m4521|[39m       // Should fail before issuing another upstream fetch.
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/7]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/__tests__/fingerprint-regression.test.ts[2m > [22mCC 2.1.98 — Billing header[2m > [22mappends version hash derived from first user message
+[31m[1mAssertionError[22m: expected 'x-anthropic-billing-header: cc_versio…' to contain 'cc_version=2.1.98.854'[39m
+
+Expected: [32m"cc_version=2.1.98.854"[39m
+Received: [31m"x-anthropic-billing-header: cc_version=2.1.98.80a; cc_entrypoint=cli; cch=3a904;"[39m
+
+[36m [2m❯[22m src/__tests__/fingerprint-regression.test.ts:[2m219:20[22m[39m
+    [90m217|[39m       [33m.[39m[34mslice[39m([34m0[39m[33m,[39m [34m3[39m)[33m;[39m
+    [90m218|[39m
+    [90m219|[39m     expect(header).toContain(`cc_version=${CC_VERSION}.${expectedHash}…
+    [90m   |[39m                    [31m^[39m
+    [90m220|[39m   })[33m;[39m
+    [90m221|[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/7]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/__tests__/helpers/plugin-fetch-harness.smoke.test.ts[2m > [22mplugin-fetch-harness[2m > [22mshould use custom mock responses
+[31m[1mSyntaxError[22m: Unexpected end of JSON input[39m
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/7]⎯[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯[39m[1m[41m Unhandled Errors [49m[22m[31m⎯⎯⎯⎯⎯⎯[39m
+[31m[1m
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.[22m[39m
+
+[31m⎯⎯⎯⎯[39m[1m[41m Unhandled Rejection [49m[22m[31m⎯⎯⎯⎯⎯[39m
+[31m[1mTypeError[22m: response.text is not a function[39m
+[36m [2m❯[22m finalizeResponse src/index.ts:[2m48:60[22m[39m
+    [90m 46|[39m )[33m:[39m [33mPromise[39m[33m<[39m[33mResponse[39m[33m>[39m {
+    [90m 47|[39m   [35mif[39m ([33m![39m[34misEventStreamResponse[39m(response)) {
+    [90m 48|[39m     [35mconst[39m body [33m=[39m [34mstripMcpPrefixFromJsonBody[39m([35mawait[39m response[33m.[39m[34mtext[39m())[33m;[39m
+    [90m   |[39m                                                            [31m^[39m
+    [90m 49|[39m     [35mreturn[39m [35mnew[39m [33mResponse[39m(body[33m,[39m {
+    [90m 50|[39m       status[33m:[39m response[33m.[39mstatus[33m,[39m
+[90m [2m❯[22m Object.fetch src/index.ts:[2m655:24[22m[39m
+
+[31mThis error originated in "[1msrc/__tests__/helpers/plugin-fetch-harness.smoke.test.ts[22m" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.[39m
+[31mThe latest test that might've caused the error is "[1mshould support waitFor for async assertions[22m". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.[39m
+[31m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39m
+
+
+[2m Test Files [22m [1m[31m3 failed[39m[22m[2m | [22m[1m[32m32 passed[39m[22m[90m (35)[39m
+[2m      Tests [22m [1m[31m7 failed[39m[22m[2m | [22m[1m[32m896 passed[39m[22m[90m (903)[39m
+[2m     Errors [22m [1m[31m1 error[39m[22m
+[2m   Start at [22m 00:23:19
+[2m   Duration [22m 5.37s[2m (transform 2.81s, setup 0ms, import 3.42s, tests 7.86s, environment 2ms)[22m
+

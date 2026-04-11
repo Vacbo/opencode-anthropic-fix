@@ -207,12 +207,12 @@ describe("CC 2.1.98 — Billing header", () => {
     const messages = [{ role: "user", content: "Hello world from a test" }];
     const header = buildAnthropicBillingHeader(CC_VERSION, messages);
 
-    // Replicate the documented algorithm: SHA-256(salt + chars[4,7,20])
+    // Replicate the current billing-header algorithm: SHA-256(salt + chars[4,7,20] + version)
     const text = "Hello world from a test";
     const salt = "59cf53e54c78";
-    const picked = [4, 7, 20].map((i) => (i < text.length ? text[i] : "")).join("");
+    const picked = [4, 7, 20].map((i) => (i < text.length ? text[i] : "0")).join("");
     const expectedHash = createHash("sha256")
-      .update(salt + picked)
+      .update(salt + picked + CC_VERSION)
       .digest("hex")
       .slice(0, 3);
 

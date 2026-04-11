@@ -259,12 +259,10 @@ describe("plugin-fetch-harness", () => {
     let callCount = 0;
     harness.mockFetch.mockImplementation(async () => {
       callCount++;
-      return {
-        ok: true,
+      return new Response("{}", {
         status: 200,
-        headers: new Headers(),
-        json: async () => ({}),
-      } as Response;
+        headers: { "content-type": "application/json" },
+      });
     });
 
     // Fire request asynchronously

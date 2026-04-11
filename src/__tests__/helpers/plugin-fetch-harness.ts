@@ -265,27 +265,53 @@ export async function createFetchHarness(opts: HarnessOptions = {}): Promise<Fet
     for (const [pattern, response] of Object.entries(mockResponses)) {
       if (url && url.includes(pattern)) {
         const responseObj = typeof response === "function" ? response() : response;
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          statusText: "OK",
-          headers: new Headers(),
-          json: async () => ({}),
-          text: async () => "",
-          ...responseObj,
-        } as Response);
+        if (responseObj instanceof Response) {
+          return Promise.resolve(responseObj);
+        }
+
+        if (typeof responseObj.json === "function") {
+          return responseObj.json().then(
+            (jsonBody) =>
+              new Response(JSON.stringify(jsonBody), {
+                status: responseObj.status ?? 200,
+                statusText: responseObj.statusText ?? "OK",
+                headers:
+                  responseObj.headers instanceof Headers
+                    ? responseObj.headers
+                    : new Headers(responseObj.headers ?? { "content-type": "application/json" }),
+              }),
+          );
+        }
+
+        if (typeof responseObj.text === "function") {
+          return responseObj.text().then(
+            (textBody) =>
+              new Response(textBody, {
+                status: responseObj.status ?? 200,
+                statusText: responseObj.statusText ?? "OK",
+                headers:
+                  responseObj.headers instanceof Headers
+                    ? responseObj.headers
+                    : new Headers(responseObj.headers ?? undefined),
+              }),
+          );
+        }
+
+        return Promise.resolve(
+          new Response(undefined, {
+            status: responseObj.status ?? 200,
+            statusText: responseObj.statusText ?? "OK",
+            headers:
+              responseObj.headers instanceof Headers
+                ? responseObj.headers
+                : new Headers(responseObj.headers ?? undefined),
+          }),
+        );
       }
     }
 
     // Default: return empty successful response
-    return Promise.resolve({
-      ok: true,
-      status: 200,
-      statusText: "OK",
-      headers: new Headers(),
-      json: async () => ({}),
-      text: async () => "",
-    } as Response);
+    return Promise.resolve(new Response("{}", { status: 200, headers: { "content-type": "application/json" } }));
   });
 
   // Install mock

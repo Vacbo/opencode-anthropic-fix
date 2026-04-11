@@ -56,3 +56,11 @@ Created CHANGELOG.md with v0.1.0 entry documenting all fixes and changes from Wa
 - `scripts/mock-upstream.js` uses a kernel-assigned port, emits complete SSE event blocks, and assigns monotonic `toolu_` IDs per request.
 - `scripts/qa-parallel.sh` validates 50 concurrent proxy requests by routing Bun fetch traffic through the local mock upstream via `HTTP_PROXY`, which avoids touching real Anthropic endpoints while keeping the proxy hostname allowlist intact.
 - `scripts/rotation-test.js` drives repeated OAuth token rotations through the built plugin against a local token server and confirms the persisted account count stays at 2.
+
+## Task 40: Full Suite Gate Test Sweep (2026-04-11)
+
+- `index.test.ts` now uses mutable mocked account storage in the cross-request failover cases because `syncActiveIndexFromDisk()` rehydrates state on each fetch and will wipe in-memory rate-limit/auth mutations unless `saveAccounts` feeds subsequent `loadAccounts` calls.
+- Mid-stream failover assertions also need the debounced `requestSaveToDisk()` timer flushed before the next request; advancing timers by a little over 1 second makes the persisted failover state observable.
+- Refresh mocks must be real `Response` objects now that the plugin inspects response headers/body helpers during token refresh and final response shaping.
+- `plugin-fetch-harness` smoke tests are safer when mocked transport responses are real `Response` instances with JSON content-types instead of partial response-shaped objects.
+- Billing-header fingerprint expectations must include the current version-suffix algorithm: missing characters are padded with `"0"` and the Claude CLI version participates in the hash input.
