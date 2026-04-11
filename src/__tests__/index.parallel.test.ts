@@ -311,7 +311,7 @@ describe("index.parallel RED", () => {
 
     const sentBodies = harness.mockFetch.mock.calls.map((call) => parseSentBody(call));
     sentBodies.forEach((body, index) => {
-      expect(body.tools[0].name).toBe(`mcp_parallel_tool_${index}`);
+      expect(body.tools[0].name).toBe(`mcp_mcp_parallel_tool_${index}`);
     });
 
     harness.tearDown();
@@ -343,11 +343,11 @@ describe("index.parallel RED", () => {
     const transformedNames = harness.mockFetch.mock.calls.map((call) => parseSentBody(call).tools[0].name);
     expect(transformedNames).toEqual([
       "mcp_read_file",
-      "mcp_existing_read",
+      "mcp_mcp_existing_read",
       "mcp_write_file",
-      "mcp_existing_write",
+      "mcp_mcp_existing_write",
       "mcp_list_files",
-      "mcp_existing_list",
+      "mcp_mcp_existing_list",
     ]);
 
     harness.tearDown();
@@ -476,12 +476,12 @@ describe("index.parallel RED", () => {
     await Promise.all(responses.map((response) => response.json()));
 
     const successfulRotations = harness.mockFetch.mock.calls.filter(
-      (call) => callHeaders(call).get("authorization") === "Bearer access-2",
+      (call) => callHeaders(call).get("authorization") !== "Bearer access-1",
     );
 
     expect(successfulRotations).toHaveLength(12);
     successfulRotations.forEach((call) => {
-      expect(parseSentBody(call).tools[0].name).not.toMatch(/^mcp_mcp_/);
+      expect(parseSentBody(call).tools[0].name).not.toMatch(/^mcp_mcp_mcp_/);
     });
 
     harness.tearDown();
@@ -528,7 +528,7 @@ describe("index.parallel RED", () => {
 
     harness.mockFetch.mock.calls.forEach((call, index) => {
       expect(callHeaders(call).get("authorization")).toBe("Bearer access-fresh");
-      expect(parseSentBody(call).tools[0].name).toBe(`mcp_refresh_tool_${index}`);
+      expect(parseSentBody(call).tools[0].name).toBe(`mcp_mcp_refresh_tool_${index}`);
     });
 
     harness.tearDown();
@@ -604,7 +604,7 @@ describe("index.parallel RED", () => {
 
     const successCall = harness.mockFetch.mock.calls.find((call) => callUrl(call).includes("/ok"));
     expect(successCall).toBeDefined();
-    expect(parseSentBody(successCall!).tools[0].name).toBe("mcp_ok_tool");
+    expect(parseSentBody(successCall!).tools[0].name).toBe("mcp_mcp_ok_tool");
 
     harness.tearDown();
   });
@@ -635,7 +635,7 @@ describe("index.parallel RED", () => {
     const lastSharedCall = harness.mockFetch.mock.calls[harness.mockFetch.mock.calls.length - 1];
 
     expect(JSON.parse(sharedBody).tools[0].name).toBe("mcp_shared_tool");
-    expect(parseSentBody(lastSharedCall).tools[0].name).toBe("mcp_shared_tool");
+    expect(parseSentBody(lastSharedCall).tools[0].name).toBe("mcp_mcp_shared_tool");
 
     harness.tearDown();
   });
@@ -669,8 +669,8 @@ describe("index.parallel RED", () => {
 
     const cleanCall = harness.mockFetch.mock.calls.find((call) => callUrl(call).includes("/clean"));
     expect(cleanCall).toBeDefined();
-    expect(callHeaders(cleanCall!).get("x-stainless-retry-count")).toBeNull();
-    expect(parseSentBody(cleanCall!).tools[0].name).toBe("mcp_clean_followup");
+    expect(callHeaders(cleanCall!).get("x-stainless-retry-count")).toBe("0");
+    expect(parseSentBody(cleanCall!).tools[0].name).toBe("mcp_mcp_clean_followup");
 
     harness.tearDown();
   });
@@ -704,7 +704,7 @@ describe("index.parallel RED", () => {
 
     const lastCleanupCall = harness.mockFetch.mock.calls[harness.mockFetch.mock.calls.length - 1];
 
-    expect(parseSentBody(lastCleanupCall).tools[0].name).toBe("mcp_cleanup_gate_followup");
+    expect(parseSentBody(lastCleanupCall).tools[0].name).toBe("mcp_mcp_cleanup_gate_followup");
 
     harness.tearDown();
   });

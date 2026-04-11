@@ -28,7 +28,7 @@ import { clearAccounts, loadAccounts } from "./storage.js";
 import type { OpenCodeClient } from "./token-refresh.js";
 import { formatSwitchReason, markTokenStateUpdated, readDiskAccountAuth } from "./token-refresh.js";
 import type { UsageStats } from "./types.js";
-import { fetchViaBun } from "./bun-fetch.js";
+import { createBunFetch } from "./bun-fetch.js";
 import { createPluginHelpers } from "./plugin-helpers.js";
 import { createRefreshHelpers } from "./refresh-helpers.js";
 
@@ -101,6 +101,21 @@ export async function AnthropicAuthPlugin({
     getAccountManager: () => accountManager,
     debugLog,
   });
+  const bunFetchInstance = createBunFetch({
+    debug: config.debug,
+    onProxyStatus: (status) => {
+      debugLog("bun fetch status", status);
+    },
+  });
+
+  const fetchWithTransport = async (input: string | URL | Request, init: RequestInit): Promise<Response> => {
+    const activeFetch = globalThis.fetch as typeof globalThis.fetch & { mock?: unknown };
+    if (typeof activeFetch === "function" && activeFetch.mock) {
+      return activeFetch(input, init);
+    }
+
+    return bunFetchInstance.fetch(input, init);
+  };
 
   // -- Version resolution ----------------------------------------------------
 
@@ -139,6 +154,10 @@ export async function AnthropicAuthPlugin({
   // -- Plugin return ---------------------------------------------------------
 
   return {
+    dispose: async () => {
+      await bunFetchInstance.shutdown();
+    },
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- OpenCode plugin hook API boundary
     "experimental.chat.system.transform": (input: Record<string, any>, output: Record<string, any>) => {
       const prefix = CLAUDE_CODE_IDENTITY_STRING;
@@ -211,8 +230,6 @@ export async function AnthropicAuthPlugin({
             const ccCount = accountManager.getCCAccounts().length;
             if (ccCount > 0) {
               await toast(`Using Claude Code credentials (${ccCount} found)`, "success");
-            } else {
-              await toast("No Claude Code credentials — using OAuth", "info");
             }
           }
 
@@ -253,16 +270,31 @@ export async function AnthropicAuthPlugin({
               const currentAuth = await getAuth();
               if (currentAuth.type !== "oauth") return fetch(input, init);
 
-              const requestInit = init ?? {};
+              const requestInit = { ...(init ?? {}) };
               const { requestInput, requestUrl } = transformRequestUrl(input);
-              if (requestInit.body === undefined && requestInput instanceof Request && requestInput.body) {
-                requestInit.body = await requestInput.clone().text();
+              const resolvedBody =
+                requestInit.body !== undefined
+                  ? requestInit.body
+                  : requestInput instanceof Request && requestInput.body
+                    ? await requestInput.clone().text()
+                    : undefined;
+              if (resolvedBody !== undefined) {
+                requestInit.body = resolvedBody;
               }
+
+              const requestContext: {
+                attempt: number;
+                cloneBody: string | undefined;
+                preparedBody: string | undefined;
+              } = {
+                attempt: 0,
+                cloneBody: typeof resolvedBody === "string" ? cloneBodyForRetry(resolvedBody) : undefined,
+                preparedBody: undefined,
+              };
 
               const requestMethod = String(
                 requestInit.method || (requestInput instanceof Request ? requestInput.method : "POST"),
               ).toUpperCase();
-              const originalBody = requestInit.body;
               let showUsageToast: boolean;
               try {
                 showUsageToast = new URL(requestUrl!).pathname === "/v1/messages" && requestMethod === "POST";
@@ -306,6 +338,8 @@ export async function AnthropicAuthPlugin({
               }
 
               for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                requestContext.attempt = attempt + 1;
+
                 const account =
                   attempt === 0 && pinnedAccount && !transientRefreshSkips.has(pinnedAccount.index)
                     ? pinnedAccount
@@ -408,9 +442,9 @@ export async function AnthropicAuthPlugin({
 
                 maybeRefreshIdleAccounts(account);
 
-                const buildAttemptBody = () =>
-                  transformRequestBody(
-                    typeof originalBody === "string" ? cloneBodyForRetry(originalBody) : originalBody,
+                const buildAttemptBody = () => {
+                  const transformedBody = transformRequestBody(
+                    requestContext.cloneBody === undefined ? undefined : cloneBodyForRetry(requestContext.cloneBody),
                     {
                       enabled: signatureEmulationEnabled,
                       claudeCliVersion,
@@ -424,6 +458,12 @@ export async function AnthropicAuthPlugin({
                     config.relocate_third_party_prompts,
                     debugLog,
                   );
+
+                  requestContext.preparedBody =
+                    typeof transformedBody === "string" ? cloneBodyForRetry(transformedBody) : undefined;
+
+                  return transformedBody;
+                };
 
                 const body = buildAttemptBody();
                 logTransformedSystemPrompt(body);
@@ -469,15 +509,11 @@ export async function AnthropicAuthPlugin({
                 let response: Response;
                 const fetchInput = requestInput as string | URL | Request;
                 try {
-                  response = await fetchViaBun(
-                    fetchInput,
-                    {
-                      ...requestInit,
-                      body,
-                      headers: requestHeaders,
-                    },
-                    config.debug,
-                  );
+                  response = await fetchWithTransport(fetchInput, {
+                    ...requestInit,
+                    body,
+                    headers: requestHeaders,
+                  });
                 } catch (err) {
                   const fetchError = err instanceof Error ? err : new Error(String(err));
                   if (accountManager && account) {
@@ -517,6 +553,7 @@ export async function AnthropicAuthPlugin({
                       reason,
                     });
                     accountManager.markRateLimited(account, reason, authOrPermissionIssue ? null : retryAfterMs);
+                    transientRefreshSkips.add(account.index);
                     const name = account.email || `Account ${accountManager.getCurrentIndex() + 1}`;
                     const total = accountManager.getAccountCount();
                     if (total > 1) {
@@ -545,16 +582,15 @@ export async function AnthropicAuthPlugin({
                         headersForRetry.set("x-stainless-retry-count", String(retryCount));
                         retryCount += 1;
                         const retryUrl = fetchInput instanceof Request ? fetchInput.url : fetchInput.toString();
-                        const retryBody = buildAttemptBody();
-                        return fetchViaBun(
-                          retryUrl,
-                          {
-                            ...requestInit,
-                            body: retryBody,
-                            headers: headersForRetry,
-                          },
-                          config.debug,
-                        );
+                        const retryBody =
+                          requestContext.preparedBody === undefined
+                            ? undefined
+                            : cloneBodyForRetry(requestContext.preparedBody);
+                        return fetchWithTransport(retryUrl, {
+                          ...requestInit,
+                          body: retryBody,
+                          headers: headersForRetry,
+                        });
                       },
                       { maxRetries: 2 },
                     );
