@@ -156,14 +156,22 @@ describe("transformRequestBody - body cloning for retries", () => {
       messages: [{ role: "user", content: "test" }],
     });
 
-    // First attempt
-    const result1 = transformRequestBody(body, mockSignature, mockRuntime);
-    expect(result1).toBeDefined();
+    // Same Date.now()-in-cch flake as the clone-safety test above. Freeze the
+    // clock so two transformRequestBody calls on the same body produce
+    // byte-identical output. See src/headers/billing.ts:59 for why the hash
+    // is time-mixed, and the clone-safety test above for the full rationale.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    try {
+      const result1 = transformRequestBody(body, mockSignature, mockRuntime);
+      expect(result1).toBeDefined();
 
-    // Retry attempt - should work with same body
-    const result2 = transformRequestBody(body, mockSignature, mockRuntime);
-    expect(result2).toBeDefined();
-    expect(result1).toBe(result2);
+      const result2 = transformRequestBody(body, mockSignature, mockRuntime);
+      expect(result2).toBeDefined();
+      expect(result1).toBe(result2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

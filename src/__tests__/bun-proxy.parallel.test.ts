@@ -311,7 +311,15 @@ describe("bun-proxy parallel request contract (RED)", () => {
       }),
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Wait for the 25ms proxy timeout to actually fire on request 0. The
+    // previous hard 50ms sleep flaked under host load (husky pre-publish,
+    // lint-staged overhead, CI workers) because the abort callback would
+    // not have run yet when the assertion fired. Poll for the expected
+    // state with a generous upper bound instead of racing a fixed delay.
+    const deadline = Date.now() + 500;
+    while (abortedRequestIds.length < 1 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
 
     expect(fastStatuses).toEqual(Array.from({ length: 9 }, () => 200));
     expect(abortedRequestIds).toEqual([0]);
