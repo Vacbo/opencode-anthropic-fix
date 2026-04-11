@@ -822,7 +822,7 @@ export class AccountManager {
     });
 
     const diskOnlyAccounts = diskAccounts.filter((account) => !matchedDiskAccounts.has(account));
-    const allAccounts = [...persistedAccounts, ...diskOnlyAccounts];
+    const allAccounts = accountsToPersist.length > 0 ? [...persistedAccounts, ...diskOnlyAccounts] : persistedAccounts;
     const resolvedActiveIndex = activeAccountId
       ? allAccounts.findIndex((account) => account.id === activeAccountId)
       : -1;

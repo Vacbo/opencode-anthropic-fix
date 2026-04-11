@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, promises as fs, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { AccountIdentity } from "./account-identity.js";
+import { findByIdentity } from "./account-identity.js";
 import { getConfigDir } from "./config.js";
 
 export interface AccountStats {
@@ -38,6 +39,11 @@ export interface AccountStorage {
   accounts: AccountMetadata[];
   activeIndex: number;
 }
+
+export type StoredAccountMatchCandidate = Pick<
+  AccountMetadata,
+  "id" | "email" | "identity" | "label" | "refreshToken" | "addedAt" | "source"
+>;
 
 const CURRENT_VERSION = 1;
 
@@ -182,6 +188,120 @@ function isAccountIdentity(value: unknown): value is AccountIdentity {
   }
 }
 
+function resolveStoredIdentity(candidate: StoredAccountMatchCandidate): AccountIdentity {
+  if (isAccountIdentity(candidate.identity)) {
+    return candidate.identity;
+  }
+
+  if (candidate.source === "oauth" && candidate.email) {
+    return { kind: "oauth", email: candidate.email };
+  }
+
+  if ((candidate.source === "cc-keychain" || candidate.source === "cc-file") && candidate.label) {
+    return {
+      kind: "cc",
+      source: candidate.source,
+      label: candidate.label,
+    };
+  }
+
+  return { kind: "legacy", refreshToken: candidate.refreshToken };
+}
+
+function resolveTokenUpdatedAt(account: Pick<AccountMetadata, "token_updated_at" | "addedAt">): number {
+  return typeof account.token_updated_at === "number" && Number.isFinite(account.token_updated_at)
+    ? account.token_updated_at
+    : account.addedAt;
+}
+
+function clampActiveIndex(accounts: AccountMetadata[], activeIndex: number): number {
+  if (accounts.length === 0) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(activeIndex, accounts.length - 1));
+}
+
+export function findStoredAccountMatch(
+  accounts: AccountMetadata[],
+  candidate: StoredAccountMatchCandidate,
+): AccountMetadata | null {
+  const byId = accounts.find((account) => account.id === candidate.id);
+  if (byId) {
+    return byId;
+  }
+
+  const byIdentity = findByIdentity(accounts, resolveStoredIdentity(candidate));
+  if (byIdentity) {
+    return byIdentity;
+  }
+
+  const byAddedAt = accounts.filter((account) => account.addedAt === candidate.addedAt);
+  if (byAddedAt.length === 1) {
+    return byAddedAt[0]!;
+  }
+
+  const byRefreshToken = accounts.find((account) => account.refreshToken === candidate.refreshToken);
+  if (byRefreshToken) {
+    return byRefreshToken;
+  }
+
+  return byAddedAt[0] ?? null;
+}
+
+export function mergeAccountWithFresherAuth(
+  account: AccountMetadata,
+  diskMatch: AccountMetadata | null,
+): AccountMetadata {
+  const memoryTokenUpdatedAt = resolveTokenUpdatedAt(account);
+  const diskTokenUpdatedAt = diskMatch ? resolveTokenUpdatedAt(diskMatch) : 0;
+
+  if (!diskMatch || diskTokenUpdatedAt <= memoryTokenUpdatedAt) {
+    return {
+      ...account,
+      token_updated_at: memoryTokenUpdatedAt,
+    };
+  }
+
+  return {
+    ...account,
+    refreshToken: diskMatch.refreshToken,
+    access: diskMatch.access,
+    expires: diskMatch.expires,
+    token_updated_at: diskTokenUpdatedAt,
+  };
+}
+
+export function unionAccountsWithDisk(storage: AccountStorage, disk: AccountStorage | null): AccountStorage {
+  if (!disk || storage.accounts.length === 0) {
+    return {
+      ...storage,
+      activeIndex: clampActiveIndex(storage.accounts, storage.activeIndex),
+    };
+  }
+
+  const activeAccountId = storage.accounts[storage.activeIndex]?.id ?? null;
+  const matchedDiskAccounts = new Set<AccountMetadata>();
+  const mergedAccounts = storage.accounts.map((account) => {
+    const diskMatch = findStoredAccountMatch(disk.accounts, account);
+    if (diskMatch) {
+      matchedDiskAccounts.add(diskMatch);
+    }
+
+    return mergeAccountWithFresherAuth(account, diskMatch);
+  });
+
+  const diskOnlyAccounts = disk.accounts.filter((account) => !matchedDiskAccounts.has(account));
+  const accounts = [...mergedAccounts, ...diskOnlyAccounts];
+  const activeIndex = activeAccountId ? accounts.findIndex((account) => account.id === activeAccountId) : -1;
+
+  return {
+    ...storage,
+    accounts,
+    activeIndex: activeIndex >= 0 ? activeIndex : clampActiveIndex(accounts, storage.activeIndex),
+  };
+}
+
 /**
  * Load accounts from disk.
  */
@@ -238,66 +358,15 @@ export async function saveAccounts(storage: AccountStorage): Promise<void> {
   await fs.mkdir(configDir, { recursive: true });
   ensureGitignore(configDir);
 
-  let storageToWrite = storage;
+  let storageToWrite = {
+    ...storage,
+    activeIndex: clampActiveIndex(storage.accounts, storage.activeIndex),
+  };
 
   // Merge auth fields against disk by freshness to avoid stale-process clobber.
   try {
     const disk = await loadAccounts();
-    if (disk && storage.accounts.length > 0) {
-      const diskById = new Map(disk.accounts.map((a) => [a.id, a]));
-      const diskByAddedAt = new Map<number, AccountMetadata[]>();
-      const diskByToken = new Map(disk.accounts.map((a) => [a.refreshToken, a]));
-      for (const d of disk.accounts) {
-        const bucket = diskByAddedAt.get(d.addedAt) || [];
-        bucket.push(d);
-        diskByAddedAt.set(d.addedAt, bucket);
-      }
-
-      const findDiskMatch = (acc: AccountMetadata): AccountMetadata | null => {
-        const byId = diskById.get(acc.id);
-        if (byId) return byId;
-
-        const byAddedAt = diskByAddedAt.get(acc.addedAt);
-        if (byAddedAt?.length === 1) return byAddedAt[0]!;
-
-        const byToken = diskByToken.get(acc.refreshToken);
-        if (byToken) return byToken;
-
-        if (byAddedAt && byAddedAt.length > 0) return byAddedAt[0]!;
-        return null;
-      };
-
-      const mergedAccounts = storage.accounts.map((acc) => {
-        const diskAcc = findDiskMatch(acc);
-        const memTs =
-          typeof acc.token_updated_at === "number" && Number.isFinite(acc.token_updated_at)
-            ? acc.token_updated_at
-            : acc.addedAt;
-        const diskTs = diskAcc?.token_updated_at || 0;
-        const useDiskAuth = !!diskAcc && diskTs > memTs;
-
-        return {
-          ...acc,
-          refreshToken: useDiskAuth ? diskAcc!.refreshToken : acc.refreshToken,
-          access: useDiskAuth ? diskAcc!.access : acc.access,
-          expires: useDiskAuth ? diskAcc!.expires : acc.expires,
-          token_updated_at: useDiskAuth ? diskTs : memTs,
-        };
-      });
-
-      let activeIndex = storage.activeIndex;
-      if (mergedAccounts.length > 0) {
-        activeIndex = Math.max(0, Math.min(activeIndex, mergedAccounts.length - 1));
-      } else {
-        activeIndex = 0;
-      }
-
-      storageToWrite = {
-        ...storage,
-        accounts: mergedAccounts,
-        activeIndex,
-      };
-    }
+    storageToWrite = unionAccountsWithDisk(storageToWrite, disk);
   } catch {
     // If merge read fails, continue with caller-provided storage payload.
   }

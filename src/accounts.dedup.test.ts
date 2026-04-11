@@ -52,11 +52,15 @@ async function loadManager(options: LoadManagerOptions = {}) {
   const storage = createInMemoryStorage(options.initialStorage);
   const createDefaultStats = vi.fn((now?: number) => makeStats(now ?? Date.now()));
 
-  vi.doMock("./storage.js", () => ({
-    createDefaultStats,
-    loadAccounts: storage.loadAccountsMock,
-    saveAccounts: storage.saveAccountsMock,
-  }));
+  vi.doMock("./storage.js", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("./storage.js")>();
+    return {
+      ...actual,
+      createDefaultStats,
+      loadAccounts: storage.loadAccountsMock,
+      saveAccounts: storage.saveAccountsMock,
+    };
+  });
 
   vi.doMock("./cc-credentials.js", () => ({
     readCCCredentials: () => options.ccCredentials ?? [],

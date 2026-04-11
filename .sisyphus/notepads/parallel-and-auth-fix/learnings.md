@@ -440,3 +440,9 @@ Evidence: .sisyphus/evidence/task-6-conversation-smoke.txt
 - Keeping the timeout controller manual in `bun-proxy.ts` still allows explicit `AbortSignal.any([req.signal, timeoutSignal])` composition without reintroducing the dangling timeout-listener behavior noted during T19.
 - `bun-fetch.ts` should resolve the proxy signal from `init.signal` first and fall back to `Request.signal` so both direct `fetch(url, { signal })` and `fetch(new Request(url, { signal }))` flows preserve disconnect cancellation into the local proxy hop.
 - A focused Vitest regression can assert disconnect propagation by capturing the upstream mock's `init.signal`, aborting the inbound controller, and expecting the proxy response to settle as `499` while that captured signal flips to `aborted`.
+
+## Task 31: Save union on disk writes (2026-04-10)
+
+- The save path is easiest to keep consistent when account matching lives in one storage-level helper set: match by `id`, then stable identity, then legacy `addedAt` / refresh-token fallbacks.
+- Union-on-save should stay asymmetric: when there are in-memory accounts, append unmatched disk-only accounts; when the caller writes an empty account list, keep the existing "do not resurrect removed accounts" behavior.
+- Account-manager tests that fully mock `./storage.js` need to spread the real module once new helper exports are consumed internally; otherwise save-path regressions fail before the behavior under test runs.
