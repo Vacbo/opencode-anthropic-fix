@@ -206,3 +206,95 @@ Task-to-commit map:
 Each evidence file faithfully documents what was actually implemented. No fabricated test counts, no invented file changes, no placeholder content. Cross-references T41 regression (903/903 tests passing, build clean, tsc clean) and F3 manual QA (3x qa-parallel.sh PASS, rotation-test.js PASS) for runtime verification of the work these tasks shipped.
 
 This is documentation-only bookkeeping. The runtime code and its verification landed in the original Wave 3-6 commits.
+
+---
+
+## OpenCode Plugin Cache Discovery (2026-04-11)
+
+### Critical architectural finding
+
+OpenCode does **NOT** load plugins from `~/.config/opencode/node_modules/`. That directory is a red herring left over from a manual install attempt. OpenCode has its own package cache and resolves plugins listed in `opencode.json` there.
+
+### Actual plugin loading path
+
+When `~/.config/opencode/opencode.json` lists:
+
+```jsonc
+{
+  "plugin": ["@vacbo/opencode-anthropic-fix@latest", ...]
+}
+```
+
+OpenCode resolves that dependency into:
+
+```
+~/.cache/opencode/packages/<package-name>@<spec>/node_modules/<package-name>/
+```
+
+For this plugin, that's:
+
+```
+~/.cache/opencode/packages/@vacbo/opencode-anthropic-fix@latest/node_modules/@vacbo/opencode-anthropic-fix/
+                              └───────────── same as opencode.json spec ─────────────┘
+```
+
+The plugin is then loaded from the `dist/` entry point inside that resolved directory.
+
+### The red-herring directory
+
+`~/.config/opencode/` also has `package.json`, `node_modules/`, `bun.lock`, `package-lock.json` — but these are NOT used by OpenCode's plugin loader. They appear to be leftovers from a manual `npm install` experiment. Updating `@vacbo/opencode-anthropic-fix` there has zero effect on what OpenCode actually loads.
+
+### How to force OpenCode to pick up a new plugin version
+
+1. **Clear the cache for the specific plugin**:
+   ```bash
+   rm -rf ~/.cache/opencode/packages/@vacbo/opencode-anthropic-fix@latest/
+   ```
+2. **Kill any running proxy child processes** spawned by the old plugin (see below).
+3. **Kill the OpenCode parent process** OR restart OpenCode — the plugin module is loaded into OpenCode's memory at startup, so a running instance continues executing the old code even after the cache is cleared.
+4. On next OpenCode start, it will re-resolve `@latest` from npm registry and download the new version.
+
+### How to find stale plugin-spawned proxies
+
+```bash
+ps -eo pid,ppid,command | grep -E 'bun-proxy|opencode-anthropic'
+```
+
+Look for entries like:
+
+```
+<pid> <ppid> bun run ~/.cache/opencode/packages/@vacbo/opencode-anthropic-fix@latest/node_modules/@vacbo/opencode-anthropic-fix/dist/bun-proxy.mjs <port>
+```
+
+- The `<ppid>` is the OpenCode process that spawned the proxy.
+- Pre-0.1.1 plugin versions bind to fixed port **48372**.
+- Post-0.1.1 plugin versions use ephemeral ports (argv is `0` or an ephemeral number).
+- Check old port: `lsof -nP -iTCP:48372 -sTCP:LISTEN`
+
+### Why this matters for debugging
+
+- If a user reports "the plugin fix isn't working", always check the `~/.cache/opencode/packages/` version FIRST, not `~/.config/opencode/node_modules/`.
+- If a user sees `[bun-fetch] ... port 48372` logs, their OpenCode is running a pre-0.1.1 plugin from the cache. Confirm with `lsof -nP -iTCP:48372 -sTCP:LISTEN` and `ps -eo pid,ppid,command | grep bun-proxy`.
+- Version verification must check `~/.cache/opencode/packages/@vacbo/opencode-anthropic-fix@latest/node_modules/@vacbo/opencode-anthropic-fix/package.json`, not the `~/.config/opencode/` one.
+
+### Evidence snapshot (2026-04-11 13:14)
+
+```
+=== cache version ===
+  "version": "0.0.45"
+
+=== cache SHA ===
+c9e551bb2841ecd58794b7567c42a6bfd3f263dcecf2d6249313bbac7d8a8ca2  ~/.cache/opencode/packages/@vacbo/opencode-anthropic-fix@latest/node_modules/@vacbo/opencode-anthropic-fix/dist/opencode-anthropic-auth-plugin.js
+
+=== cache contains 48372 ===
+1 match
+
+=== running proxy ===
+PID 69567 (parent 68601) bun run ...bun-proxy.mjs 48372
+TCP *:48372 (LISTEN)
+
+=== our publish targets ===
+0.1.1, 0.1.2, 0.1.3 — all with SHA f6a561955b33a91347698966cc34ebc23e60e2ddc9ce1b754f75e68c1d8145e1
+```
+
+Even though we published 0.1.1, 0.1.2, 0.1.3 to npm and "installed" them into `~/.config/opencode/node_modules/`, OpenCode was still running the `0.0.45` cached version from `~/.cache/opencode/packages/` because that's the directory its plugin loader actually reads from.
