@@ -184,6 +184,13 @@ Evidence: .sisyphus/evidence/task-6-conversation-smoke.txt
 - The watcher contract now pins both liveness polling (`process.kill(pid, 0)`) and PID-reuse protection via `process.ppid` drift.
 - Cross-platform expectations are explicit in tests: `EPERM` means "still alive", `ESRCH` means "gone", and the Windows path is covered through `watchParentAndExit`.
 
+## Task 25: Body retry invariants (2026-04-10)
+
+- Runtime body validation should fail fast on non-string request bodies; returning the original value hides unsupported stream/body shapes and makes mimicry drift harder to debug.
+- Retry paths are safer when they always re-derive the transformed request body from an immutable original string, instead of reusing already-transformed payloads by accident.
+- Historical `tool_use.name` values need different handling than tool definitions: literal `mcp_*` tools still require round-trip double-prefixing, but prefixed history without a matching literal tool should be preserved to prevent `mcp_mcp_*` drift.
+- Root-level `index.test.ts` needs to be included in `vitest.config.ts` or `npx vitest run index.test.ts -t "tool"` will never discover the regression suite.
+
 ## Task 8: Circuit Breaker RED Tests (2025-04-10)
 
 ### Completed

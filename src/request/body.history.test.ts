@@ -21,12 +21,8 @@ const mockRuntime: RuntimeContext = {
 
 const mockSignature: SignatureConfig = {
   enabled: true,
-  version: "0.2.45",
-  headers: {
-    "x-anthropic-client-name": "claude-code",
-    "x-anthropic-client-version": "0.2.45",
-    "x-anthropic-stainless-timeout": "600000",
-  },
+  claudeCliVersion: "0.2.45",
+  promptCompactionMode: "minimal",
 };
 
 describe("transformRequestBody - type validation", () => {
@@ -45,7 +41,7 @@ describe("transformRequestBody - type validation", () => {
 
     for (const body of invalidBodies) {
       expect(() => transformRequestBody(body as unknown as string, mockSignature, mockRuntime)).toThrow(
-        /body must be a string/,
+        /opencode-anthropic-auth: expected string body, got /,
       );
     }
   });
@@ -54,9 +50,9 @@ describe("transformRequestBody - type validation", () => {
     const debugLog = vi.fn();
     const body = { not: "a string" };
 
-    expect(() =>
-      transformRequestBody(body as unknown as string, mockSignature, mockRuntime, true, false, debugLog),
-    ).toThrow(/Invalid body type: expected string, received object/);
+    expect(() => transformRequestBody(body as unknown as string, mockSignature, mockRuntime, true, debugLog)).toThrow(
+      "opencode-anthropic-auth: expected string body, got object. This plugin does not support stream bodies. Please file a bug with the OpenCode version.",
+    );
   });
 });
 
@@ -92,7 +88,7 @@ describe("transformRequestBody - double-prefix defense", () => {
     );
   });
 
-  it("should strip existing mcp_ prefix before adding new prefix", () => {
+  it("should double-prefix literal mcp_ tool definitions to preserve round-trip names", () => {
     const body = JSON.stringify({
       model: "claude-sonnet-4-20250514",
       messages: [{ role: "user", content: "test" }],
@@ -102,12 +98,10 @@ describe("transformRequestBody - double-prefix defense", () => {
     const result = transformRequestBody(body, mockSignature, mockRuntime);
     const parsed = JSON.parse(result!);
 
-    // Should normalize to single prefix, not double
-    expect(parsed.tools[0].name).toBe("mcp_read_file");
-    expect(parsed.tools[0].name).not.toBe("mcp_mcp_read_file");
+    expect(parsed.tools[0].name).toBe("mcp_mcp_read_file");
   });
 
-  it("should handle tools already prefixed with mcp_ correctly", () => {
+  it("should keep literal mcp_ tool definitions round-trip safe", () => {
     const body = JSON.stringify({
       model: "claude-sonnet-4-20250514",
       tools: [
@@ -119,9 +113,8 @@ describe("transformRequestBody - double-prefix defense", () => {
     const result = transformRequestBody(body, mockSignature, mockRuntime);
     const parsed = JSON.parse(result!);
 
-    // Should preserve the existing mcp_ prefix structure
-    expect(parsed.tools[0].name).toBe("mcp_server1__tool1");
-    expect(parsed.tools[1].name).toBe("mcp_server2__tool2");
+    expect(parsed.tools[0].name).toBe("mcp_mcp_server1__tool1");
+    expect(parsed.tools[1].name).toBe("mcp_mcp_server2__tool2");
   });
 });
 
@@ -144,11 +137,8 @@ describe("transformRequestBody - body cloning for retries", () => {
     expect(parsedOriginal.tools[0].name).toBe("read_file");
   });
 
-  it("should fail gracefully when body has been consumed", () => {
-    // Simulate a consumed body (e.g., ReadableStream that's been read)
-    const consumedBody = "" as string;
-
-    expect(() => transformRequestBody(consumedBody, mockSignature, mockRuntime)).toThrow(/Body has been consumed/);
+  it("should return empty bodies unchanged", () => {
+    expect(transformRequestBody("", mockSignature, mockRuntime)).toBe("");
   });
 
   it("should handle retry with same body multiple times", () => {
@@ -217,7 +207,7 @@ describe("transformRequestBody - tool name handling", () => {
     const parsed = JSON.parse(result!);
 
     expect(parsed.tools[0].name).toBe("mcp_read_file");
-    expect(parsed.tools[1].name).toBe("mcp_existing_tool");
+    expect(parsed.tools[1].name).toBe("mcp_mcp_existing_tool");
     expect(parsed.tools[2].name).toBe("mcp_write_file");
   });
 });
@@ -242,9 +232,11 @@ describe("transformRequestBody - structure preservation", () => {
     expect(parsed.model).toBe("claude-sonnet-4-20250514");
     expect(parsed.max_tokens).toBe(4096);
     expect(parsed.temperature).toBe(0.7);
-    expect(parsed.system).toHaveLength(1);
+    expect(parsed.system.some((block: { text?: string }) => block.text === "You are helpful")).toBe(true);
     expect(parsed.messages).toHaveLength(2);
-    expect(parsed.metadata.user_id).toBe("test-user");
+    expect(parsed.metadata.user_id).toContain('"device_id":"user-123"');
+    expect(parsed.metadata.user_id).toContain('"account_uuid":"acc-456"');
+    expect(parsed.metadata.user_id).toContain('"session_id":"sess-789"');
   });
 
   it("should handle request with body in input correctly", () => {
@@ -327,22 +319,21 @@ describe("validateBodyType", () => {
 
   it("should throw with descriptive message when throwOnInvalid is true", () => {
     expect(() => validateBodyType(123 as unknown as string, true)).toThrow(
-      /Invalid body type: expected string, received number/,
+      "opencode-anthropic-auth: expected string body, got number. This plugin does not support stream bodies. Please file a bug with the OpenCode version.",
     );
   });
 });
 
 describe("cloneBodyForRetry", () => {
-  it("should return new string instance for retry", () => {
+  it("should return the same string value for retry", () => {
     const original = '{"test": true}';
     const cloned = cloneBodyForRetry(original);
 
     expect(cloned).toBe(original);
-    expect(cloned).not.toBe(original); // Different reference
   });
 
-  it("should throw when body is consumed", () => {
-    expect(() => cloneBodyForRetry("")).toThrow(/Body has been consumed/);
+  it("should allow empty string bodies", () => {
+    expect(() => cloneBodyForRetry("")).not.toThrow();
   });
 
   it("should handle empty but valid body", () => {

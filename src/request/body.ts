@@ -9,40 +9,159 @@ import { normalizeThinkingBlock } from "../thinking.js";
 import type { RuntimeContext, SignatureConfig } from "../types.js";
 import { buildRequestMetadata } from "./metadata.js";
 
+const TOOL_PREFIX = "mcp_";
+
+function getBodyType(body: unknown): string {
+  if (body === null) return "null";
+  return typeof body;
+}
+
+function getInvalidBodyError(body: unknown): TypeError {
+  return new TypeError(
+    `opencode-anthropic-auth: expected string body, got ${getBodyType(body)}. This plugin does not support stream bodies. Please file a bug with the OpenCode version.`,
+  );
+}
+
+export function validateBodyType(body: unknown, throwOnInvalid = false): body is string {
+  if (body === undefined || body === null) {
+    return false;
+  }
+
+  if (typeof body === "string") {
+    return true;
+  }
+
+  if (throwOnInvalid) {
+    throw getInvalidBodyError(body);
+  }
+
+  return false;
+}
+
+export function cloneBodyForRetry(body: string): string {
+  validateBodyType(body, true);
+  return body;
+}
+
+export function detectDoublePrefix(name: string): boolean {
+  return name.startsWith(`${TOOL_PREFIX}${TOOL_PREFIX}`);
+}
+
+export function extractToolNamesFromBody(body: string): string[] {
+  const parsed = JSON.parse(body) as {
+    tools?: Array<{ name?: unknown }>;
+    messages?: Array<{ content?: unknown }>;
+  };
+  const names: string[] = [];
+
+  if (Array.isArray(parsed.tools)) {
+    for (const tool of parsed.tools) {
+      if (typeof tool?.name === "string") {
+        names.push(tool.name);
+      }
+    }
+  }
+
+  if (Array.isArray(parsed.messages)) {
+    for (const message of parsed.messages) {
+      if (!Array.isArray(message?.content)) {
+        continue;
+      }
+
+      for (const block of message.content) {
+        if (
+          block &&
+          typeof block === "object" &&
+          "type" in block &&
+          block.type === "tool_use" &&
+          "name" in block &&
+          typeof block.name === "string"
+        ) {
+          names.push(block.name);
+        }
+      }
+    }
+  }
+
+  return names;
+}
+
+function prefixToolDefinitionName(name: unknown): unknown {
+  if (typeof name !== "string") {
+    return name;
+  }
+
+  if (detectDoublePrefix(name)) {
+    throw new TypeError(`Double tool prefix detected: ${TOOL_PREFIX}${TOOL_PREFIX}`);
+  }
+
+  return `${TOOL_PREFIX}${name}`;
+}
+
+function prefixToolUseName(
+  name: unknown,
+  literalToolNames: ReadonlySet<string>,
+  debugLog?: (...args: unknown[]) => void,
+): unknown {
+  if (typeof name !== "string") {
+    return name;
+  }
+
+  if (detectDoublePrefix(name)) {
+    throw new TypeError(`Double tool prefix detected in tool_use block: ${name}`);
+  }
+
+  if (!name.startsWith(TOOL_PREFIX)) {
+    return `${TOOL_PREFIX}${name}`;
+  }
+
+  if (literalToolNames.has(name)) {
+    return `${TOOL_PREFIX}${name}`;
+  }
+
+  debugLog?.("prevented double-prefix drift for tool_use block", { name });
+  return name;
+}
+
 export function transformRequestBody(
   body: string | undefined,
   signature: SignatureConfig,
   runtime: RuntimeContext,
   relocateThirdPartyPrompts = true,
-  sanitizeSystemPrompt = false,
   debugLog?: (...args: unknown[]) => void,
 ): string | undefined {
-  if (!body || typeof body !== "string") return body;
-
-  // Tool prefix for plugin-internal namespacing.
-  //
-  // This is NOT mimicking Claude Code's convention. CC uses:
-  // - "mcp__<server>__<tool>" (double underscore) for MCP-connected tools
-  // - No prefix for native tools (read_file, write_file, etc.)
-  //
-  // Opencode sends tool names without prefixes. This plugin adds "mcp_" (single
-  // underscore) before sending to Anthropic to namespace tools, then strips
-  // the prefix from the response stream (see src/response/mcp.ts). This is a
-  // round-trip transformation: the client sees original names, Anthropic sees
-  // prefixed names. Tools already named "mcp_*" get double-prefixed so that
-  // response stripping restores their original name.
-  const TOOL_PREFIX = "mcp_";
+  if (body === undefined || body === null) return body;
+  validateBodyType(body, true);
 
   try {
-    const parsed = JSON.parse(body);
+    const parsed = JSON.parse(body) as Record<string, unknown> & {
+      tools?: Array<Record<string, unknown>>;
+      messages?: Array<Record<string, unknown>>;
+      thinking?: unknown;
+      model?: string;
+      metadata?: Record<string, unknown>;
+      system?: unknown[] | undefined;
+    };
+    const parsedMessages = Array.isArray(parsed.messages) ? parsed.messages : [];
+    const literalToolNames = new Set<string>(
+      Array.isArray(parsed.tools)
+        ? parsed.tools
+            .map((tool: Record<string, unknown>) => tool.name)
+            .filter((name: unknown): name is string => typeof name === "string")
+        : [],
+    );
+
     if (Object.hasOwn(parsed, "betas")) {
       delete parsed.betas;
     }
     // Normalize thinking block for adaptive (Opus 4.6) vs manual (older models).
     if (Object.hasOwn(parsed, "thinking")) {
-      parsed.thinking = normalizeThinkingBlock(parsed.thinking, parsed.model || "");
+      parsed.thinking = normalizeThinkingBlock(parsed.thinking as unknown, parsed.model || "");
     }
-    const hasThinking = parsed.thinking && typeof parsed.thinking === "object" && parsed.thinking.type === "enabled";
+    const hasThinking =
+      parsed.thinking &&
+      typeof parsed.thinking === "object" &&
+      (parsed.thinking as { type?: string }).type === "enabled";
     if (hasThinking) {
       delete parsed.temperature;
     } else if (!Object.hasOwn(parsed, "temperature")) {
@@ -53,8 +172,7 @@ export function transformRequestBody(
     const allSystemBlocks = buildSystemPromptBlocks(
       normalizeSystemTextBlocks(parsed.system),
       signature,
-      parsed.messages,
-      sanitizeSystemPrompt,
+      parsedMessages,
     );
 
     if (signature.enabled && relocateThirdPartyPrompts) {
@@ -120,7 +238,7 @@ export function transformRequestBody(
     if (parsed.tools && Array.isArray(parsed.tools)) {
       parsed.tools = parsed.tools.map((tool: Record<string, unknown>) => ({
         ...tool,
-        name: tool.name ? `${TOOL_PREFIX}${tool.name}` : tool.name,
+        name: prefixToolDefinitionName(tool.name),
       }));
     }
     // Add prefix to tool_use blocks in messages
@@ -131,7 +249,7 @@ export function transformRequestBody(
             if (block.type === "tool_use" && block.name) {
               return {
                 ...block,
-                name: `${TOOL_PREFIX}${block.name}`,
+                name: prefixToolUseName(block.name, literalToolNames, debugLog),
               };
             }
             return block;
@@ -142,7 +260,11 @@ export function transformRequestBody(
     }
     return JSON.stringify(parsed);
   } catch (err) {
-    debugLog?.("body parse failed:", (err as Error).message);
-    return body;
+    if (err instanceof SyntaxError) {
+      debugLog?.("body parse failed:", err.message);
+      return body;
+    }
+
+    throw err;
   }
 }

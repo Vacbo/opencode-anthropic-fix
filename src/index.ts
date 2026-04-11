@@ -18,7 +18,7 @@ import { buildRequestHeaders } from "./headers/builder.js";
 import { fetchLatestClaudeCodeVersion } from "./headers/user-agent.js";
 import { hasOneMillionContext, isOpus46Model } from "./models.js";
 import { authorize, exchange } from "./oauth.js";
-import { transformRequestBody } from "./request/body.js";
+import { cloneBodyForRetry, transformRequestBody } from "./request/body.js";
 import { extractFileIds, getAccountIdentifier } from "./request/metadata.js";
 import { fetchWithRetry } from "./request/retry.js";
 import { transformRequestUrl } from "./request/url.js";
@@ -255,9 +255,14 @@ export async function AnthropicAuthPlugin({
 
               const requestInit = init ?? {};
               const { requestInput, requestUrl } = transformRequestUrl(input);
+              if (requestInit.body === undefined && requestInput instanceof Request && requestInput.body) {
+                requestInit.body = await requestInput.clone().text();
+              }
+
               const requestMethod = String(
                 requestInit.method || (requestInput instanceof Request ? requestInput.method : "POST"),
               ).toUpperCase();
+              const originalBody = requestInit.body;
               let showUsageToast: boolean;
               try {
                 showUsageToast = new URL(requestUrl!).pathname === "/v1/messages" && requestMethod === "POST";
@@ -403,22 +408,24 @@ export async function AnthropicAuthPlugin({
 
                 maybeRefreshIdleAccounts(account);
 
-                const body = transformRequestBody(
-                  requestInit.body,
-                  {
-                    enabled: signatureEmulationEnabled,
-                    claudeCliVersion,
-                    promptCompactionMode,
-                  },
-                  {
-                    persistentUserId: signatureUserId,
-                    sessionId: signatureSessionId,
-                    accountId: getAccountIdentifier(account),
-                  },
-                  config.relocate_third_party_prompts,
-                  config.sanitize_system_prompt,
-                  debugLog,
-                );
+                const buildAttemptBody = () =>
+                  transformRequestBody(
+                    typeof originalBody === "string" ? cloneBodyForRetry(originalBody) : originalBody,
+                    {
+                      enabled: signatureEmulationEnabled,
+                      claudeCliVersion,
+                      promptCompactionMode,
+                    },
+                    {
+                      persistentUserId: signatureUserId,
+                      sessionId: signatureSessionId,
+                      accountId: getAccountIdentifier(account),
+                    },
+                    config.relocate_third_party_prompts,
+                    debugLog,
+                  );
+
+                const body = buildAttemptBody();
                 logTransformedSystemPrompt(body);
 
                 const requestHeaders = buildRequestHeaders(input, requestInit, accessToken!, body, requestUrl, {
@@ -538,11 +545,12 @@ export async function AnthropicAuthPlugin({
                         headersForRetry.set("x-stainless-retry-count", String(retryCount));
                         retryCount += 1;
                         const retryUrl = fetchInput instanceof Request ? fetchInput.url : fetchInput.toString();
+                        const retryBody = buildAttemptBody();
                         return fetchViaBun(
                           retryUrl,
                           {
                             ...requestInit,
-                            body,
+                            body: retryBody,
                             headers: headersForRetry,
                           },
                           config.debug,
