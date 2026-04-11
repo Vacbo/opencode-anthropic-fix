@@ -19,4 +19,5 @@
 - Keep `parseRefreshFailure` in the factory return even though it is only consumed by index.ts today; this preserves the extracted helper surface cleanly
 
 ## 2026-04-10 12:18:42
+
 - F1 rerun approved: previous /tmp-gating rejection was incorrect; current must-have checks pass and follow-up commit 82eaf0f resolves the disputed catch findings.

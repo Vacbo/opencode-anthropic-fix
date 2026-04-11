@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Circuit breaker implementation for per-request failure isolation (prevents one bad request from affecting others)
 - Parent PID watcher for cross-platform proxy death detection
 - 10 new test files covering parallel request scenarios and account deduplication edge cases
+- `scripts/qa-parallel.sh` and `scripts/rotation-test.js` for manual QA verification
 
 ### Removed
 

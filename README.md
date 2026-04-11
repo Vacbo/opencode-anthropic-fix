@@ -33,6 +33,8 @@ opencode
 
 That's it. OpenCode will now use your Claude subscription directly. All model costs show as $0.00.
 
+Manual parallel QA: `bash scripts/qa-parallel.sh`
+
 ## What This Fork Adds
 
 The [original plugin](https://github.com/anomalyco/opencode-anthropic-auth) provided basic OAuth support. This fork adds:

@@ -1,46 +1,58 @@
-## Task 37: Documentation Update (2026-04-10)
+## Task 38: Changelog and Version Bump (2026-04-10)
 
 ### Completed
 
-Updated documentation to reflect per-instance proxy lifecycle and concurrency guarantees:
+Created CHANGELOG.md with v0.1.0 entry documenting all fixes and changes from Waves 1-5:
 
-**README.md changes:**
+**CHANGELOG.md created with keep-a-changelog format:**
 
-- Added "Per-instance Proxy Lifecycle" section after Configuration, before "How It Works"
-  - Documents each OpenCode instance owns its own proxy
-  - Documents proxy dies with parent process
-  - Documents ephemeral port allocation
-  - Documents graceful fallback to native fetch
-- Added "Known limitations" section before License
-  - Documents Windows native fetch fallback (no mimicry)
-  - Documents CC refresh blocking up to 60s (latent issue, out of scope)
+- **Fixed section**: 4 user-facing bug fixes
+  - Parallel subagent failures (tool_use orphan errors)
+  - SSE streaming fragility (Unable to connect errors)
+  - Duplicate account creation on token rotation
+  - 55+ inventoried bugs related to race conditions
 
-**AGENTS.md changes:**
+- **Changed section**: 4 architectural improvements
+  - Per-instance proxy lifecycle (was global)
+  - Widened refresh lock constants (15s timeout, 90s stale)
+  - SSE event-framing rewrite
+  - Identity-based account dedup strategy
 
-- Added "Concurrency guarantees" section after "Operating rules"
-  - Documents single proxy handles N concurrent requests
-  - Documents circuit breaker is per-request not global
-  - Documents no restart-kill behavior
-  - Documents stable identity dedup
-- Updated "Change policy" section with new invariants
-  - Added per-instance proxy lifecycle preservation
-  - Added concurrency guarantees maintenance
-  - Added graceful fallback preservation
+- **Added section**: 4 new modules
+  - Account identity abstraction
+  - Circuit breaker for per-request isolation
+  - Parent PID watcher for cross-platform death detection
+  - 10 new test files for parallel and dedup scenarios
 
-**docs/mimese-http-header-system-prompt.md changes:**
+- **Removed section**: 4 obsolete mechanisms
+  - Global health check failure counter
+  - Fixed port 48372 (now ephemeral)
+  - Global PID file (now per-instance)
+  - Global process event handlers
 
-- Added proxy lifecycle note in section 9 (Compatibility and fallback behavior)
-  - Documents per-instance Bun-based proxy architecture
-  - Confirms fingerprint mimicry unchanged (still uses Bun TLS)
+**package.json updated:**
+
+- Version bumped from 0.0.37 to 0.1.0
+- Signals completion of parallel-request and account-deduplication fixes
 
 ### Verification
 
-- `npx prettier --check README.md AGENTS.md docs/mimese-http-header-system-prompt.md` passes
-- All modified files use correct Prettier code style
-- Pre-existing format issue in `.sisyphus/notepads/quality-refactor/decisions.md` is unrelated to this task
+- `npm run format:check` passes for new files
+- Pre-existing format issue in `.sisyphus/notepads/quality-refactor/decisions.md` is unrelated
+- CHANGELOG.md follows keep-a-changelog format with proper sections
+- All entries are user-facing (no internal bug IDs)
 
 ### Files Modified
 
-- README.md (added 2 new sections)
-- AGENTS.md (added 1 new section, updated 1 section)
-- docs/mimese-http-header-system-prompt.md (added proxy lifecycle note)
+- CHANGELOG.md (new file with v0.1.0 entry)
+- package.json (version bump 0.0.37 → 0.1.0)
+
+### Commit
+
+`docs(changelog): v0.1.0 entry for parallel-request and account-dedup fix`
+
+## Task 39: Manual QA Scripts (2026-04-11)
+
+- `scripts/mock-upstream.js` uses a kernel-assigned port, emits complete SSE event blocks, and assigns monotonic `toolu_` IDs per request.
+- `scripts/qa-parallel.sh` validates 50 concurrent proxy requests by routing Bun fetch traffic through the local mock upstream via `HTTP_PROXY`, which avoids touching real Anthropic endpoints while keeping the proxy hostname allowlist intact.
+- `scripts/rotation-test.js` drives repeated OAuth token rotations through the built plugin against a local token server and confirms the persisted account count stays at 2.
