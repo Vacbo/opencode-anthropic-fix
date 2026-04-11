@@ -61,16 +61,19 @@ export function applyDiskAuthIfFresher(
   if (!diskAuth) return false;
   const diskTokenUpdatedAt = diskAuth.tokenUpdatedAt || 0;
   const memTokenUpdatedAt = account.tokenUpdatedAt || 0;
-  const diskHasDifferentAuth = diskAuth.refreshToken !== account.refreshToken || diskAuth.access !== account.access;
+  const diskIsNewer = diskTokenUpdatedAt > memTokenUpdatedAt;
+  const diskHasDifferentRefreshToken = diskAuth.refreshToken !== account.refreshToken;
   const memAuthExpired = !account.expires || account.expires <= Date.now();
   const allowExpiredFallback = options.allowExpiredFallback === true;
-  if (diskTokenUpdatedAt <= memTokenUpdatedAt && !(allowExpiredFallback && diskHasDifferentAuth && memAuthExpired)) {
+  if (!diskIsNewer && !(allowExpiredFallback && diskHasDifferentRefreshToken && memAuthExpired)) {
     return false;
   }
   account.refreshToken = diskAuth.refreshToken;
   account.access = diskAuth.access;
   account.expires = diskAuth.expires;
-  account.tokenUpdatedAt = Math.max(memTokenUpdatedAt, diskTokenUpdatedAt);
+  if (diskIsNewer) {
+    account.tokenUpdatedAt = diskTokenUpdatedAt;
+  }
   return true;
 }
 

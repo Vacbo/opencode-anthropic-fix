@@ -1,5 +1,7 @@
 import { execSync } from "node:child_process";
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { createDeferred, nextTick } from "./__tests__/helpers/deferred.js";
+import { createRefreshHelpers } from "./refresh-helpers.js";
 
 vi.mock("node:child_process", () => ({
   execSync: vi.fn(),
@@ -32,7 +34,7 @@ import type { ManagedAccount } from "./accounts.js";
 import type { CCCredential } from "./cc-credentials.js";
 import { readCCCredentials, readCCCredentialsFromFile } from "./cc-credentials.js";
 import { refreshToken } from "./oauth.js";
-import { refreshAccountToken } from "./token-refresh.js";
+import { applyDiskAuthIfFresher, refreshAccountToken } from "./token-refresh.js";
 
 const mockExecSync = execSync as Mock;
 const mockReadCCCredentials = readCCCredentials as Mock;
@@ -230,5 +232,86 @@ describe("refreshAccountToken", () => {
       encoding: "utf-8",
       timeout: 5000,
     });
+  });
+
+  it("reuses the first foreground retry after an idle refresh rejection", async () => {
+    const idleRefresh = createDeferred<{
+      access_token: string;
+      expires_in: number;
+      refresh_token?: string;
+    }>();
+    const foregroundRefresh = createDeferred<{
+      access_token: string;
+      expires_in: number;
+      refresh_token?: string;
+    }>();
+    const idleFailure = new Error("idle refresh failed");
+    const foregroundFailure = new Error("foreground refresh failed");
+    mockRefreshToken
+      .mockImplementationOnce(() => idleRefresh.promise)
+      .mockImplementationOnce(() => foregroundRefresh.promise)
+      .mockRejectedValueOnce(new Error("duplicate foreground refresh"));
+    const accountManager = {
+      saveToDisk: vi.fn().mockResolvedValue(undefined),
+      requestSaveToDisk: vi.fn(),
+      getEnabledAccounts: vi.fn().mockReturnValue([]),
+    };
+    const account = makeAccount();
+    const helpers = createRefreshHelpers({
+      client: {},
+      config: {
+        idle_refresh: {
+          enabled: true,
+          window_minutes: 10,
+          min_interval_minutes: 1,
+        },
+      } as never,
+      getAccountManager: () => accountManager as never,
+      debugLog: vi.fn(),
+    });
+    const idleCall = helpers.refreshAccountTokenSingleFlight(account, "idle").catch((error) => error);
+    await nextTick();
+    await nextTick();
+
+    const foregroundCallA = helpers.refreshAccountTokenSingleFlight(account, "foreground").catch((error) => error);
+    const foregroundCallB = helpers.refreshAccountTokenSingleFlight(account, "foreground").catch((error) => error);
+    await nextTick();
+
+    idleRefresh.reject(idleFailure);
+    await expect(idleCall).resolves.toBe(idleFailure);
+    await nextTick();
+
+    expect(mockRefreshToken).toHaveBeenCalledTimes(2);
+
+    foregroundRefresh.reject(foregroundFailure);
+
+    await expect(foregroundCallA).resolves.toBe(foregroundFailure);
+    await expect(foregroundCallB).resolves.toBe(foregroundFailure);
+  });
+
+  it("does not adopt older expired-fallback disk auth when only access differs", () => {
+    const currentTime = Date.now();
+    const account = makeAccount({
+      refreshToken: "refresh-current",
+      access: "access-current",
+      expires: currentTime - 1_000,
+      tokenUpdatedAt: currentTime,
+    });
+
+    const adopted = applyDiskAuthIfFresher(
+      account,
+      {
+        refreshToken: "refresh-current",
+        access: "access-stale",
+        expires: currentTime + 60_000,
+        tokenUpdatedAt: currentTime - 60_000,
+      },
+      { allowExpiredFallback: true },
+    );
+
+    expect(adopted).toBe(false);
+    expect(account.refreshToken).toBe("refresh-current");
+    expect(account.access).toBe("access-current");
+    expect(account.tokenUpdatedAt).toBe(currentTime);
   });
 });

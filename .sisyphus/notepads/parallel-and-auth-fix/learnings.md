@@ -469,3 +469,10 @@ Evidence: .sisyphus/evidence/task-6-conversation-smoke.txt
 - Claude Code credential refresh can legitimately hold the per-account refresh lock for about 60 seconds, so the stale reaper window needs slack above that runtime or a healthy refresh gets treated like an abandoned lock.
 - Letting `refreshAccountToken()` fall through to the widened `acquireRefreshLock()` defaults is safer than re-declaring shorter `timeoutMs` and `staleMs` values locally; it keeps the policy in one place while preserving the custom backoff.
 - The regression to keep is simple: age a held lock to 60 seconds, then prove a second contender still backs off instead of stealing it. That pins the no-thrashing/no-live-lock-theft contract without changing lock ownership or release semantics.
+
+## Task 36: Idle reentry + disk fallback freshness GREEN (2026-04-10)
+
+- `refreshAccountTokenSingleFlight()` needs a second `refreshInFlight.get(account.id)` check after an idle promise rejects; without it, two foreground waiters can both create new refreshes after the same idle failure.
+- The right regression is a three-step race: idle refresh rejects, first foreground caller starts the retry, second foreground caller must observe that new entry and reuse its failure instead of issuing a third token refresh.
+- `applyDiskAuthIfFresher()` should treat expired fallback as a refresh-token recovery path, not a generic "any auth field changed" path; an older disk access token with the same refresh token is stale data and should be ignored.
+- When older disk auth is adopted only because the refresh token changed, keep the in-memory `tokenUpdatedAt` untouched so freshness tracking does not lie about the age of the adopted fields.

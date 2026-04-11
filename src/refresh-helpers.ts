@@ -60,6 +60,10 @@ export function createRefreshHelpers({ client, config, getAccountManager, debugL
           void err;
         }
         if (account.access && account.expires && account.expires > Date.now()) return account.access;
+        const retried = refreshInFlight.get(key);
+        if (retried && retried !== existing) {
+          return retried.promise;
+        }
       } else {
         return existing.promise;
       }

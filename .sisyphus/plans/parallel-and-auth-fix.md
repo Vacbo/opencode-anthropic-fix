@@ -2889,7 +2889,7 @@ Run: `npx vitest run` + `npx tsc --noEmit` + `npm run build`. Expected state: Wa
   - Files: `src/cli.ts`
   - Pre-commit: `npx vitest run cli.test.ts`
 
-- [ ] 35. GREEN: `src/refresh-lock.ts` + tests — widen staleMs and timeoutMs constants
+- [x] 35. GREEN: `src/refresh-lock.ts` + tests — widen staleMs and timeoutMs constants
 
   **What to do**:
   - Update `src/refresh-lock.ts` constants:
