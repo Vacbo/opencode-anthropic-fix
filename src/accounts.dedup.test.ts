@@ -23,6 +23,21 @@ type LoadManagerOptions = {
   initialStorage?: AccountStorage;
 };
 
+type ExchangeSuccess = {
+  type: "success";
+  refresh: string;
+  access: string;
+  expires: number;
+  email?: string;
+};
+
+type LoadPluginOptions = {
+  ccCredentials?: CCCredential[];
+  config?: typeof DEFAULT_CONFIG;
+  exchangeResult?: ExchangeSuccess;
+  initialStorage?: AccountStorage;
+};
+
 function makeStats(lastReset = Date.now()) {
   return {
     requests: 0,
@@ -54,6 +69,7 @@ async function loadManager(options: LoadManagerOptions = {}) {
 
   vi.doMock("./storage.js", async (importOriginal) => {
     const actual = await importOriginal<typeof import("./storage.js")>();
+
     return {
       ...actual,
       createDefaultStats,
@@ -72,6 +88,99 @@ async function loadManager(options: LoadManagerOptions = {}) {
 
   return {
     manager,
+    storage,
+  };
+}
+
+function makeClient() {
+  return {
+    auth: {
+      set: vi.fn().mockResolvedValue(undefined),
+    },
+    session: {
+      prompt: vi.fn().mockResolvedValue(undefined),
+    },
+    tui: {
+      showToast: vi.fn().mockResolvedValue(undefined),
+    },
+  };
+}
+
+async function loadPlugin(options: LoadPluginOptions = {}) {
+  vi.resetModules();
+
+  const storage = createInMemoryStorage(options.initialStorage);
+  const createDefaultStats = vi.fn((now?: number) => makeStats(now ?? Date.now()));
+  const authorizeMock = vi.fn().mockResolvedValue({
+    url: "https://claude.ai/oauth/authorize?state=test-state",
+    verifier: "test-verifier",
+    state: "test-state",
+  });
+  const exchangeMock = vi.fn().mockResolvedValue(
+    options.exchangeResult ?? {
+      type: "success",
+      refresh: "oauth-refresh-fresh",
+      access: "oauth-access-fresh",
+      expires: Date.now() + 3_600_000,
+      email: "alice@example.com",
+    },
+  );
+
+  vi.doMock("./storage.js", () => ({
+    createDefaultStats,
+    loadAccounts: storage.loadAccountsMock,
+    saveAccounts: storage.saveAccountsMock,
+    clearAccounts: vi.fn().mockResolvedValue(undefined),
+  }));
+
+  vi.doMock("./cc-credentials.js", () => ({
+    readCCCredentials: () => options.ccCredentials ?? [],
+  }));
+
+  vi.doMock("./config.js", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("./config.js")>();
+
+    return {
+      ...actual,
+      DEFAULT_CONFIG,
+      loadConfig: vi.fn(() => ({
+        ...DEFAULT_CONFIG,
+        signature_emulation: {
+          ...DEFAULT_CONFIG.signature_emulation,
+          fetch_claude_code_version_on_startup: false,
+        },
+        idle_refresh: {
+          ...DEFAULT_CONFIG.idle_refresh,
+          enabled: false,
+        },
+        cc_credential_reuse: {
+          ...DEFAULT_CONFIG.cc_credential_reuse,
+        },
+        ...(options.config ?? {}),
+      })),
+    };
+  });
+
+  vi.doMock("./oauth.js", () => ({
+    authorize: authorizeMock,
+    exchange: exchangeMock,
+  }));
+
+  vi.doMock("./commands/prompts.js", () => ({
+    promptAccountMenu: vi.fn().mockResolvedValue("add"),
+    promptManageAccounts: vi.fn().mockResolvedValue(undefined),
+  }));
+
+  vi.doMock("./bun-fetch.js", () => ({
+    createBunFetch: () => ({
+      fetch: vi.fn(),
+    }),
+  }));
+
+  const { AnthropicAuthPlugin } = await import("./index.js");
+
+  return {
+    plugin: await AnthropicAuthPlugin({ client: makeClient() }),
     storage,
   };
 }
@@ -277,6 +386,121 @@ describe("AccountManager identity-based dedup RED", () => {
     expect(snapshot).toHaveLength(2);
     expect(snapshot.filter((account) => account.source === "oauth")).toHaveLength(1);
     expect(snapshot.filter((account) => account.source === "cc-keychain")).toHaveLength(1);
+  });
+
+  it("Flow A: CC auto-detect re-auth updates the existing account without creating a duplicate", async () => {
+    const { plugin, storage } = await loadPlugin({
+      initialStorage: makeAccountsData([
+        {
+          id: "cc-flow-a",
+          refreshToken: "cc-refresh-stale",
+          access: "cc-access-stale",
+          source: "cc-keychain",
+          label: "Claude Code-credentials:alice@example.com",
+        },
+      ]),
+      ccCredentials: [
+        makeCCCredential({
+          refreshToken: "cc-refresh-rotated",
+          accessToken: "cc-access-rotated",
+          source: "cc-keychain",
+          label: "Claude Code-credentials:alice@example.com",
+        }),
+      ],
+    });
+
+    const method = plugin.auth.methods[0];
+    expect(method).toBeDefined();
+    if (!method) {
+      throw new Error("Expected Claude Code auth method");
+    }
+    expect(method.authorize).toBeTypeOf("function");
+    if (!method.authorize) {
+      throw new Error("Expected Claude Code authorize handler");
+    }
+
+    const credentials = await method.authorize();
+
+    expect(credentials).toMatchObject({
+      type: "success",
+      refresh: "cc-refresh-rotated",
+      access: "cc-access-rotated",
+    });
+
+    const saved = lastSavedStorage(storage);
+    expect(saved.accounts).toHaveLength(1);
+    expect(saved.accounts[0]).toMatchObject({
+      id: "cc-flow-a",
+      refreshToken: "cc-refresh-rotated",
+      access: "cc-access-rotated",
+      source: "cc-keychain",
+      label: "Claude Code-credentials:alice@example.com",
+      identity: {
+        kind: "cc",
+        source: "cc-keychain",
+        label: "Claude Code-credentials:alice@example.com",
+      },
+    });
+  });
+
+  it("Flow B: OAuth re-auth updates the existing account for the same email without creating a duplicate", async () => {
+    const { plugin, storage } = await loadPlugin({
+      initialStorage: makeAccountsData([
+        {
+          id: "oauth-flow-b",
+          email: "alice@example.com",
+          refreshToken: "oauth-refresh-stale",
+          access: "oauth-access-stale",
+          source: "oauth",
+        },
+      ]),
+      exchangeResult: {
+        type: "success",
+        refresh: "oauth-refresh-rotated",
+        access: "oauth-access-rotated",
+        expires: Date.now() + 7_200_000,
+        email: "alice@example.com",
+      },
+    });
+
+    const method = plugin.auth.methods[1];
+    expect(method).toBeDefined();
+    if (!method) {
+      throw new Error("Expected OAuth auth method");
+    }
+    expect(method.authorize).toBeTypeOf("function");
+    if (!method.authorize) {
+      throw new Error("Expected OAuth authorize handler");
+    }
+
+    const authResult = await method.authorize();
+    expect(authResult.callback).toBeTypeOf("function");
+    if (!authResult.callback) {
+      throw new Error("Expected OAuth callback");
+    }
+
+    const credentials = await authResult.callback("oauth-code#test-state");
+
+    expect(credentials).toMatchObject({
+      type: "success",
+      refresh: "oauth-refresh-rotated",
+      access: "oauth-access-rotated",
+      email: "alice@example.com",
+    });
+
+    const saved = lastSavedStorage(storage);
+    expect(saved.accounts).toHaveLength(1);
+    expect(saved.accounts[0]).toMatchObject({
+      id: "oauth-flow-b",
+      email: "alice@example.com",
+      refreshToken: "oauth-refresh-rotated",
+      access: "oauth-access-rotated",
+      source: "oauth",
+      identity: {
+        kind: "oauth",
+        email: "alice@example.com",
+      },
+    });
   });
 
   it("enforces MAX_ACCOUNTS during CC auto-detect instead of overflowing capacity", async () => {

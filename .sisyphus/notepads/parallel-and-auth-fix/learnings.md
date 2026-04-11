@@ -198,6 +198,12 @@ Evidence: .sisyphus/evidence/task-6-conversation-smoke.txt
 - Created `src/circuit-breaker.test.ts` with 19 failing tests (TDD RED phase)
 - Tests cover complete circuit breaker state machine:
   - CLOSED state: allows requests, tracks failures
+
+## Task 33: Authorize-flow dedup follow-up (2026-04-10)
+
+- `src/index.ts` authorize handlers need identity lookups against live `ManagedAccount` references, not `getAccountsSnapshot()`, otherwise re-auth token rotation only updates clones and duplicate-prevention never persists.
+- Keep dedup scopes separated by account class: search CC matches in `getCCAccounts()` and OAuth matches in `getOAuthAccounts()` so a shared email never collapses a Claude Code credential into an OAuth account.
+- Plugin-level Flow A/Flow B regression tests are easiest to keep local by `vi.doMock`-ing `storage`, `config`, `oauth`, and `bun-fetch`, then importing `./index.js` after `vi.resetModules()`.
   - OPEN state: fails fast without upstream calls
   - HALF_OPEN state: probe requests, success closes, failure reopens
 - Per-client isolation: separate breakers per clientId with shared registry

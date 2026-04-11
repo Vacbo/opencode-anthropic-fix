@@ -25,6 +25,11 @@ import { transformRequestUrl } from "./request/url.js";
 import { isEventStreamResponse, stripMcpPrefixFromJsonBody, transformResponse } from "./response/index.js";
 import { StreamTruncatedError } from "./response/streaming.js";
 import { readCCCredentials } from "./cc-credentials.js";
+import {
+  findByIdentity,
+  resolveIdentityFromCCCredential,
+  resolveIdentityFromOAuthExchange,
+} from "./account-identity.js";
 import { clearAccounts, loadAccounts } from "./storage.js";
 import type { OpenCodeClient } from "./token-refresh.js";
 import { formatSwitchReason, markTokenStateUpdated, readDiskAccountAuth } from "./token-refresh.js";
@@ -685,14 +690,39 @@ export async function AnthropicAuthPlugin({
               accountManager = await AccountManager.load(config, null);
             }
 
-            const exists = accountManager
-              .getAccountsSnapshot()
-              .some((acc: ManagedAccount) => acc.refreshToken === ccCred.refreshToken);
+            const identity = resolveIdentityFromCCCredential(ccCred);
+            const existing = findByIdentity(accountManager.getCCAccounts(), identity);
 
-            if (!exists) {
-              const added = accountManager.addAccount(ccCred.refreshToken, ccCred.accessToken, ccCred.expiresAt);
+            if (existing) {
+              existing.refreshToken = ccCred.refreshToken;
+              existing.identity = identity;
+              existing.source = ccCred.source;
+              existing.label = ccCred.label;
+              existing.enabled = true;
+              if (ccCred.accessToken) {
+                existing.access = ccCred.accessToken;
+              }
+              if (ccCred.expiresAt >= (existing.expires ?? 0)) {
+                existing.expires = ccCred.expiresAt;
+              }
+              existing.tokenUpdatedAt = Math.max(existing.tokenUpdatedAt || 0, ccCred.expiresAt || 0);
+              await accountManager.saveToDisk();
+            } else {
+              const added = accountManager.addAccount(
+                ccCred.refreshToken,
+                ccCred.accessToken,
+                ccCred.expiresAt,
+                undefined,
+                {
+                  identity,
+                  label: ccCred.label,
+                  source: ccCred.source,
+                },
+              );
               if (added) {
                 added.source = ccCred.source;
+                added.label = ccCred.label;
+                added.identity = identity;
               }
               await accountManager.saveToDisk();
               await toast("Added Claude Code credentials", "success");
@@ -755,17 +785,38 @@ export async function AnthropicAuthPlugin({
                 if (!accountManager) {
                   accountManager = await AccountManager.load(config, null);
                 }
+                const identity = resolveIdentityFromOAuthExchange(credentials);
                 const countBefore = accountManager.getAccountCount();
-                accountManager.addAccount(
-                  credentials.refresh,
-                  credentials.access,
-                  credentials.expires,
-                  credentials.email,
-                );
+                const existing =
+                  identity.kind === "oauth" ? findByIdentity(accountManager.getOAuthAccounts(), identity) : null;
+
+                if (existing) {
+                  existing.refreshToken = credentials.refresh;
+                  existing.access = credentials.access;
+                  existing.expires = credentials.expires;
+                  existing.email = credentials.email ?? existing.email;
+                  existing.identity = identity;
+                  existing.source = "oauth";
+                  existing.enabled = true;
+                  existing.tokenUpdatedAt = Date.now();
+                } else {
+                  accountManager.addAccount(
+                    credentials.refresh,
+                    credentials.access,
+                    credentials.expires,
+                    credentials.email,
+                    {
+                      identity,
+                      source: "oauth",
+                    },
+                  );
+                }
+
                 await accountManager.saveToDisk();
                 const total = accountManager.getAccountCount();
                 const name = credentials.email || "account";
-                if (countBefore > 0) await toast(`Added ${name} — ${total} accounts`, "success");
+                if (existing) await toast(`Re-authenticated (${name})`, "success");
+                else if (countBefore > 0) await toast(`Added ${name} — ${total} accounts`, "success");
                 else await toast(`Authenticated (${name})`, "success");
                 return credentials;
               },
