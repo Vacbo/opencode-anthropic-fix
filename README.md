@@ -555,6 +555,17 @@ Configuration is stored at `~/.config/opencode/anthropic-auth.json`. All setting
 - In OAuth mode, the plugin always includes `oauth-2025-04-20` in `anthropic-beta`.
 - This applies to all models, including Haiku.
 
+## Per-instance Proxy Lifecycle
+
+The plugin uses a dedicated HTTP proxy per OpenCode instance to handle TLS fingerprint mimicry. This architecture provides isolation and graceful degradation:
+
+- **Each OpenCode instance owns its own proxy** — when you open multiple OpenCode tabs or windows, each gets an independent proxy process
+- **Proxy dies with parent process** — the proxy monitors its parent PID and exits automatically if the parent dies, preventing orphaned processes
+- **Ephemeral port allocation** — each proxy binds to an available ephemeral port (port 0) to avoid conflicts between instances
+- **Graceful fallback to native fetch** — if Bun is unavailable or the proxy fails to start, requests fall back to native Node.js fetch without TLS mimicry
+
+This design ensures that proxy failures are isolated to a single OpenCode instance and never affect other running instances.
+
 ## How It Works
 
 When you make a request through OpenCode:
@@ -665,6 +676,12 @@ Make sure `~/.local/bin` is on your PATH:
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
+
+## Known Limitations
+
+- **Windows native fetch fallback** — On Windows, the Bun-based TLS mimicry proxy is not available. Requests fall back to native Node.js fetch without fingerprint mimicry. This is a platform limitation; the plugin still functions but with reduced request signature parity.
+
+- **Claude Code refresh blocking** — When reusing Claude Code credentials, token refresh can block for up to 60 seconds while invoking the `claude` CLI. This is a known latent issue in the credential reuse flow and is outside the scope of this plugin's control.
 
 ## License
 

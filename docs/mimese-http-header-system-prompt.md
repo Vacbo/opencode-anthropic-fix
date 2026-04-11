@@ -415,6 +415,17 @@ The plugin does not inject a `betas` field into request body. Beta flags are sen
 - IO failures while persisting `persistentUserId` do not break requests (runtime UUID remains usable)
 - NPM version fetch failure does not break startup (fallback version is used)
 
+### Proxy lifecycle note
+
+The TLS fingerprint mimicry is implemented via a per-instance Bun-based proxy. Each OpenCode instance gets its own proxy process that:
+
+- Binds to an ephemeral port (port 0) to avoid conflicts
+- Monitors parent PID and exits if the parent dies
+- Handles N concurrent requests without blocking
+- Falls back to native Node.js fetch if Bun is unavailable
+
+The fingerprint mimicry itself (TLS handshake, header composition, system prompt shaping) remains unchanged and continues to use Bun's TLS stack when available.
+
 ## 10) Quick verification checklist
 
 To audit whether mimicry is active at runtime:
