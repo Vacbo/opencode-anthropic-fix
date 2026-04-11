@@ -1,0 +1,28 @@
+=== ps bun-proxy ===
+--- (excluding user's unrelated cached plugin process) ---
+
+=== git status --porcelain -- src/ index.test.ts cli.test.ts ===
+=== (empty = clean) ===
+vacbo             4423   0.0  0.1 515314800  51696 s010  S+   12:58AM   0:00.37 bun run /Users/vacbo/.cache/opencode/packages/@vacbo/opencode-anthropic-fix@latest/node_modules/@vacbo/opencode-anthropic-fix/dist/bun-proxy.mjs 48372
+ M .sisyphus/evidence/final-qa/f2-build.txt
+ M .sisyphus/evidence/final-qa/f2-tsc.txt
+ M .sisyphus/notepads/parallel-and-auth-fix/learnings.md
+ M .sisyphus/plans/parallel-and-auth-fix.md
+?? .sisyphus/evidence/final-qa/f2-changed-code-files.txt
+?? .sisyphus/evidence/final-qa/f2-changed-files.txt
+?? .sisyphus/evidence/final-qa/f2-commits.txt
+?? .sisyphus/evidence/final-qa/f2-format.txt
+?? .sisyphus/evidence/final-qa/f2-lint.txt
+?? .sisyphus/evidence/final-qa/f2-red-commit-messages.txt
+?? .sisyphus/evidence/final-qa/f2-slop-checks.txt
+?? .sisyphus/evidence/final-qa/f2-summary.md
+?? .sisyphus/evidence/final-qa/f2-vitest.txt
+?? .sisyphus/evidence/final-qa/f3-phase1-audit.txt
+?? .sisyphus/evidence/final-qa/f3-phase2-worktree.txt
+?? .sisyphus/evidence/final-qa/f3-phase3-qa-parallel-run-1.txt
+?? .sisyphus/evidence/final-qa/f3-phase3-qa-parallel-run-2.txt
+?? .sisyphus/evidence/final-qa/f3-phase3-qa-parallel-run-3.txt
+?? .sisyphus/evidence/final-qa/f3-phase4-n50-fanout.txt
+?? .sisyphus/evidence/final-qa/f3-phase5-rotation.txt
+?? .sisyphus/evidence/final-qa/f3-phase6-cleanup.txt
+?? .sisyphus/evidence/final-qa/f3-phase7-verify.txt

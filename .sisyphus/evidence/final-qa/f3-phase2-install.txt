@@ -1,0 +1,17 @@
+Reconstructed from tool output (original tee target was inside sandbox worktree which was removed in Phase 6).
+
+Command: npm install --prefer-offline --no-audit
+Working directory: /tmp/f3-sandbox-1775879429
+
+Output (tail):
+
+> @vacbo/opencode-anthropic-fix@0.1.0 prepare
+> husky
+
+
+added 185 packages in 2s
+
+67 packages are looking for funding
+  run `npm fund` for details
+
+Exit status: 0

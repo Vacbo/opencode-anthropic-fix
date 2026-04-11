@@ -1,0 +1,21 @@
+[f3-n50] Starting mock-upstream...
+[f3-n50] mock-upstream PORT=58340 PID=5009
+[f3-n50] Starting bun-proxy...
+[f3-n50] bun-proxy PORT=58341 PID=5017
+[f3-n50] Firing 50 concurrent curl requests via xargs...
+requests=50
+message_stop_count=50
+connect_errors=0
+orphan_tool_errors=0
+non_200_status=0
+mock_port=58340
+proxy_port=58341
+RESULT=PASS | message_stop=50 connect_errors=0 orphan_tool_errors=0
+---SUMMARY---
+requests=50
+message_stop_count=50
+connect_errors=0
+orphan_tool_errors=0
+non_200_status=0
+mock_port=58340
+proxy_port=58341

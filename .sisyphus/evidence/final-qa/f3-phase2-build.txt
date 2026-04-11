@@ -1,0 +1,35 @@
+Reconstructed from tool output (original tee target was inside sandbox worktree which was removed in Phase 6).
+
+Command 1: npm run build
+Working directory: /tmp/f3-sandbox-1775879429
+
+Output:
+
+> @vacbo/opencode-anthropic-fix@0.1.0 build
+> bun scripts/build.ts
+
+Built dist/opencode-anthropic-auth-plugin.js and dist/opencode-anthropic-auth-cli.mjs
+
+Exit status: 0
+
+---
+
+Command 2: bun x esbuild src/bun-proxy.ts --bundle --format=esm --platform=node --target=node20 --external:'node:*' --outfile=dist/bun-proxy.mjs
+(matches scripts/qa-parallel.sh side-build convention; primary build script only produces plugin.js + cli.mjs)
+
+Output:
+
+  dist/bun-proxy.mjs  9.0kb
+
+⚡ Done in 1ms
+
+---
+
+Verification:
+
+ls dist/:
+bun-proxy.mjs
+opencode-anthropic-auth-cli.mjs
+opencode-anthropic-auth-plugin.js
+
+PASS: dist/bun-proxy.mjs present (9240 bytes)

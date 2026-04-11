@@ -1,0 +1,2 @@
+Preparing worktree (detached HEAD 1b4afe8)
+HEAD is now at 1b4afe8 chore: final regression verification pass
