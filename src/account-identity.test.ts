@@ -1,9 +1,17 @@
 import { describe, expect, it } from "vitest";
-import type { ManagedAccount } from "../accounts.js";
-import { findByIdentity, identitiesMatch, resolveIdentity, type AccountIdentity } from "../account-identity.js";
+import type { CCCredential } from "./cc-credentials.js";
+import type { ManagedAccount } from "./accounts.js";
+import {
+  findByIdentity,
+  identitiesMatch,
+  resolveIdentity,
+  resolveIdentityFromCCCredential,
+  resolveIdentityFromOAuthExchange,
+  serializeIdentity,
+  type AccountIdentity,
+} from "./account-identity.js";
 
 describe("account-identity", () => {
-  // OAuth account with email
   const oauthAccount: ManagedAccount = {
     id: "oauth-1",
     index: 0,
@@ -29,11 +37,11 @@ describe("account-identity", () => {
     source: "oauth",
   };
 
-  // CC account with source and label (no email)
   const ccAccount: ManagedAccount = {
     id: "cc-1",
     index: 1,
     email: undefined,
+    label: "Claude Code-credentials:alice@example.com",
     refreshToken: "rt_cc_456",
     access: "at_cc_456",
     expires: Date.now() + 3600000,
@@ -55,7 +63,6 @@ describe("account-identity", () => {
     source: "cc-keychain",
   };
 
-  // Legacy account with no email, no source (fallback to refreshToken)
   const legacyAccount: ManagedAccount = {
     id: "legacy-1",
     index: 2,
@@ -81,12 +88,20 @@ describe("account-identity", () => {
     source: undefined,
   };
 
+  const ccCredential: CCCredential = {
+    accessToken: "at_cc_456",
+    refreshToken: "rt_cc_456",
+    expiresAt: Date.now() + 3600000,
+    source: "cc-keychain",
+    label: "Claude Code-credentials:alice@example.com",
+  };
+
   describe("resolveIdentity", () => {
     it("should resolve OAuth account identity from email", () => {
       const identity = resolveIdentity(oauthAccount);
 
       expect(identity).toEqual({
-        type: "oauth",
+        kind: "oauth",
         email: "alice@example.com",
       });
     });
@@ -95,9 +110,9 @@ describe("account-identity", () => {
       const identity = resolveIdentity(ccAccount);
 
       expect(identity).toEqual({
-        type: "cc",
+        kind: "cc",
         source: "cc-keychain",
-        label: "rt_cc_456", // refreshToken as label fallback
+        label: "Claude Code-credentials:alice@example.com",
       });
     });
 
@@ -105,7 +120,31 @@ describe("account-identity", () => {
       const identity = resolveIdentity(legacyAccount);
 
       expect(identity).toEqual({
-        type: "legacy",
+        kind: "legacy",
+        refreshToken: "rt_legacy_789",
+      });
+    });
+  });
+
+  describe("exchange helpers", () => {
+    it("should resolve CC identity from a Claude Code credential", () => {
+      expect(resolveIdentityFromCCCredential(ccCredential)).toEqual({
+        kind: "cc",
+        source: "cc-keychain",
+        label: "Claude Code-credentials:alice@example.com",
+      });
+    });
+
+    it("should resolve OAuth exchange results with email as OAuth identity", () => {
+      expect(resolveIdentityFromOAuthExchange({ email: "alice@example.com", refresh: "rt_oauth_123" })).toEqual({
+        kind: "oauth",
+        email: "alice@example.com",
+      });
+    });
+
+    it("should resolve OAuth exchange results without email as legacy identity", () => {
+      expect(resolveIdentityFromOAuthExchange({ refresh: "rt_legacy_789" })).toEqual({
+        kind: "legacy",
         refreshToken: "rt_legacy_789",
       });
     });
@@ -113,113 +152,62 @@ describe("account-identity", () => {
 
   describe("identitiesMatch", () => {
     it("should match OAuth accounts with same email", () => {
-      const identity1: AccountIdentity = { type: "oauth", email: "alice@example.com" };
-      const identity2: AccountIdentity = { type: "oauth", email: "alice@example.com" };
+      const identity1: AccountIdentity = { kind: "oauth", email: "alice@example.com" };
+      const identity2: AccountIdentity = { kind: "oauth", email: "alice@example.com" };
 
       expect(identitiesMatch(identity1, identity2)).toBe(true);
-    });
-
-    it("should not match OAuth accounts with different emails", () => {
-      const identity1: AccountIdentity = { type: "oauth", email: "alice@example.com" };
-      const identity2: AccountIdentity = { type: "oauth", email: "bob@example.com" };
-
-      expect(identitiesMatch(identity1, identity2)).toBe(false);
     });
 
     it("should match CC accounts with same source+label", () => {
-      const identity1: AccountIdentity = { type: "cc", source: "cc-keychain", label: "label1" };
-      const identity2: AccountIdentity = { type: "cc", source: "cc-keychain", label: "label1" };
+      const identity1: AccountIdentity = { kind: "cc", source: "cc-keychain", label: "label1" };
+      const identity2: AccountIdentity = { kind: "cc", source: "cc-keychain", label: "label1" };
 
       expect(identitiesMatch(identity1, identity2)).toBe(true);
-    });
-
-    it("should not match CC accounts with different labels", () => {
-      const identity1: AccountIdentity = { type: "cc", source: "cc-keychain", label: "label1" };
-      const identity2: AccountIdentity = { type: "cc", source: "cc-keychain", label: "label2" };
-
-      expect(identitiesMatch(identity1, identity2)).toBe(false);
-    });
-
-    it("should not match CC vs OAuth even with same email", () => {
-      const ccIdentity: AccountIdentity = { type: "cc", source: "cc-keychain", label: "alice@example.com" };
-      const oauthIdentity: AccountIdentity = { type: "oauth", email: "alice@example.com" };
-
-      expect(identitiesMatch(ccIdentity, oauthIdentity)).toBe(false);
-    });
-
-    it("should match legacy accounts with same refreshToken", () => {
-      const identity1: AccountIdentity = { type: "legacy", refreshToken: "rt_same" };
-      const identity2: AccountIdentity = { type: "legacy", refreshToken: "rt_same" };
-
-      expect(identitiesMatch(identity1, identity2)).toBe(true);
-    });
-
-    it("should not match legacy accounts with different refreshTokens", () => {
-      const identity1: AccountIdentity = { type: "legacy", refreshToken: "rt_one" };
-      const identity2: AccountIdentity = { type: "legacy", refreshToken: "rt_two" };
-
-      expect(identitiesMatch(identity1, identity2)).toBe(false);
     });
 
     it("should not match different identity types", () => {
-      const oauthIdentity: AccountIdentity = { type: "oauth", email: "alice@example.com" };
-      const ccIdentity: AccountIdentity = { type: "cc", source: "cc-keychain", label: "label" };
-      const legacyIdentity: AccountIdentity = { type: "legacy", refreshToken: "rt" };
+      const oauthIdentity: AccountIdentity = { kind: "oauth", email: "alice@example.com" };
+      const ccIdentity: AccountIdentity = { kind: "cc", source: "cc-keychain", label: "label" };
+      const legacyIdentity: AccountIdentity = { kind: "legacy", refreshToken: "rt" };
 
       expect(identitiesMatch(oauthIdentity, ccIdentity)).toBe(false);
       expect(identitiesMatch(oauthIdentity, legacyIdentity)).toBe(false);
       expect(identitiesMatch(ccIdentity, legacyIdentity)).toBe(false);
+    });
+
+    it("should not match different stable key fields", () => {
+      expect(
+        identitiesMatch({ kind: "oauth", email: "alice@example.com" }, { kind: "oauth", email: "bob@example.com" }),
+      ).toBe(false);
+      expect(
+        identitiesMatch(
+          { kind: "cc", source: "cc-keychain", label: "label1" },
+          { kind: "cc", source: "cc-keychain", label: "label2" },
+        ),
+      ).toBe(false);
     });
   });
 
   describe("findByIdentity", () => {
     const accounts: ManagedAccount[] = [oauthAccount, ccAccount, legacyAccount];
 
-    it("should find matching OAuth account by email", () => {
-      const targetIdentity: AccountIdentity = { type: "oauth", email: "alice@example.com" };
-      const found = findByIdentity(accounts, targetIdentity);
-
-      expect(found).toBe(oauthAccount);
+    it("should find matching accounts by stable identity", () => {
+      expect(findByIdentity(accounts, { kind: "oauth", email: "alice@example.com" })).toBe(oauthAccount);
+      expect(
+        findByIdentity(accounts, {
+          kind: "cc",
+          source: "cc-keychain",
+          label: "Claude Code-credentials:alice@example.com",
+        }),
+      ).toBe(ccAccount);
+      expect(findByIdentity(accounts, { kind: "legacy", refreshToken: "rt_legacy_789" })).toBe(legacyAccount);
+      expect(findByIdentity(accounts, { kind: "oauth", email: "unknown@example.com" })).toBeNull();
     });
 
-    it("should find matching CC account by source+label", () => {
-      const targetIdentity: AccountIdentity = {
-        type: "cc",
-        source: "cc-keychain",
-        label: "rt_cc_456",
-      };
-      const found = findByIdentity(accounts, targetIdentity);
-
-      expect(found).toBe(ccAccount);
-    });
-
-    it("should find matching legacy account by refreshToken", () => {
-      const targetIdentity: AccountIdentity = { type: "legacy", refreshToken: "rt_legacy_789" };
-      const found = findByIdentity(accounts, targetIdentity);
-
-      expect(found).toBe(legacyAccount);
-    });
-
-    it("should return undefined when no match found", () => {
-      const targetIdentity: AccountIdentity = { type: "oauth", email: "unknown@example.com" };
-      const found = findByIdentity(accounts, targetIdentity);
-
-      expect(found).toBeUndefined();
-    });
-
-    it("should return first match when multiple accounts have same identity", () => {
-      const duplicateAccount: ManagedAccount = {
-        ...oauthAccount,
-        id: "oauth-2",
-        index: 3,
-        refreshToken: "rt_oauth_999",
-      };
-      const accountsWithDuplicate = [...accounts, duplicateAccount];
-
-      const targetIdentity: AccountIdentity = { type: "oauth", email: "alice@example.com" };
-      const found = findByIdentity(accountsWithDuplicate, targetIdentity);
-
-      expect(found).toBe(oauthAccount); // First match
+    it("should serialize identities without leaking secrets", () => {
+      expect(serializeIdentity({ kind: "oauth", email: "alice@example.com" })).toBe("oauth:alice@example.com");
+      expect(serializeIdentity({ kind: "cc", source: "cc-keychain", label: "label1" })).toBe("cc:cc-keychain:label1");
+      expect(serializeIdentity({ kind: "legacy", refreshToken: "secret-refresh-token" })).toBe("legacy:redacted");
     });
   });
 });

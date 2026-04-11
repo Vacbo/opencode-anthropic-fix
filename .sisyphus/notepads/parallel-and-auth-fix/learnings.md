@@ -398,6 +398,13 @@ Evidence: .sisyphus/evidence/task-6-conversation-smoke.txt
 ## Task 20+21: Bun Fetch GREEN (2026-04-10)
 
 - `createBunFetch()` now owns proxy child/port/startup state inside each instance, while the legacy `fetchViaBun` export is just a thin wrapper around a lazily created default instance.
+
+## Task 29: Account Identity GREEN (2026-04-10)
+
+- `AccountIdentity` works best as a discriminated union on `kind`, while `resolveIdentity()` stays backward-compatible by falling back to legacy refresh-token identity whenever old account records lack CC labels or OAuth emails.
+- CC account dedup needs the human-stable `label` persisted alongside `source`; otherwise stored CC accounts silently collapse back to legacy identity on reload.
+- Storage validation must preserve optional `source`, `label`, and `identity` fields on load, or additive identity metadata disappears before higher-level dedup logic can use it.
+- Debug serialization for legacy identities should fully redact refresh tokens instead of logging even partial token material.
 - Passing `--parent-pid ${process.pid}` into `bun-proxy.ts` is enough to inherit the T18 parent-death contract without adding new parent-process signal handlers in `bun-fetch.ts`.
 - A line-buffered `readline.createInterface()` banner parser plus per-instance pending-request flushing avoids the old shared singleton bugs and keeps hot-reload / sibling-request tests deterministic.
 - `debug-gating.test.ts` needed one extra refresh beyond the T21 handler flips: the source guardrails now allow `resolveDebug(...)` gating in `bun-fetch.ts` and `AbortSignal.any(...)` timeout composition in `bun-proxy.ts`.

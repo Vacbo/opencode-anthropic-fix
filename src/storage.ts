@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, promises as fs, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import type { AccountIdentity } from "./account-identity.js";
 import { getConfigDir } from "./config.js";
 
 export interface AccountStats {
@@ -15,6 +16,8 @@ export interface AccountStats {
 export interface AccountMetadata {
   id: string;
   email?: string;
+  identity?: AccountIdentity;
+  label?: string;
   refreshToken: string;
   access?: string;
   expires?: number;
@@ -134,6 +137,8 @@ function validateAccount(raw: unknown, now: number): AccountMetadata | null {
   return {
     id,
     email: typeof acc.email === "string" ? acc.email : undefined,
+    identity: isAccountIdentity(acc.identity) ? acc.identity : undefined,
+    label: typeof acc.label === "string" ? acc.label : undefined,
     refreshToken: acc.refreshToken as string,
     access: typeof acc.access === "string" ? acc.access : undefined,
     expires: typeof acc.expires === "number" && Number.isFinite(acc.expires) ? acc.expires : undefined,
@@ -155,7 +160,26 @@ function validateAccount(raw: unknown, now: number): AccountMetadata | null {
     lastFailureTime: typeof acc.lastFailureTime === "number" ? acc.lastFailureTime : null,
     lastSwitchReason: typeof acc.lastSwitchReason === "string" ? acc.lastSwitchReason : undefined,
     stats: validateStats(acc.stats, now),
+    source: acc.source === "cc-keychain" || acc.source === "cc-file" || acc.source === "oauth" ? acc.source : undefined,
   };
+}
+
+function isAccountIdentity(value: unknown): value is AccountIdentity {
+  if (!value || typeof value !== "object") return false;
+
+  const candidate = value as Record<string, unknown>;
+  switch (candidate.kind) {
+    case "oauth":
+      return typeof candidate.email === "string" && candidate.email.length > 0;
+    case "cc":
+      return (
+        (candidate.source === "cc-keychain" || candidate.source === "cc-file") && typeof candidate.label === "string"
+      );
+    case "legacy":
+      return typeof candidate.refreshToken === "string" && candidate.refreshToken.length > 0;
+    default:
+      return false;
+  }
 }
 
 /**

@@ -1,6 +1,7 @@
 import type { RateLimitReason } from "./backoff.js";
 import { calculateBackoffMs } from "./backoff.js";
 import { readCCCredentials } from "./cc-credentials.js";
+import type { AccountIdentity } from "./account-identity.js";
 import type { AnthropicAuthConfig } from "./config.js";
 import { HealthScoreTracker, selectAccount, TokenBucketTracker } from "./rotation.js";
 import type { AccountMetadata, AccountStats, AccountStorage } from "./storage.js";
@@ -10,6 +11,8 @@ export interface ManagedAccount {
   id: string;
   index: number;
   email?: string;
+  identity?: AccountIdentity;
+  label?: string;
   refreshToken: string;
   access?: string;
   expires?: number;
@@ -83,6 +86,8 @@ export class AccountManager {
         id: acc.id || `${acc.addedAt}:${acc.refreshToken.slice(0, 12)}`,
         index,
         email: acc.email,
+        identity: acc.identity,
+        label: acc.label,
         refreshToken: acc.refreshToken,
         access: acc.access,
         expires: acc.expires,
@@ -160,6 +165,7 @@ export class AccountManager {
           if (!existingMatch.source || existingMatch.source === "oauth") {
             existingMatch.source = ccCredential.source;
           }
+          existingMatch.label = ccCredential.label;
           // Adopt fresh access token from CC if available
           if (ccCredential.accessToken && ccCredential.expiresAt > (existingMatch.expires ?? 0)) {
             existingMatch.access = ccCredential.accessToken;
@@ -181,6 +187,7 @@ export class AccountManager {
           id: `cc-${ccCredential.source}-${now}:${ccCredential.refreshToken.slice(0, 12)}`,
           index: manager.#accounts.length,
           email: undefined,
+          label: ccCredential.label,
           refreshToken: ccCredential.refreshToken,
           access: ccCredential.accessToken,
           expires: ccCredential.expiresAt,
@@ -386,6 +393,7 @@ export class AccountManager {
       existing.expires = expires;
       existing.tokenUpdatedAt = Date.now();
       if (email) existing.email = email;
+      existing.source = "oauth";
       existing.enabled = true;
       return existing;
     }
@@ -407,6 +415,7 @@ export class AccountManager {
       lastFailureTime: null,
       lastSwitchReason: "initial",
       stats: createDefaultStats(now),
+      source: "oauth",
     };
 
     this.#accounts.push(account);
@@ -584,6 +593,8 @@ export class AccountManager {
         return {
           id: acc.id,
           email: acc.email,
+          identity: acc.identity,
+          label: acc.label,
           refreshToken: freshestAuth.refreshToken,
           access: freshestAuth.access,
           expires: freshestAuth.expires,
@@ -642,6 +653,8 @@ export class AccountManager {
           id: acc.id || existing?.id || `${acc.addedAt}:${acc.refreshToken.slice(0, 12)}`,
           index,
           email: acc.email ?? existing?.email,
+          identity: acc.identity ?? existing?.identity,
+          label: acc.label ?? existing?.label,
           refreshToken: acc.refreshToken,
           access: acc.access ?? existing?.access,
           expires: acc.expires ?? existing?.expires,
@@ -654,6 +667,7 @@ export class AccountManager {
           lastFailureTime: acc.lastFailureTime,
           lastSwitchReason: acc.lastSwitchReason || existing?.lastSwitchReason || "initial",
           stats: acc.stats ?? existing?.stats ?? createDefaultStats(),
+          source: acc.source || existing?.source || "oauth",
         };
       });
 
