@@ -1,6 +1,6 @@
 {
   "name": "@vacbo/opencode-anthropic-fix",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "main": "dist/opencode-anthropic-auth-plugin.js",
   "bin": {
     "opencode-anthropic-auth": "dist/opencode-anthropic-auth-cli.mjs",
@@ -42,20 +42,19 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@opencode-ai/plugin": "^0.4.45",
-    "@types/node": "^25.5.0",
-    "bun-types": "^1.3.11",
-    "esbuild": "^0.27.3",
-    "eslint": "^10.0.0",
+    "@types/node": "^25.6.0",
+    "bun-types": "^1.3.12",
+    "esbuild": "^0.27.7",
+    "eslint": "^10.2.0",
     "husky": "^9.1.7",
     "jiti": "^2.6.1",
-    "lint-staged": "^16.2.7",
-    "prettier": "^3.8.1",
+    "lint-staged": "^16.4.0",
+    "prettier": "^3.8.2",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.57.1",
-    "vitest": "^4.0.18"
+    "typescript-eslint": "^8.58.1",
+    "vitest": "^4.1.4"
   },
   "dependencies": {
-    "@clack/prompts": "^1.2.0",
-    "@openauthjs/openauth": "^0.4.3"
+    "@clack/prompts": "^1.2.0"
   }
 }

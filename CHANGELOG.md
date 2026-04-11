@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-04-11
+
+### Removed
+
+- Dead dependency `@openauthjs/openauth` (unused since the OAuth implementation was replaced by `src/oauth.ts` and `src/token-refresh.ts`). The package had zero references anywhere in source, tests, docs, or config — it was only listed in `package.json`. esbuild was already tree-shaking it out, so the published plugin bundle is byte-for-byte identical to 0.1.2 (SHA `f6a56195...`).
+
+### Security
+
+- Removing `@openauthjs/openauth` eliminates its transitive dependency on `hono`, which reduced `bun audit` findings from 27 → 7 (removed 14 hono-related CVEs plus 6 other transitive vulns). The remaining 7 are all in the dev toolchain (`vitest` → `vite` → `picomatch` / `yaml` / `brace-expansion` chain) and will resolve upstream when those packages release versions with updated inner deps.
+- `npm audit fix` applied earlier in 0.1.2's dev-loop also resolved 8 dev-dep CVEs (ajv, brace-expansion, flatted, hono, picomatch, rollup, vite, yaml).
+
+### Notes
+
+- No runtime behavior changes. All 903 tests pass. Plugin SHA unchanged.
+
+[0.1.3]: https://github.com/marco-jardim/opencode-anthropic-fix/releases/tag/v0.1.3
+
 ## [0.1.2] - 2026-04-11
 
 ### Fixed
