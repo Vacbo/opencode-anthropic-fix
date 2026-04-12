@@ -23,17 +23,15 @@ jobs:
     runs-on: ubuntu-latest
     env:
       HUSKY: 0
-      # Suppress Node 20 → 24 deprecation warning on actions/checkout and setup-node.
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       # OIDC: this step acquires a short-lived npm token via GitHub's OIDC endpoint.
       # The id-token: write permission above enables this automatically.
       # No NPM_TOKEN secret is needed — trusted publishing handles auth.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org/"
