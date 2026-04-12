@@ -1,4 +1,5 @@
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import * as readline from "node:readline";
@@ -119,23 +120,52 @@ function buildProxyRequestInit(input: FetchInput, init?: RequestInit): RequestIn
   };
 }
 
-async function writeDebugArtifacts(url: string, init: RequestInit): Promise<void> {
+const DEBUG_DUMP_DIR = "/tmp";
+const DEBUG_LATEST_REQUEST_PATH = `${DEBUG_DUMP_DIR}/opencode-last-request.json`;
+const DEBUG_LATEST_HEADERS_PATH = `${DEBUG_DUMP_DIR}/opencode-last-headers.json`;
+
+interface DebugDumpPaths {
+  requestPath: string;
+  headersPath: string;
+  latestRequestPath: string;
+  latestHeadersPath: string;
+}
+
+function makeDebugDumpId(): string {
+  const filesystemSafeTimestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const subMillisecondCollisionGuard = randomUUID().slice(0, 8);
+  return `${filesystemSafeTimestamp}-${subMillisecondCollisionGuard}`;
+}
+
+async function writeDebugArtifacts(url: string, init: RequestInit): Promise<DebugDumpPaths | null> {
   if (!init.body || !url.includes("/v1/messages") || url.includes("count_tokens")) {
-    return;
+    return null;
   }
 
   const { writeFileSync } = await import("node:fs");
-  writeFileSync(
-    "/tmp/opencode-last-request.json",
-    typeof init.body === "string" ? init.body : JSON.stringify(init.body),
-  );
+  const id = makeDebugDumpId();
+  const requestPath = `${DEBUG_DUMP_DIR}/opencode-request-${id}.json`;
+  const headersPath = `${DEBUG_DUMP_DIR}/opencode-headers-${id}.json`;
+
+  const bodyText = typeof init.body === "string" ? init.body : JSON.stringify(init.body);
 
   const logHeaders: Record<string, string> = {};
   toHeaders(init.headers).forEach((value, key) => {
     logHeaders[key] = key === "authorization" ? "Bearer ***" : value;
   });
+  const headersText = JSON.stringify(logHeaders, null, 2);
 
-  writeFileSync("/tmp/opencode-last-headers.json", JSON.stringify(logHeaders, null, 2));
+  writeFileSync(requestPath, bodyText);
+  writeFileSync(headersPath, headersText);
+  writeFileSync(DEBUG_LATEST_REQUEST_PATH, bodyText);
+  writeFileSync(DEBUG_LATEST_HEADERS_PATH, headersText);
+
+  return {
+    requestPath,
+    headersPath,
+    latestRequestPath: DEBUG_LATEST_REQUEST_PATH,
+    latestHeadersPath: DEBUG_LATEST_HEADERS_PATH,
+  };
 }
 
 export function createBunFetch(options: BunFetchOptions = {}): BunFetchInstance {
@@ -400,10 +430,12 @@ export function createBunFetch(options: BunFetchOptions = {}): BunFetchInstance 
 
       if (resolveDebug(debugOverride)) {
         try {
-          await writeDebugArtifacts(url, init ?? {});
-          if ((init?.body ?? null) !== null && url.includes("/v1/messages") && !url.includes("count_tokens")) {
+          const dumped = await writeDebugArtifacts(url, init ?? {});
+          if (dumped) {
             // eslint-disable-next-line no-console -- debug-gated diagnostic; confirms request artifact dump location
-            console.error("[opencode-anthropic-auth] Dumped request to /tmp/opencode-last-request.json");
+            console.error(
+              `[opencode-anthropic-auth] Dumped request to ${dumped.requestPath} (latest alias: ${dumped.latestRequestPath})`,
+            );
           }
         } catch (error) {
           // eslint-disable-next-line no-console -- error-path diagnostic surfaced to stderr for operator visibility

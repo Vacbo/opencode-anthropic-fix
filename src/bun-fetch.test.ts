@@ -379,3 +379,106 @@ describe("createBunFetch runtime lifecycle (RED until T20)", () => {
     expect(proxyA.child.killSignals).toEqual([]);
   });
 });
+
+describe("createBunFetch debug request dumping", () => {
+  const UNIQUE_REQUEST_PATTERN =
+    /^\/tmp\/opencode-request-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-[0-9a-f]{8}\.json$/;
+  const UNIQUE_HEADERS_PATTERN =
+    /^\/tmp\/opencode-headers-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-[0-9a-f]{8}\.json$/;
+  const LATEST_REQUEST_PATH = "/tmp/opencode-last-request.json";
+  const LATEST_HEADERS_PATH = "/tmp/opencode-last-headers.json";
+
+  function writtenPaths(): string[] {
+    return writeFileSyncMock.mock.calls.map((call) => String(call[0]));
+  }
+
+  it("writes a uniquely-named request file AND a latest-alias file when debug=true", async () => {
+    const proxy = createMockBunProxy();
+    spawnMock.mockImplementation(proxy.mockSpawn);
+    installMockFetch();
+
+    const moduleNs = await loadBunFetchModule();
+    const createBunFetch = getCreateBunFetch(moduleNs);
+    const instance = createBunFetch({ debug: true });
+
+    proxy.simulateStdoutBanner(42001);
+
+    await instance.fetch("https://api.anthropic.com/v1/messages?beta=true", {
+      method: "POST",
+      body: JSON.stringify({ hello: "world" }),
+    });
+
+    const paths = writtenPaths();
+    const uniqueRequest = paths.find((path) => UNIQUE_REQUEST_PATTERN.test(path));
+    const uniqueHeaders = paths.find((path) => UNIQUE_HEADERS_PATTERN.test(path));
+
+    expect(uniqueRequest, "expected a uniquely-named request dump").toBeDefined();
+    expect(uniqueHeaders, "expected a uniquely-named headers dump").toBeDefined();
+    expect(paths).toContain(LATEST_REQUEST_PATH);
+    expect(paths).toContain(LATEST_HEADERS_PATH);
+  });
+
+  it("produces a different unique path for each sequential debug request", async () => {
+    const proxy = createMockBunProxy();
+    spawnMock.mockImplementation(proxy.mockSpawn);
+    installMockFetch();
+
+    const moduleNs = await loadBunFetchModule();
+    const createBunFetch = getCreateBunFetch(moduleNs);
+    const instance = createBunFetch({ debug: true });
+
+    proxy.simulateStdoutBanner(42002);
+
+    await instance.fetch("https://api.anthropic.com/v1/messages?beta=true", {
+      method: "POST",
+      body: JSON.stringify({ n: 1 }),
+    });
+    await instance.fetch("https://api.anthropic.com/v1/messages?beta=true", {
+      method: "POST",
+      body: JSON.stringify({ n: 2 }),
+    });
+
+    const uniquePaths = writtenPaths().filter((path) => UNIQUE_REQUEST_PATTERN.test(path));
+
+    expect(uniquePaths).toHaveLength(2);
+    expect(uniquePaths[0]).not.toBe(uniquePaths[1]);
+  });
+
+  it("does not dump any artifact for count_tokens requests even when debug=true", async () => {
+    const proxy = createMockBunProxy();
+    spawnMock.mockImplementation(proxy.mockSpawn);
+    installMockFetch();
+
+    const moduleNs = await loadBunFetchModule();
+    const createBunFetch = getCreateBunFetch(moduleNs);
+    const instance = createBunFetch({ debug: true });
+
+    proxy.simulateStdoutBanner(42003);
+
+    await instance.fetch("https://api.anthropic.com/v1/messages/count_tokens", {
+      method: "POST",
+      body: JSON.stringify({ hello: "world" }),
+    });
+
+    expect(writeFileSyncMock).not.toHaveBeenCalled();
+  });
+
+  it("does not dump any artifact when debug=false", async () => {
+    const proxy = createMockBunProxy();
+    spawnMock.mockImplementation(proxy.mockSpawn);
+    installMockFetch();
+
+    const moduleNs = await loadBunFetchModule();
+    const createBunFetch = getCreateBunFetch(moduleNs);
+    const instance = createBunFetch({ debug: false });
+
+    proxy.simulateStdoutBanner(42004);
+
+    await instance.fetch("https://api.anthropic.com/v1/messages?beta=true", {
+      method: "POST",
+      body: JSON.stringify({ hello: "world" }),
+    });
+
+    expect(writeFileSyncMock).not.toHaveBeenCalled();
+  });
+});
