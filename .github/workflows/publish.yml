@@ -8,6 +8,8 @@ on:
         required: false
         default: ""
 
+# OIDC: id-token enables npm trusted publishing — no NPM_TOKEN secret needed.
+# setup-node@v4 automatically exchanges the OIDC token for a short-lived npm token.
 permissions:
   id-token: write
   contents: write
@@ -21,35 +23,22 @@ jobs:
     runs-on: ubuntu-latest
     env:
       HUSKY: 0
+      # Suppress Node 20 → 24 deprecation warning on actions/checkout and setup-node.
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      # OIDC: this step acquires a short-lived npm token via GitHub's OIDC endpoint.
+      # The id-token: write permission above enables this automatically.
+      # No NPM_TOKEN secret is needed — trusted publishing handles auth.
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-          registry-url: "https://registry.npmjs.org"
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
+          registry-url: "https://registry.npmjs.org/"
 
       - run: npm ci
-
-      - name: Verify npm token configured
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
-            echo "::error title=NPM_TOKEN missing::Configure the repository secret NPM_TOKEN before running publish.yml"
-            exit 1
-          fi
-
-      - name: Verify npm authentication
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm whoami --registry=https://registry.npmjs.org
 
       - name: Build
         run: npm run build
@@ -67,8 +56,7 @@ jobs:
           npm version "$BUMP_TYPE" -m "chore(release): v%s"
           git push --follow-tags origin HEAD:master
 
+      # OIDC: NODE_AUTH_TOKEN is not set. setup-node handles authentication via OIDC
+      # and npm automatically uses the short-lived token for this authenticated session.
       - name: Publish
         run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: false
