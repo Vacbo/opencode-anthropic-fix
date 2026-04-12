@@ -20,6 +20,8 @@
     "build": "bun scripts/build.ts",
     "prepublishOnly": "npm run build && npm test",
     "test": "vitest run",
+    "check:cch-drift": "bun scripts/drift-checker/check-cch-constants.ts --fail-on-drift",
+    "check:cch-drift:npm": "bun scripts/drift-checker/check-cch-constants.ts --npm-version latest --fail-on-drift",
     "test:watch": "vitest",
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",
