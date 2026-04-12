@@ -105,31 +105,20 @@ describe("refresh-lock", () => {
     const originalLockInode = first.lockInode;
     expect(originalLockInode).not.toBeNull();
 
-    // Replace the lock with a new inode that reuses the same owner text. Linux
-    // can immediately recycle inode numbers after unlink(), so keep retrying
-    // until the replacement inode actually differs from the original.
-    let replacementInode: bigint | null = null;
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      await fs.unlink(firstLockPath);
+    // Keep the same owner text but pass a deliberately mismatched inode. This
+    // tests the safety check directly without relying on filesystem-specific
+    // inode allocation behavior, which can aggressively recycle inode numbers
+    // on Linux CI runners.
+    await fs.writeFile(firstLockPath, JSON.stringify({ owner: first.owner, createdAt: Date.now() }), {
+      encoding: "utf-8",
+      mode: 0o600,
+    });
 
-      const replacementPath = `${firstLockPath}.replacement-${attempt}`;
-      await fs.writeFile(replacementPath, JSON.stringify({ owner: first.owner, createdAt: Date.now() }), {
-        encoding: "utf-8",
-        mode: 0o600,
-      });
-
-      const replacementStat = await fs.stat(replacementPath, { bigint: true });
-      replacementInode = replacementStat.ino;
-      await fs.rename(replacementPath, firstLockPath);
-
-      if (replacementInode !== originalLockInode) {
-        break;
-      }
-    }
-
-    expect(replacementInode).not.toBe(originalLockInode);
-
-    await releaseRefreshLock(first);
+    await releaseRefreshLock({
+      lockPath: firstLockPath,
+      owner: first.owner,
+      lockInode: originalLockInode! + 1n,
+    });
 
     await expect(fs.stat(firstLockPath)).resolves.toBeTruthy();
 
