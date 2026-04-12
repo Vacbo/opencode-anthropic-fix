@@ -29,7 +29,8 @@
 // - CC tool naming conventions can evolve independently from this file. Current
 //   plugin-specific tool prefix notes live in body/request docs, not here.
 //
-// See src/headers/billing.ts for billing-specific gaps and attestation notes.
+// See src/headers/billing.ts for version-suffix derivation and src/headers/cch.ts
+// for placeholder replacement and native-style cch computation.
 // ===========================================================================
 
 import {

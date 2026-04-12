@@ -3,6 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { CLAUDE_CODE_IDENTITY_STRING, KNOWN_IDENTITY_STRINGS } from "../constants.js";
+import { replaceNativeStyleCch } from "../headers/cch.js";
 import { buildSystemPromptBlocks } from "../system-prompt/builder.js";
 import { normalizeSystemTextBlocks } from "../system-prompt/normalize.js";
 import { normalizeThinkingBlock } from "../thinking.js";
@@ -319,7 +320,7 @@ export function transformRequestBody(
         return msg;
       });
     }
-    return JSON.stringify(parsed);
+    return replaceNativeStyleCch(JSON.stringify(parsed));
   } catch (err) {
     if (err instanceof SyntaxError) {
       debugLog?.("body parse failed:", err.message);
