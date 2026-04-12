@@ -9,6 +9,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      HUSKY: 0
     steps:
       - uses: actions/checkout@v4
 
@@ -20,7 +22,7 @@ jobs:
         with:
           bun-version: latest
 
-      - run: npm install
+      - run: npm ci
 
       - name: Lint
         run: npm run lint

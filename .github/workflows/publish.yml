@@ -4,19 +4,27 @@ on:
   workflow_dispatch:
     inputs:
       bump:
-        description: "Version bump type (patch, minor, major)"
+        description: "Optional version bump type (patch, minor, major). Leave blank when the version was already bumped locally."
         required: false
-        default: "patch"
+        default: ""
 
 permissions:
   id-token: write
   contents: write
 
+concurrency:
+  group: publish-npm
+  cancel-in-progress: false
+
 jobs:
   publish:
     runs-on: ubuntu-latest
+    env:
+      HUSKY: 0
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -27,7 +35,21 @@ jobs:
         with:
           bun-version: latest
 
-      - run: npm install
+      - run: npm ci
+
+      - name: Verify npm token configured
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "::error title=NPM_TOKEN missing::Configure the repository secret NPM_TOKEN before running publish.yml"
+            exit 1
+          fi
+
+      - name: Verify npm authentication
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm whoami --registry=https://registry.npmjs.org
 
       - name: Build
         run: npm run build
@@ -43,10 +65,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           npm version "$BUMP_TYPE" -m "chore(release): v%s"
-          git push --follow-tags
+          git push --follow-tags origin HEAD:master
 
       - name: Publish
-        run: npm publish
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: false

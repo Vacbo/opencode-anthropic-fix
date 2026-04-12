@@ -24,6 +24,8 @@ await $`git push`;
 
 // Trigger GitHub workflow
 console.log(`Triggering publish workflow...`);
-await $`gh workflow run publish.yml -f bump="${bumpType}"`;
+// The local script already bumped, committed, and pushed the version. Dispatch the
+// publish workflow without a second bump so the version is not incremented twice.
+await $`gh workflow run publish.yml -f bump=""`;
 
 console.log(`✓ Version bumped to ${version} and publish workflow triggered`);
