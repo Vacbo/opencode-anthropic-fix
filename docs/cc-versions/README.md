@@ -22,7 +22,7 @@ These values have NOT changed between 2.1.79 and 2.1.81:
 - **OAuth beta**: `oauth-2025-04-20`
 - **Identity string**: `You are Claude Code, Anthropic's official CLI for Claude.`
 - **anthropic-version**: `2023-06-01`
-- **Billing cch**: `00000` (fixed)
+- **Billing cch**: `00000` placeholder, replaced post-serialization with `xxHash64(body, seed=0x6E52736AC806831E) & 0xFFFFF`
 - **Billing hash salt**: `59cf53e54c78`, positions [4,7,20]
 
 ## Version-specific values

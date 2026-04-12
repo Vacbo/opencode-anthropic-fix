@@ -376,14 +376,14 @@ Canonical identity string:
 - builds:
 
 ```text
-x-anthropic-billing-header: cc_version=<version>.<hash>; cc_entrypoint=<entrypoint>; cch=379e5;
+x-anthropic-billing-header: cc_version=<version>.<hash>; cc_entrypoint=<entrypoint>; cch=<xxh64_hash>;
 ```
 
 Where:
 
 - `cc_version`: CLI version with a 3-char hash suffix derived from the first user message. The hash is computed as: SHA-256(salt + chars at positions [4,7,20] from first user message), taking the first 3 hex chars. Salt: `59cf53e54c78`.
 - `cc_entrypoint`: `CLAUDE_CODE_ENTRYPOINT` or `cli`
-- `cch`: Fixed value `379e5` (not random — matches CC exactly)
+- `cch`: Emitted as literal `00000` and then replaced post-serialization with `xxHash64(serializedBody, seed=0x6E52736AC806831E) & 0xFFFFF`, formatted as 5-char zero-padded hex
 
 ## 7) Body fields related to mimicry
 
@@ -437,7 +437,7 @@ To audit whether mimicry is active at runtime:
 5. verify `anthropic-beta` includes expected flags for model/provider
 6. inspect body and confirm:
    - `system[0..]` includes identity block (and billing block unless disabled)
-   - billing header has `cch=379e5` (fixed) and `cc_version` includes hash suffix
+   - billing header has a native-style xxHash64 `cch` value and `cc_version` includes hash suffix
    - `metadata.user_id` follows composed format
    - `betas` is aligned with header
 
