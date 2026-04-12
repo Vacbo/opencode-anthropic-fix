@@ -16,6 +16,14 @@
     "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Vacbo/opencode-anthropic-fix"
+  },
+  "homepage": "https://github.com/Vacbo/opencode-anthropic-fix#readme",
+  "bugs": {
+    "url": "https://github.com/Vacbo/opencode-anthropic-fix/issues"
+  },
   "scripts": {
     "build": "bun scripts/build.ts",
     "prepublishOnly": "npm run build && npm test",
