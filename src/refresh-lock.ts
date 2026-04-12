@@ -20,7 +20,7 @@ export interface RefreshLockResult {
   acquired: boolean;
   lockPath: string | null;
   owner: string | null;
-  lockInode: number | null;
+  lockInode: bigint | null;
 }
 
 export interface AcquireLockOptions {
@@ -51,7 +51,7 @@ export async function acquireRefreshLock(
       const handle = await fs.open(lockPath, "wx", 0o600);
       try {
         await handle.writeFile(JSON.stringify({ pid: process.pid, createdAt: Date.now(), owner }), "utf-8");
-        const stat = await handle.stat();
+        const stat = await handle.stat({ bigint: true });
         return { acquired: true, lockPath, owner, lockInode: stat.ino };
       } finally {
         await handle.close();
@@ -63,8 +63,8 @@ export async function acquireRefreshLock(
       }
 
       try {
-        const stat = await fs.stat(lockPath);
-        if (Date.now() - stat.mtimeMs > staleMs) {
+        const stat = await fs.stat(lockPath, { bigint: true });
+        if (Date.now() - Number(stat.mtimeMs) > staleMs) {
           await fs.unlink(lockPath);
           continue;
         }
@@ -86,7 +86,7 @@ export type ReleaseLockInput =
   | {
       lockPath: string | null;
       owner?: string | null;
-      lockInode?: number | null;
+      lockInode?: bigint | null;
     }
   | string
   | null;
@@ -97,7 +97,7 @@ export type ReleaseLockInput =
 export async function releaseRefreshLock(lock: ReleaseLockInput): Promise<void> {
   const lockPath = typeof lock === "string" || lock === null ? lock : lock.lockPath;
   const owner = typeof lock === "object" && lock ? lock.owner || null : null;
-  const lockInode = typeof lock === "object" && lock ? lock.lockInode || null : null;
+  const lockInode = typeof lock === "object" && lock ? (lock.lockInode ?? null) : null;
 
   if (!lockPath) return;
 
@@ -112,7 +112,7 @@ export async function releaseRefreshLock(lock: ReleaseLockInput): Promise<void> 
       }
 
       if (lockInode) {
-        const stat = await fs.stat(lockPath);
+        const stat = await fs.stat(lockPath, { bigint: true });
         if (stat.ino !== lockInode) {
           return;
         }
