@@ -102,13 +102,32 @@ describe("refresh-lock", () => {
     const first = await acquireRefreshLock("acc-4");
     expect(first.acquired).toBe(true);
     const firstLockPath = first.lockPath!;
+    const originalLockInode = first.lockInode;
+    expect(originalLockInode).not.toBeNull();
 
-    // Replace lock file with a new inode that reuses owner text.
-    await fs.unlink(firstLockPath);
-    await fs.writeFile(firstLockPath, JSON.stringify({ owner: first.owner, createdAt: Date.now() }), {
-      encoding: "utf-8",
-      mode: 0o600,
-    });
+    // Replace the lock with a new inode that reuses the same owner text. Linux
+    // can immediately recycle inode numbers after unlink(), so keep retrying
+    // until the replacement inode actually differs from the original.
+    let replacementInode: bigint | null = null;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      await fs.unlink(firstLockPath);
+
+      const replacementPath = `${firstLockPath}.replacement-${attempt}`;
+      await fs.writeFile(replacementPath, JSON.stringify({ owner: first.owner, createdAt: Date.now() }), {
+        encoding: "utf-8",
+        mode: 0o600,
+      });
+
+      const replacementStat = await fs.stat(replacementPath, { bigint: true });
+      replacementInode = replacementStat.ino;
+      await fs.rename(replacementPath, firstLockPath);
+
+      if (replacementInode !== originalLockInode) {
+        break;
+      }
+    }
+
+    expect(replacementInode).not.toBe(originalLockInode);
 
     await releaseRefreshLock(first);
 
