@@ -57,7 +57,7 @@ describe("CC 2.1.98 — Full request fingerprint comparison", () => {
     console.log(`║ Axios version:   1.13.6 (token endpoint UA)`);
     console.log(`║ anthropic-ver:   2023-06-01`);
     console.log(`║ x-app:           cli`);
-    console.log(`║ cch:             00000 (placeholder, not attested on Node.js)`);
+    console.log(`║ cch:             00000 placeholder → xxHash64(serialized body, seed 0x6E52736AC806831E)`);
     console.log(`║ Identity:        You are Claude Code, Anthropic's official CLI for Claude.`);
     console.log(`║ Identity cache:  {"type":"ephemeral","scope":"global","ttl":"1h"}`);
     console.log(`║ Client ID:       9d1c250a-e61b-44d9-88ed-5944d1962f5e`);

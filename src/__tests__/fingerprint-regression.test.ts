@@ -176,10 +176,9 @@ describe("CC 2.1.98 — Billing header", () => {
     restoreEnv(originalEnv);
   });
 
-  it("contains a 5-char hex cch value (not the literal 00000 placeholder)", () => {
+  it("contains the native placeholder cch before post-serialization replacement", () => {
     const header = buildAnthropicBillingHeader(CC_VERSION, []);
-    expect(header).toMatch(/cch=[0-9a-f]{5};/);
-    expect(header).not.toContain("cch=00000;");
+    expect(header).toContain("cch=00000;");
   });
 
   it("contains the correct cc_version", () => {
