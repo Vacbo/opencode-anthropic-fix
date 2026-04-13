@@ -2,6 +2,7 @@
 // Slash-command OAuth flows (login / reauth)
 // ---------------------------------------------------------------------------
 
+import { resolveIdentityFromOAuthExchange } from "../account-identity.js";
 import { authorize, exchange } from "../oauth.js";
 import { createDefaultStats, loadAccounts, saveAccounts } from "../storage.js";
 
@@ -131,13 +132,19 @@ export async function completeSlashOAuth(
         const existingIdx = stored.accounts.findIndex((acc) => acc.refreshToken === credentials.refresh);
         if (existingIdx >= 0) {
             const acc = stored.accounts[existingIdx];
+            const accIsCC = acc.source === "cc-keychain" || acc.source === "cc-file";
             acc.access = credentials.access;
             acc.expires = credentials.expires;
-            if (credentials.email) acc.email = credentials.email;
+            acc.token_updated_at = Date.now();
             acc.enabled = true;
             acc.consecutiveFailures = 0;
             acc.lastFailureTime = null;
             acc.rateLimitResetTimes = {};
+            if (!accIsCC) {
+                if (credentials.email) acc.email = credentials.email;
+                acc.identity = resolveIdentityFromOAuthExchange(credentials);
+                acc.source = acc.source ?? "oauth";
+            }
             await saveAccounts(stored);
             await persistOpenCodeAuth(acc.refreshToken, acc.access, acc.expires);
             await reloadAccountManagerFromDisk();
@@ -160,6 +167,7 @@ export async function completeSlashOAuth(
         stored.accounts.push({
             id: `${now}:${credentials.refresh.slice(0, 12)}`,
             email: credentials.email,
+            identity: resolveIdentityFromOAuthExchange(credentials),
             refreshToken: credentials.refresh,
             access: credentials.access,
             expires: credentials.expires,
@@ -171,6 +179,7 @@ export async function completeSlashOAuth(
             consecutiveFailures: 0,
             lastFailureTime: null,
             stats: createDefaultStats(now),
+            source: "oauth",
         });
         await saveAccounts(stored);
         const newAccount = stored.accounts[stored.accounts.length - 1];
@@ -195,14 +204,20 @@ export async function completeSlashOAuth(
     }
 
     const existing = stored.accounts[idx];
+    const existingIsCC = existing.source === "cc-keychain" || existing.source === "cc-file";
     existing.refreshToken = credentials.refresh;
     existing.access = credentials.access;
     existing.expires = credentials.expires;
-    if (credentials.email) existing.email = credentials.email;
+    existing.token_updated_at = Date.now();
     existing.enabled = true;
     existing.consecutiveFailures = 0;
     existing.lastFailureTime = null;
     existing.rateLimitResetTimes = {};
+    if (!existingIsCC) {
+        if (credentials.email) existing.email = credentials.email;
+        existing.identity = resolveIdentityFromOAuthExchange(credentials);
+        existing.source = existing.source ?? "oauth";
+    }
 
     await saveAccounts(stored);
     await persistOpenCodeAuth(existing.refreshToken, existing.access, existing.expires);

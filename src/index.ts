@@ -415,10 +415,15 @@ export async function AnthropicAuthPlugin({
                                 }
                                 const identity = resolveIdentityFromOAuthExchange(credentials);
                                 const countBefore = accountManager.getAccountCount();
-                                const existing =
+                                const candidate =
                                     identity.kind === "oauth"
                                         ? findByIdentity(accountManager.getOAuthAccounts(), identity)
                                         : null;
+                                // Refuse to reshape a row that was born as a CC import. The id
+                                // prefix is the only durable proof-of-origin; reshaping it to
+                                // oauth would re-introduce the dedup bug.
+                                const existing =
+                                    candidate && /^cc-(cc-keychain|cc-file)-\d+:/.test(candidate.id) ? null : candidate;
 
                                 if (existing) {
                                     existing.refreshToken = credentials.refresh;

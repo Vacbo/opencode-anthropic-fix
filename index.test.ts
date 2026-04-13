@@ -400,6 +400,7 @@ describe("plugin lifecycle", () => {
                     }),
                 ]),
             }),
+            expect.anything(),
         );
     });
 
@@ -428,6 +429,7 @@ describe("plugin lifecycle", () => {
                     }),
                 ]),
             }),
+            expect.anything(),
         );
 
         // Should return fetch interceptor

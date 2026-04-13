@@ -494,6 +494,7 @@ describe("AccountManager persistence", () => {
                 ]),
                 activeIndex: expect.any(Number),
             }),
+            expect.anything(),
         );
     });
 
@@ -752,6 +753,7 @@ describe("AccountManager usage stats", () => {
                     }),
                 ]),
             }),
+            expect.anything(),
         );
     });
 });

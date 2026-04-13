@@ -277,7 +277,11 @@ export function mergeAccountWithFresherAuth(
     };
 }
 
-export function unionAccountsWithDisk(storage: AccountStorage, disk: AccountStorage | null): AccountStorage {
+export function unionAccountsWithDisk(
+    storage: AccountStorage,
+    disk: AccountStorage | null,
+    options: { droppedIds?: ReadonlySet<string> } = {},
+): AccountStorage {
     if (!disk || storage.accounts.length === 0) {
         return {
             ...storage,
@@ -296,7 +300,14 @@ export function unionAccountsWithDisk(storage: AccountStorage, disk: AccountStor
         return mergeAccountWithFresherAuth(account, diskMatch);
     });
 
-    const diskOnlyAccounts = disk.accounts.filter((account) => !matchedDiskAccounts.has(account));
+    // Disk rows that the caller has intentionally dropped (e.g. via a collapse
+    // pass) must NOT be restored via the disk-only union. Without this filter
+    // the union treats every dropped row as "another writer's account" and
+    // re-adds it on every save, defeating any repair that removes rows.
+    const droppedIds = options.droppedIds;
+    const diskOnlyAccounts = disk.accounts.filter(
+        (account) => !matchedDiskAccounts.has(account) && !(droppedIds && droppedIds.has(account.id)),
+    );
     const accounts = [...mergedAccounts, ...diskOnlyAccounts];
     const activeIndex = activeAccountId ? accounts.findIndex((account) => account.id === activeAccountId) : -1;
 
@@ -358,8 +369,15 @@ export async function loadAccounts(): Promise<AccountStorage | null> {
 
 /**
  * Save accounts to disk atomically.
+ *
+ * `options.droppedIds` lets callers signal that specific disk row ids have
+ * been intentionally removed (e.g. by a load-time collapse pass) and must
+ * not be restored by the disk-only union.
  */
-export async function saveAccounts(storage: AccountStorage): Promise<void> {
+export async function saveAccounts(
+    storage: AccountStorage,
+    options: { droppedIds?: ReadonlySet<string> } = {},
+): Promise<void> {
     const storagePath = getStoragePath();
     const configDir = dirname(storagePath);
 
@@ -374,7 +392,7 @@ export async function saveAccounts(storage: AccountStorage): Promise<void> {
     // Merge auth fields against disk by freshness to avoid stale-process clobber.
     try {
         const disk = await loadAccounts();
-        storageToWrite = unionAccountsWithDisk(storageToWrite, disk);
+        storageToWrite = unionAccountsWithDisk(storageToWrite, disk, { droppedIds: options.droppedIds });
     } catch {
         // If merge read fails, continue with caller-provided storage payload.
     }

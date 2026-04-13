@@ -131,7 +131,12 @@ export function updateManagedAccountFromStorage(
     account: AccountMetadata,
     index: number,
 ): void {
-    const source = account.source || existing.source || "oauth";
+    // Prefer existing source when it is CC and disk source is not — protects a
+    // healthy in-memory CC row from being downgraded by a malformed disk row
+    // during syncActiveIndexFromDisk.
+    const isExistingCC = existing.source === "cc-keychain" || existing.source === "cc-file";
+    const isDiskCC = account.source === "cc-keychain" || account.source === "cc-file";
+    const source = isExistingCC && !isDiskCC ? existing.source : account.source || existing.source || "oauth";
     const label = account.label ?? existing.label;
     const email = account.email ?? existing.email;
 

@@ -32,6 +32,7 @@ type PersistedAccountState = {
 export type PreparedStorageSave = {
     storage: AccountStorage;
     persistedStateById: Map<string, PersistedAccountState>;
+    droppedIds: ReadonlySet<string>;
 };
 
 export type ReconciledAccounts = {
@@ -226,6 +227,7 @@ export function prepareStorageForSave(params: {
     currentIndex: number;
     statsDeltas: Map<string, StatsDelta>;
     diskData: AccountStorage | null;
+    droppedIds?: ReadonlySet<string>;
 }): PreparedStorageSave {
     const diskLookup = createDiskLookup(params.diskData);
     const matchedDiskAccounts = new Set<AccountMetadata>();
@@ -270,7 +272,10 @@ export function prepareStorageForSave(params: {
         } satisfies AccountMetadata;
     });
 
-    const diskOnlyAccounts = diskLookup.accounts.filter((account) => !matchedDiskAccounts.has(account));
+    const droppedIds = params.droppedIds;
+    const diskOnlyAccounts = diskLookup.accounts.filter(
+        (account) => !matchedDiskAccounts.has(account) && !(droppedIds && droppedIds.has(account.id)),
+    );
     const allAccounts = accountsToPersist.length > 0 ? [...persistedAccounts, ...diskOnlyAccounts] : persistedAccounts;
     const resolvedActiveIndex = activeAccountId
         ? allAccounts.findIndex((account) => account.id === activeAccountId)
@@ -288,6 +293,7 @@ export function prepareStorageForSave(params: {
                       : 0,
         },
         persistedStateById,
+        droppedIds: droppedIds ?? new Set<string>(),
     };
 }
 

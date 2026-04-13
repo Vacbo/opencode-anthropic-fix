@@ -3,6 +3,7 @@ import { findByIdentity, resolveIdentityFromOAuthExchange } from "../../account-
 import { CLIENT_ID, loadConfig } from "../../config.js";
 import { authorize, exchange, revoke } from "../../oauth.js";
 import { createDefaultStats, getStoragePath, loadAccounts, saveAccounts, type AccountMetadata } from "../../storage.js";
+import { loadAccountsWithRepair } from "../../accounts/repair.js";
 import { confirm, intro, isCancel, log, spinner, text } from "@clack/prompts";
 import {
     c,
@@ -189,14 +190,17 @@ export async function cmdLogin() {
 
     if (existing) {
         const existingIdx = storage.accounts.indexOf(existing);
+        const existingIsCC = existing.source === "cc-keychain" || existing.source === "cc-file";
         existing.refreshToken = credentials.refresh;
         existing.access = credentials.access;
         existing.expires = credentials.expires;
         existing.token_updated_at = Date.now();
-        if (credentials.email) existing.email = credentials.email;
-        existing.identity = identity;
-        existing.source = existing.source ?? "oauth";
         existing.enabled = true;
+        if (!existingIsCC) {
+            if (credentials.email) existing.email = credentials.email;
+            existing.identity = identity;
+            existing.source = existing.source ?? "oauth";
+        }
         await saveAccounts(storage);
 
         const label = credentials.email || existing.email || `Account ${existingIdx + 1}`;
@@ -372,6 +376,7 @@ export async function cmdReauth(arg: string) {
     }
 
     const existing = stored.accounts[idx];
+    const existingIsCC = existing.source === "cc-keychain" || existing.source === "cc-file";
     const wasDisabled = !existing.enabled;
     const oldLabel = existing.email || `Account ${n}`;
     log.info(`Re-authenticating account #${n} (${oldLabel})...`);
@@ -382,11 +387,16 @@ export async function cmdReauth(arg: string) {
     existing.refreshToken = credentials.refresh;
     existing.access = credentials.access;
     existing.expires = credentials.expires;
-    if (credentials.email) existing.email = credentials.email;
+    existing.token_updated_at = Date.now();
     existing.enabled = true;
     existing.consecutiveFailures = 0;
     existing.lastFailureTime = null;
     existing.rateLimitResetTimes = {};
+    if (!existingIsCC) {
+        if (credentials.email) existing.email = credentials.email;
+        existing.identity = resolveIdentityFromOAuthExchange(credentials);
+        existing.source = existing.source ?? "oauth";
+    }
 
     await saveAccounts(stored);
 
@@ -458,7 +468,7 @@ export async function cmdRefresh(arg: string) {
  * List all accounts with full status table and live usage quotas.
  */
 export async function cmdList() {
-    const stored = await loadAccounts();
+    const stored = await loadAccountsWithRepair();
     if (!stored || stored.accounts.length === 0) {
         log.warn("No accounts configured.");
         log.info(`Storage: ${shortPath(getStoragePath())}`);
@@ -560,7 +570,7 @@ export async function cmdList() {
  * Show compact one-liner status.
  */
 export async function cmdStatus() {
-    const stored = await loadAccounts();
+    const stored = await loadAccountsWithRepair();
     if (!stored || stored.accounts.length === 0) {
         console.log("anthropic: no accounts configured");
         return 1;

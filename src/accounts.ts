@@ -15,6 +15,7 @@ import {
     reindexManagedAccounts,
     resolveManagedAccountIdentity,
 } from "./accounts/matching.js";
+import { inferCCSourceFromId, repairCorruptedCCAccounts } from "./accounts/repair.js";
 import type { AnthropicAuthConfig } from "./config.js";
 import { HealthScoreTracker, selectAccount, TokenBucketTracker } from "./rotation.js";
 import type { AccountStats, AccountStorage } from "./storage.js";
@@ -71,6 +72,7 @@ export class AccountManager {
     #config: AnthropicAuthConfig;
     #saveTimeout: ReturnType<typeof setTimeout> | null = null;
     #statsDeltas = new Map<string, StatsDelta>();
+    #pendingDroppedIds = new Set<string>();
     /**
      * Cap on pending stats deltas. When hit, a forced flush is scheduled so the
      * map does not grow without bound between debounced saves. This is only a
@@ -129,6 +131,26 @@ export class AccountManager {
                     return [];
                 }
             })();
+
+            // Heal corrupted CC rows that lost source/identity/label in an older
+            // write path, and collapse any resulting duplicates BEFORE auto-import
+            // runs. Otherwise auto-import would fail to match the corrupted row
+            // and create a fresh duplicate every load. Dropped ids are stashed on
+            // the manager so the next saveToDisk can tell prepareStorageForSave
+            // not to restore them via the disk-only union.
+            const repair = repairCorruptedCCAccounts(manager.#accounts, ccCredentials);
+            if (repair.result.collapsed > 0 || repair.result.repaired > 0) {
+                const beforeIds = new Set(manager.#accounts.map((account) => account.id));
+                manager.#accounts = repair.accounts;
+                reindexManagedAccounts(manager.#accounts);
+                const afterIds = new Set(manager.#accounts.map((account) => account.id));
+                for (const id of beforeIds) {
+                    if (!afterIds.has(id)) manager.#pendingDroppedIds.add(id);
+                }
+                if (manager.#currentIndex >= manager.#accounts.length) {
+                    manager.#currentIndex = manager.#accounts.length > 0 ? 0 : -1;
+                }
+            }
 
             for (const ccCredential of ccCredentials) {
                 const ccIdentity = resolveIdentityFromCCCredential(ccCredential);
@@ -394,15 +416,28 @@ export class AccountManager {
         });
 
         if (existing) {
+            // Refuse to downgrade a CC-sourced row to oauth/legacy. The id prefix
+            // `cc-cc-(keychain|file)-` proves the row was born as a CC import; a
+            // caller without explicit CC options must only refresh tokens, never
+            // reshape source/identity/label/email.
+            const isExistingCC = existing.source === "cc-keychain" || existing.source === "cc-file";
+            const isNewCC = options?.source === "cc-keychain" || options?.source === "cc-file";
+            const isCCBornId = inferCCSourceFromId(existing.id) !== null;
+            const callerWouldDowngrade = (isExistingCC || isCCBornId) && !isNewCC;
+
             existing.refreshToken = refreshToken;
             existing.access = accessToken;
             existing.expires = expires;
             existing.tokenUpdatedAt = Date.now();
-            existing.email = email ?? existing.email;
-            existing.identity = identity;
-            existing.label = options?.label ?? existing.label;
-            existing.source = options?.source ?? existing.source ?? "oauth";
             existing.enabled = true;
+
+            if (!callerWouldDowngrade) {
+                existing.email = email ?? existing.email;
+                existing.identity = identity;
+                existing.label = options?.label ?? existing.label;
+                existing.source = options?.source ?? existing.source ?? "oauth";
+            }
+
             this.requestSaveToDisk();
             return existing;
         }
@@ -513,16 +548,19 @@ export class AccountManager {
             // If we can't read, fall through to writing absolute values
         }
 
+        const droppedIdsSnapshot = new Set(this.#pendingDroppedIds);
         const prepared = prepareStorageForSave({
             accounts: this.#accounts,
             currentIndex: this.#currentIndex,
             statsDeltas: this.#statsDeltas,
             diskData,
+            droppedIds: droppedIdsSnapshot,
         });
 
-        await saveAccounts(prepared.storage);
+        await saveAccounts(prepared.storage, { droppedIds: droppedIdsSnapshot });
 
         this.#statsDeltas.clear();
+        this.#pendingDroppedIds.clear();
 
         for (const [id, persistedState] of prepared.persistedStateById.entries()) {
             const account = this.#accounts.find((candidate) => candidate.id === id);
