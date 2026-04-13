@@ -21,25 +21,25 @@ Mimicry is controlled by `signature_emulation`:
 
 ```jsonc
 {
-  "signature_emulation": {
-    "enabled": true,
-    "fetch_claude_code_version_on_startup": true,
-    "prompt_compaction": "minimal",
-  },
+    "signature_emulation": {
+        "enabled": true,
+        "fetch_claude_code_version_on_startup": true,
+        "prompt_compaction": "minimal",
+    },
 }
 ```
 
 Environment overrides (in `lib/config.mjs`):
 
 - `OPENCODE_ANTHROPIC_EMULATE_CLAUDE_CODE_SIGNATURE`
-  - `1/true` => enabled
-  - `0/false` => disabled
+    - `1/true` => enabled
+    - `0/false` => disabled
 - `OPENCODE_ANTHROPIC_FETCH_CLAUDE_CODE_VERSION`
-  - `1/true` => fetch latest `@anthropic-ai/claude-code` version on startup
-  - `0/false` => keep internal fallback version
+    - `1/true` => fetch latest `@anthropic-ai/claude-code` version on startup
+    - `0/false` => keep internal fallback version
 - `OPENCODE_ANTHROPIC_PROMPT_COMPACTION`
-  - `minimal` => compact long system instruction blocks (default)
-  - `off` => disable compaction
+    - `minimal` => compact long system instruction blocks (default)
+    - `off` => disable compaction
 
 When `signature_emulation.enabled=false`, the plugin falls back to legacy system-prompt transform behavior (Claude Code prefix via `experimental.chat.system.transform`) and does not apply the full header/system mimicry block documented below.
 
@@ -49,7 +49,7 @@ In `AnthropicAuthPlugin`:
 
 - initial fallback version: `2.1.80`
 - if `fetch_claude_code_version_on_startup=true`, it performs GET on:
-  - `https://registry.npmjs.org/@anthropic-ai/claude-code/latest`
+    - `https://registry.npmjs.org/@anthropic-ai/claude-code/latest`
 - short timeout (AbortController); failures are silent and fallback remains active
 
 This version is used by:
@@ -113,14 +113,14 @@ sequenceDiagram
 `buildRequestHeaders(...)` always ensures:
 
 - `authorization: Bearer <token>`
-  - default token: account OAuth access token
-  - optional override: `ANTHROPIC_AUTH_TOKEN` (if set, takes precedence)
+    - default token: account OAuth access token
+    - optional override: `ANTHROPIC_AUTH_TOKEN` (if set, takes precedence)
 - `anthropic-beta: <final beta list>`
 - `user-agent: claude-cli/<version> (external, <entrypoint>[, agent-sdk/<v>][, client-app/<app>])`
-  - `entrypoint`: `CLAUDE_CODE_ENTRYPOINT` or `cli`
-  - optional suffixes:
-    - `CLAUDE_AGENT_SDK_VERSION`
-    - `CLAUDE_AGENT_SDK_CLIENT_APP`
+    - `entrypoint`: `CLAUDE_CODE_ENTRYPOINT` or `cli`
+    - optional suffixes:
+        - `CLAUDE_AGENT_SDK_VERSION`
+        - `CLAUDE_AGENT_SDK_CLIENT_APP`
 - always removes `x-api-key`
 
 ### 4.2 Extra headers when mimicry is enabled
@@ -139,17 +139,17 @@ With `signature.enabled=true`, it adds:
 - `x-stainless-helper-method: stream`
 - `x-stainless-timeout: 600` (CC's default 600-second SDK timeout)
 - `x-stainless-retry-count`
-  - preserves incoming value when present and not explicitly falsy
-  - otherwise sets `0`
+    - preserves incoming value when present and not explicitly falsy
+    - otherwise sets `0`
 - `x-stainless-helper`
-  - extracted dynamically from `tools`/`messages` in body
-  - scans keys: `x_stainless_helper`, `x-stainless-helper`, `stainless_helper`, `stainlessHelper`, `_stainless_helper`
-  - aggregates unique values as comma-separated list
+    - extracted dynamically from `tools`/`messages` in body
+    - scans keys: `x_stainless_helper`, `x-stainless-helper`, `stainless_helper`, `stainlessHelper`, `_stainless_helper`
+    - aggregates unique values as comma-separated list
 
 It also injects optional env-driven headers:
 
 - `ANTHROPIC_CUSTOM_HEADERS` (multiline `Header-Name: value`)
-  - each valid line is converted into a header
+    - each valid line is converted into a header
 - `CLAUDE_CODE_CONTAINER_ID` => `x-claude-remote-container-id`
 - `CLAUDE_CODE_REMOTE_SESSION_ID` => `x-claude-remote-session-id`
 - `CLAUDE_AGENT_SDK_CLIENT_APP` => `x-client-app`
@@ -266,16 +266,16 @@ Experimental beta safety switch:
 Strategy filter:
 
 - if `strategy` is `"round-robin"`, the following betas are excluded to avoid per-account state conflicts:
-  - `prompt-caching-scope-2026-01-05` (cache is per-workspace)
+    - `prompt-caching-scope-2026-01-05` (cache is per-workspace)
 - the `OPENCODE_ANTHROPIC_INITIAL_ACCOUNT` env var overrides the strategy to `sticky` for the session, re-enabling strategy-sensitive auto betas
 
 Provider filter:
 
 - if detected provider is `bedrock`, remove betas listed in `BEDROCK_UNSUPPORTED_BETAS`:
-  - `interleaved-thinking-2025-05-14`
-  - `context-1m-2025-08-07`
-  - `tool-search-tool-2025-10-19`
-  - `tool-examples-2025-10-29`
+    - `interleaved-thinking-2025-05-14`
+    - `context-1m-2025-08-07`
+    - `tool-search-tool-2025-10-19`
+    - `tool-examples-2025-10-29`
 
 Provider detection is based on request URL hostname (`anthropic`, `bedrock`, `vertex`, `foundry`).
 
@@ -349,7 +349,7 @@ This plugin no longer auto-includes `fine-grained-tool-streaming-2025-05-14` in 
 
 - `OpenCode` => `Claude Code`
 - `opencode`/`OpenCode` variants => `Claude`
-  - except when preceded by `/` (path-like occurrence preserved)
+    - except when preceded by `/` (path-like occurrence preserved)
 
 ### 6.3 Injected blocks when mimicry is enabled
 
@@ -357,12 +357,12 @@ This plugin no longer auto-includes `fine-grained-tool-streaming-2025-05-14` in 
 
 1. sanitizes all blocks
 2. removes pre-existing blocks that are already:
-   - `x-anthropic-billing-header: ...`
-   - known identity strings (`KNOWN_IDENTITY_STRINGS`)
+    - `x-anthropic-billing-header: ...`
+    - known identity strings (`KNOWN_IDENTITY_STRINGS`)
 3. builds final ordered list:
-   - (optional) billing header block
-   - canonical identity block with `cache_control: { type: "ephemeral" }`
-   - original filtered/sanitized blocks
+    - (optional) billing header block
+    - canonical identity block with `cache_control: { type: "ephemeral" }`
+    - original filtered/sanitized blocks
 
 Canonical identity string:
 
@@ -390,14 +390,14 @@ Where:
 When mimicry is enabled, `transformRequestBody(...)` adds/updates:
 
 - `metadata.user_id` with format:
-  - `user_<persistentUserId>_account_<accountId>_session_<sessionId>`
+    - `user_<persistentUserId>_account_<accountId>_session_<sessionId>`
 
 Where:
 
 - `persistentUserId`:
-  - optional override via `OPENCODE_ANTHROPIC_SIGNATURE_USER_ID`
-  - otherwise loaded from persisted file at `getConfigDir()/anthropic-signature-user-id`
-  - if absent, generates UUID and persists it
+    - optional override via `OPENCODE_ANTHROPIC_SIGNATURE_USER_ID`
+    - otherwise loaded from persisted file at `getConfigDir()/anthropic-signature-user-id`
+    - if absent, generates UUID and persists it
 - `sessionId`: UUID generated once per plugin initialization
 - `accountId`: `account.accountUuid` when present; fallback to `account.id`
 
@@ -436,10 +436,10 @@ To audit whether mimicry is active at runtime:
 4. verify `x-stainless-timeout` is `600`
 5. verify `anthropic-beta` includes expected flags for model/provider
 6. inspect body and confirm:
-   - `system[0..]` includes identity block (and billing block unless disabled)
-   - billing header has a native-style xxHash64 `cch` value and `cc_version` includes hash suffix
-   - `metadata.user_id` follows composed format
-   - `betas` is aligned with header
+    - `system[0..]` includes identity block (and billing block unless disabled)
+    - billing header has a native-style xxHash64 `cch` value and `cc_version` includes hash suffix
+    - `metadata.user_id` follows composed format
+    - `betas` is aligned with header
 
 ## 11) Known false alarms in CC cli.js analysis
 

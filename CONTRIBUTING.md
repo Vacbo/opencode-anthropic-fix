@@ -343,20 +343,20 @@ Accounts are stored at `~/.config/opencode/anthropic-accounts.json`:
 
 ```json
 {
-  "version": 1,
-  "accounts": [
-    {
-      "email": "alice@example.com",
-      "refreshToken": "rt_...",
-      "addedAt": 1706000000000,
-      "lastUsed": 1706000100000,
-      "enabled": true,
-      "rateLimitResetTimes": {},
-      "consecutiveFailures": 0,
-      "lastFailureTime": null
-    }
-  ],
-  "activeIndex": 0
+    "version": 1,
+    "accounts": [
+        {
+            "email": "alice@example.com",
+            "refreshToken": "rt_...",
+            "addedAt": 1706000000000,
+            "lastUsed": 1706000100000,
+            "enabled": true,
+            "rateLimitResetTimes": {},
+            "consecutiveFailures": 0,
+            "lastFailureTime": null
+        }
+    ],
+    "activeIndex": 0
 }
 ```
 
@@ -438,12 +438,12 @@ The loader returns an object with `apiKey` and `fetch`:
 
 ```javascript
 return {
-  apiKey: "", // Empty string (OAuth doesn't use API keys)
-  async fetch(input, init) {
-    // This replaces the default fetch for all Anthropic API calls
-    // Handles: account selection, token refresh, request transformation,
-    //          retry loop, response transformation
-  },
+    apiKey: "", // Empty string (OAuth doesn't use API keys)
+    async fetch(input, init) {
+        // This replaces the default fetch for all Anthropic API calls
+        // Handles: account selection, token refresh, request transformation,
+        //          retry loop, response transformation
+    },
 };
 ```
 
@@ -457,13 +457,13 @@ We investigated using a custom provider ID (e.g., `anthropic-oauth`) to avoid th
 
 ```javascript
 function mergeProvider(providerID, provider) {
-  const existing = providers[providerID];
-  if (existing) {
-    /* merge */ return;
-  }
-  const match = database[providerID];
-  if (!match) return; // ← silently drops unknown providers
-  /* ... */
+    const existing = providers[providerID];
+    if (existing) {
+        /* merge */ return;
+    }
+    const match = database[providerID];
+    if (!match) return; // ← silently drops unknown providers
+    /* ... */
 }
 ```
 
@@ -492,9 +492,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock dependencies before importing the module under test
 vi.mock("./lib/storage.mjs", () => ({
-  loadAccounts: vi.fn(),
-  saveAccounts: vi.fn(),
-  getStoragePath: vi.fn(() => "/mock/path"),
+    loadAccounts: vi.fn(),
+    saveAccounts: vi.fn(),
+    getStoragePath: vi.fn(() => "/mock/path"),
 }));
 
 // Import after mocking

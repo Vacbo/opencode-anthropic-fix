@@ -15,7 +15,7 @@ When `opencode.json` lists a plugin:
 
 ```jsonc
 {
-  "plugin": ["@vacbo/opencode-anthropic-fix@latest"],
+    "plugin": ["@vacbo/opencode-anthropic-fix@latest"],
 }
 ```
 

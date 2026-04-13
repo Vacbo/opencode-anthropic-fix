@@ -82,11 +82,11 @@ Control the feature via `~/.config/opencode/anthropic-auth.json`:
 
 ```jsonc
 {
-  "cc_credential_reuse": {
-    "enabled": true, // Enable/disable the feature (default: true)
-    "auto_detect": true, // Auto-load on plugin startup (default: true)
-    "prefer_over_oauth": true, // Use CC credentials first when available (default: true)
-  },
+    "cc_credential_reuse": {
+        "enabled": true, // Enable/disable the feature (default: true)
+        "auto_detect": true, // Auto-load on plugin startup (default: true)
+        "prefer_over_oauth": true, // Use CC credentials first when available (default: true)
+    },
 }
 ```
 
@@ -132,7 +132,7 @@ Add to your `opencode.json`:
 
 ```json
 {
-  "plugins": ["opencode-anthropic-fix@latest"]
+    "plugins": ["opencode-anthropic-fix@latest"]
 }
 ```
 
@@ -390,10 +390,10 @@ Supported formats: PDF, DOCX, TXT, CSV, Excel, Markdown, images (max 350 MB per 
 
 - `/anthropic files list` (no `--account`) queries **all** enabled accounts, labeling each file with its owner email
 - Use `--account <email|index>` to target a specific account for any action:
-  ```text
-  /anthropic files list --account alice@example.com
-  /anthropic files upload ./data.csv --account 2
-  ```
+    ```text
+    /anthropic files list --account alice@example.com
+    /anthropic files upload ./data.csv --account 2
+    ```
 - **Auto-pinning:** When you upload or list files, the plugin remembers which account owns each `file_id`. If a subsequent Messages API request references that `file_id`, the plugin automatically routes it to the correct account — even with round-robin or hybrid strategies.
 
 ### OAuth flows from slash command
@@ -469,84 +469,84 @@ Configuration is stored at `~/.config/opencode/anthropic-auth.json`. All setting
 
 ```jsonc
 {
-  // Account selection strategy: "sticky" | "round-robin" | "hybrid"
-  "account_selection_strategy": "sticky",
+    // Account selection strategy: "sticky" | "round-robin" | "hybrid"
+    "account_selection_strategy": "sticky",
 
-  // Seconds before consecutive failure count resets (60-7200)
-  "failure_ttl_seconds": 3600,
+    // Seconds before consecutive failure count resets (60-7200)
+    "failure_ttl_seconds": 3600,
 
-  // Enable debug logging
-  "debug": false,
+    // Enable debug logging
+    "debug": false,
 
-  // Claude Code signature emulation behavior
-  "signature_emulation": {
-    // Enable Claude-style attribution/stainless headers and betas
-    "enabled": true,
-    // Resolve latest @anthropic-ai/claude-code version once on plugin startup
-    "fetch_claude_code_version_on_startup": true,
-    // Compact long injected system instructions to reduce token usage.
-    // In "minimal" mode, repeated/contained blocks are deduplicated and title-generator
-    // requests are replaced with a compact dedicated prompt.
-    // "minimal" | "off"
-    "prompt_compaction": "minimal",
-    // Run the legacy regex-based sanitizer that rewrites OpenCode / Sisyphus /
-    // morph_edit identifiers in system prompt text. Default false because the
-    // plugin's primary defense is now aggressive relocation: non-CC blocks are
-    // moved into the first user message wrapped in <system-instructions>, and
-    // CC's system prompt is kept byte-for-byte pristine. Set this to true if
-    // you want belt-and-suspenders rewriting on top of relocation. The new
-    // regex uses negative lookarounds for [\w\-/] so hyphenated identifiers
-    // and file paths survive verbatim.
+    // Claude Code signature emulation behavior
+    "signature_emulation": {
+        // Enable Claude-style attribution/stainless headers and betas
+        "enabled": true,
+        // Resolve latest @anthropic-ai/claude-code version once on plugin startup
+        "fetch_claude_code_version_on_startup": true,
+        // Compact long injected system instructions to reduce token usage.
+        // In "minimal" mode, repeated/contained blocks are deduplicated and title-generator
+        // requests are replaced with a compact dedicated prompt.
+        // "minimal" | "off"
+        "prompt_compaction": "minimal",
+        // Run the legacy regex-based sanitizer that rewrites OpenCode / Sisyphus /
+        // morph_edit identifiers in system prompt text. Default false because the
+        // plugin's primary defense is now aggressive relocation: non-CC blocks are
+        // moved into the first user message wrapped in <system-instructions>, and
+        // CC's system prompt is kept byte-for-byte pristine. Set this to true if
+        // you want belt-and-suspenders rewriting on top of relocation. The new
+        // regex uses negative lookarounds for [\w\-/] so hyphenated identifiers
+        // and file paths survive verbatim.
+        "sanitize_system_prompt": false,
+    },
+
+    // Top-level alias for signature_emulation.sanitize_system_prompt. When set,
+    // takes precedence over the nested value. Provided so you can flip the
+    // sanitizer without learning the nested schema.
     "sanitize_system_prompt": false,
-  },
 
-  // Top-level alias for signature_emulation.sanitize_system_prompt. When set,
-  // takes precedence over the nested value. Provided so you can flip the
-  // sanitizer without learning the nested schema.
-  "sanitize_system_prompt": false,
+    // Context limit override for 1M-window models.
+    // Prevents OpenCode from compacting too early when models.dev hasn't been
+    // updated yet (e.g. claude-opus-4-6 and any *-1m model variants).
+    // Only applied for OAuth (Max Plan) sessions — API key users use the
+    // context-1m-2025-08-07 beta header instead.
+    "override_model_limits": {
+        // Enable/disable the override (default: off — enable if you need 1M context)
+        "enabled": false,
+        // Context window to inject (tokens). Default: 1_000_000.
+        "context": 1000000,
+        // Max output tokens to inject. 0 = leave the model's default unchanged.
+        "output": 0,
+    },
 
-  // Context limit override for 1M-window models.
-  // Prevents OpenCode from compacting too early when models.dev hasn't been
-  // updated yet (e.g. claude-opus-4-6 and any *-1m model variants).
-  // Only applied for OAuth (Max Plan) sessions — API key users use the
-  // context-1m-2025-08-07 beta header instead.
-  "override_model_limits": {
-    // Enable/disable the override (default: off — enable if you need 1M context)
-    "enabled": false,
-    // Context window to inject (tokens). Default: 1_000_000.
-    "context": 1000000,
-    // Max output tokens to inject. 0 = leave the model's default unchanged.
-    "output": 0,
-  },
+    // Health score tuning (0-100 scale)
+    "health_score": {
+        "initial": 70,
+        "success_reward": 1,
+        "rate_limit_penalty": -10,
+        "failure_penalty": -20,
+        "recovery_rate_per_hour": 2,
+        "min_usable": 50,
+        "max_score": 100,
+    },
 
-  // Health score tuning (0-100 scale)
-  "health_score": {
-    "initial": 70,
-    "success_reward": 1,
-    "rate_limit_penalty": -10,
-    "failure_penalty": -20,
-    "recovery_rate_per_hour": 2,
-    "min_usable": 50,
-    "max_score": 100,
-  },
+    // Client-side rate limiting (token bucket)
+    "token_bucket": {
+        "max_tokens": 50,
+        "regeneration_rate_per_minute": 6,
+        "initial_tokens": 50,
+    },
 
-  // Client-side rate limiting (token bucket)
-  "token_bucket": {
-    "max_tokens": 50,
-    "regeneration_rate_per_minute": 6,
-    "initial_tokens": 50,
-  },
+    // Custom beta headers (added to every request via /anthropic betas add)
+    "custom_betas": [],
 
-  // Custom beta headers (added to every request via /anthropic betas add)
-  "custom_betas": [],
-
-  // Toast notification settings
-  "toasts": {
-    // Suppress non-error toasts (account status, switching)
-    "quiet": false,
-    // Minimum seconds between account-switch toasts (0-300)
-    "debounce_seconds": 30,
-  },
+    // Toast notification settings
+    "toasts": {
+        // Suppress non-error toasts (account status, switching)
+        "quiet": false,
+        // Minimum seconds between account-switch toasts (0-300)
+        "debounce_seconds": 30,
+    },
 }
 ```
 
@@ -675,7 +675,7 @@ To suppress non-error toasts, set `quiet` mode in your config:
 ```jsonc
 // ~/.config/opencode/anthropic-auth.json
 {
-  "toasts": { "quiet": true },
+    "toasts": { "quiet": true },
 }
 ```
 

@@ -31,82 +31,82 @@ import { randomUUID } from "node:crypto";
 export type MessageRole = "user" | "assistant";
 
 export interface TextBlock {
-  type: "text";
-  text: string;
+    type: "text";
+    text: string;
 }
 
 export interface ToolUseBlock {
-  type: "tool_use";
-  id: string;
-  name: string;
-  input: Record<string, unknown>;
+    type: "tool_use";
+    id: string;
+    name: string;
+    input: Record<string, unknown>;
 }
 
 export interface ToolResultBlock {
-  type: "tool_result";
-  tool_use_id: string;
-  content: string | Array<TextBlock | ImageBlock>;
-  is_error?: boolean;
+    type: "tool_result";
+    tool_use_id: string;
+    content: string | Array<TextBlock | ImageBlock>;
+    is_error?: boolean;
 }
 
 export interface ImageBlock {
-  type: "image";
-  source: {
-    type: "base64";
-    media_type: string;
-    data: string;
-  };
+    type: "image";
+    source: {
+        type: "base64";
+        media_type: string;
+        data: string;
+    };
 }
 
 export type MessageContent = string | Array<TextBlock | ToolUseBlock | ToolResultBlock | ImageBlock>;
 
 export interface Message {
-  role: MessageRole;
-  content: MessageContent;
+    role: MessageRole;
+    content: MessageContent;
 }
 
 export interface Conversation {
-  messages: Message[];
-  metadata?: Record<string, unknown>;
+    messages: Message[];
+    metadata?: Record<string, unknown>;
 }
 
 export interface ConversationFactory {
-  /** Generate unique IDs (default: true) */
-  generateIds?: boolean;
-  /** Default prefix for generated IDs */
-  idPrefix?: string;
+    /** Generate unique IDs (default: true) */
+    generateIds?: boolean;
+    /** Default prefix for generated IDs */
+    idPrefix?: string;
 }
 
 export interface MakeConversationOptions extends ConversationFactory {
-  /** Pre-populated messages array */
-  messages?: Message[];
-  /** Optional conversation metadata */
-  metadata?: Record<string, unknown>;
+    /** Pre-populated messages array */
+    messages?: Message[];
+    /** Optional conversation metadata */
+    metadata?: Record<string, unknown>;
 }
 
 export interface MakeMessageOptions {
-  /** Message role (user or assistant) */
-  role?: MessageRole;
-  /** Message content - string or content blocks array */
-  content?: MessageContent;
+    /** Message role (user or assistant) */
+    role?: MessageRole;
+    /** Message content - string or content blocks array */
+    content?: MessageContent;
 }
 
 export interface MakeToolUseOptions {
-  /** Unique tool use ID (auto-generated if not provided) */
-  id?: string;
-  /** Tool name */
-  name?: string;
-  /** Tool input parameters */
-  input?: Record<string, unknown>;
+    /** Unique tool use ID (auto-generated if not provided) */
+    id?: string;
+    /** Tool name */
+    name?: string;
+    /** Tool input parameters */
+    input?: Record<string, unknown>;
 }
 
 export interface MakeToolResultOptions {
-  /** ID of the tool_use this result corresponds to */
-  toolUseId?: string;
-  /** Result content - string or content blocks */
-  content?: string | Array<TextBlock | ImageBlock>;
-  /** Whether this result represents an error */
-  isError?: boolean;
+    /** ID of the tool_use this result corresponds to */
+    toolUseId?: string;
+    /** Result content - string or content blocks */
+    content?: string | Array<TextBlock | ImageBlock>;
+    /** Whether this result represents an error */
+    isError?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -122,14 +122,14 @@ let idCounter = 0;
  * @returns Unique ID string
  */
 export function generateToolUseId(prefix = "tu"): string {
-  return `${prefix}_${randomUUID().replace(/-/g, "").slice(0, 12)}_${++idCounter}`;
+    return `${prefix}_${randomUUID().replace(/-/g, "").slice(0, 12)}_${++idCounter}`;
 }
 
 /**
  * Reset the ID counter for deterministic tests.
  */
 export function resetIdCounter(): void {
-  idCounter = 0;
+    idCounter = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -151,10 +151,10 @@ export function resetIdCounter(): void {
  * ```
  */
 export function makeConversation(opts: MakeConversationOptions = {}): Conversation {
-  return {
-    messages: opts.messages ?? [],
-    metadata: opts.metadata,
-  };
+    return {
+        messages: opts.messages ?? [],
+        metadata: opts.metadata,
+    };
 }
 
 /**
@@ -173,10 +173,10 @@ export function makeConversation(opts: MakeConversationOptions = {}): Conversati
  * ```
  */
 export function makeMessage(opts: MakeMessageOptions = {}): Message {
-  const role = opts.role ?? "user";
-  const content = opts.content ?? "";
+    const role = opts.role ?? "user";
+    const content = opts.content ?? "";
 
-  return { role, content };
+    return { role, content };
 }
 
 /**
@@ -186,7 +186,7 @@ export function makeMessage(opts: MakeMessageOptions = {}): Message {
  * @returns TextBlock object
  */
 export function makeTextBlock(text: string): TextBlock {
-  return { type: "text", text };
+    return { type: "text", text };
 }
 
 /**
@@ -204,12 +204,12 @@ export function makeTextBlock(text: string): TextBlock {
  * ```
  */
 export function makeToolUse(opts: MakeToolUseOptions = {}): ToolUseBlock {
-  return {
-    type: "tool_use",
-    id: opts.id ?? generateToolUseId(),
-    name: opts.name ?? "unnamed_tool",
-    input: opts.input ?? {},
-  };
+    return {
+        type: "tool_use",
+        id: opts.id ?? generateToolUseId(),
+        name: opts.name ?? "unnamed_tool",
+        input: opts.input ?? {},
+    };
 }
 
 /**
@@ -227,12 +227,12 @@ export function makeToolUse(opts: MakeToolUseOptions = {}): ToolUseBlock {
  * ```
  */
 export function makeToolResult(opts: MakeToolResultOptions = {}): ToolResultBlock {
-  return {
-    type: "tool_result",
-    tool_use_id: opts.toolUseId ?? generateToolUseId("tr"),
-    content: opts.content ?? "",
-    is_error: opts.isError ?? false,
-  };
+    return {
+        type: "tool_result",
+        tool_use_id: opts.toolUseId ?? generateToolUseId("tr"),
+        content: opts.content ?? "",
+        is_error: opts.isError ?? false,
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -247,7 +247,7 @@ export function makeToolResult(opts: MakeToolResultOptions = {}): ToolResultBloc
  * @returns True if the pair is valid
  */
 export function validateToolPair(toolUse: ToolUseBlock, toolResult: ToolResultBlock): boolean {
-  return toolUse.id === toolResult.tool_use_id;
+    return toolUse.id === toolResult.tool_use_id;
 }
 
 /**
@@ -258,16 +258,16 @@ export function validateToolPair(toolUse: ToolUseBlock, toolResult: ToolResultBl
  * @returns The matching ToolResultBlock or undefined
  */
 export function findToolResult(messages: Message[], toolUseId: string): ToolResultBlock | undefined {
-  for (const message of messages) {
-    if (typeof message.content === "string") continue;
+    for (const message of messages) {
+        if (typeof message.content === "string") continue;
 
-    for (const block of message.content) {
-      if (block.type === "tool_result" && block.tool_use_id === toolUseId) {
-        return block;
-      }
+        for (const block of message.content) {
+            if (block.type === "tool_result" && block.tool_use_id === toolUseId) {
+                return block;
+            }
+        }
     }
-  }
-  return undefined;
+    return undefined;
 }
 
 /**
@@ -277,35 +277,35 @@ export function findToolResult(messages: Message[], toolUseId: string): ToolResu
  * @returns Object with validation results
  */
 export function validateConversationTools(conversation: Conversation): {
-  valid: boolean;
-  unmatchedToolUses: ToolUseBlock[];
-  unmatchedToolResults: ToolResultBlock[];
+    valid: boolean;
+    unmatchedToolUses: ToolUseBlock[];
+    unmatchedToolResults: ToolResultBlock[];
 } {
-  const toolUses: ToolUseBlock[] = [];
-  const toolResults: ToolResultBlock[] = [];
+    const toolUses: ToolUseBlock[] = [];
+    const toolResults: ToolResultBlock[] = [];
 
-  // Collect all tool_use and tool_result blocks
-  for (const message of conversation.messages) {
-    if (typeof message.content === "string") continue;
+    // Collect all tool_use and tool_result blocks
+    for (const message of conversation.messages) {
+        if (typeof message.content === "string") continue;
 
-    for (const block of message.content) {
-      if (block.type === "tool_use") {
-        toolUses.push(block);
-      } else if (block.type === "tool_result") {
-        toolResults.push(block);
-      }
+        for (const block of message.content) {
+            if (block.type === "tool_use") {
+                toolUses.push(block);
+            } else if (block.type === "tool_result") {
+                toolResults.push(block);
+            }
+        }
     }
-  }
 
-  const unmatchedToolUses = toolUses.filter((tu) => !toolResults.some((tr) => tr.tool_use_id === tu.id));
+    const unmatchedToolUses = toolUses.filter((tu) => !toolResults.some((tr) => tr.tool_use_id === tu.id));
 
-  const unmatchedToolResults = toolResults.filter((tr) => !toolUses.some((tu) => tu.id === tr.tool_use_id));
+    const unmatchedToolResults = toolResults.filter((tr) => !toolUses.some((tu) => tu.id === tr.tool_use_id));
 
-  return {
-    valid: unmatchedToolUses.length === 0 && unmatchedToolResults.length === 0,
-    unmatchedToolUses,
-    unmatchedToolResults,
-  };
+    return {
+        valid: unmatchedToolUses.length === 0 && unmatchedToolResults.length === 0,
+        unmatchedToolUses,
+        unmatchedToolResults,
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -330,13 +330,13 @@ export function validateConversationTools(conversation: Conversation): {
  * ```
  */
 export function makeToolExchange(
-  toolName: string,
-  toolInput: Record<string, unknown>,
-  resultContent: string,
+    toolName: string,
+    toolInput: Record<string, unknown>,
+    resultContent: string,
 ): [ToolUseBlock, ToolResultBlock] {
-  const toolUse = makeToolUse({ name: toolName, input: toolInput });
-  const toolResult = makeToolResult({ toolUseId: toolUse.id, content: resultContent });
-  return [toolUse, toolResult];
+    const toolUse = makeToolUse({ name: toolName, input: toolInput });
+    const toolResult = makeToolResult({ toolUseId: toolUse.id, content: resultContent });
+    return [toolUse, toolResult];
 }
 
 /**
@@ -359,18 +359,18 @@ export function makeToolExchange(
  * ```
  */
 export function makeToolConversation(
-  userPrompt: string,
-  toolName: string,
-  toolInput: Record<string, unknown>,
-  toolOutput: string,
+    userPrompt: string,
+    toolName: string,
+    toolInput: Record<string, unknown>,
+    toolOutput: string,
 ): Conversation {
-  const [toolUse, toolResult] = makeToolExchange(toolName, toolInput, toolOutput);
+    const [toolUse, toolResult] = makeToolExchange(toolName, toolInput, toolOutput);
 
-  return makeConversation({
-    messages: [
-      makeMessage({ role: "user", content: userPrompt }),
-      makeMessage({ role: "assistant", content: [toolUse] }),
-      makeMessage({ role: "user", content: [toolResult] }),
-    ],
-  });
+    return makeConversation({
+        messages: [
+            makeMessage({ role: "user", content: userPrompt }),
+            makeMessage({ role: "assistant", content: [toolUse] }),
+            makeMessage({ role: "user", content: [toolResult] }),
+        ],
+    });
 }

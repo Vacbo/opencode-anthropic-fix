@@ -1,138 +1,138 @@
 import {
-  BEDROCK_UNSUPPORTED_BETAS,
-  BETA_SHORTCUTS,
-  CLAUDE_CODE_BETA_FLAG,
-  EFFORT_BETA_FLAG,
-  EXPERIMENTAL_BETA_FLAGS,
-  TOKEN_COUNTING_BETA_FLAG,
+    BEDROCK_UNSUPPORTED_BETAS,
+    BETA_SHORTCUTS,
+    CLAUDE_CODE_BETA_FLAG,
+    EFFORT_BETA_FLAG,
+    EXPERIMENTAL_BETA_FLAGS,
+    TOKEN_COUNTING_BETA_FLAG,
 } from "./constants.js";
 import { isTruthyEnv } from "./env.js";
 import {
-  hasOneMillionContext,
-  isAdaptiveThinkingModel,
-  isHaikuModel,
-  supportsContextManagement,
-  supportsStructuredOutputs,
-  supportsThinking,
-  supportsWebSearch,
+    hasOneMillionContext,
+    isAdaptiveThinkingModel,
+    isHaikuModel,
+    supportsContextManagement,
+    supportsStructuredOutputs,
+    supportsThinking,
+    supportsWebSearch,
 } from "./models.js";
 import type { AccountSelectionStrategy, Provider } from "./types.js";
 
 export function buildAnthropicBetaHeader(
-  incomingBeta: string,
-  signatureEnabled: boolean,
-  model: string,
-  provider: Provider,
-  customBetas: string[] | undefined,
-  strategy: AccountSelectionStrategy | undefined,
-  requestPath: string | undefined,
-  hasFileReferences: boolean,
+    incomingBeta: string,
+    signatureEnabled: boolean,
+    model: string,
+    provider: Provider,
+    customBetas: string[] | undefined,
+    strategy: AccountSelectionStrategy | undefined,
+    requestPath: string | undefined,
+    hasFileReferences: boolean,
 ): string {
-  const incomingBetasList = incomingBeta
-    .split(",")
-    .map((b) => b.trim())
-    .filter(Boolean);
+    const incomingBetasList = incomingBeta
+        .split(",")
+        .map((b) => b.trim())
+        .filter(Boolean);
 
-  const betas: string[] = ["oauth-2025-04-20"];
-  const disableExperimentalBetas = isTruthyEnv(process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS);
-  const isMessagesCountTokensPath = requestPath === "/v1/messages/count_tokens";
-  const isFilesEndpoint = requestPath?.startsWith("/v1/files") ?? false;
+    const betas: string[] = ["oauth-2025-04-20"];
+    const disableExperimentalBetas = isTruthyEnv(process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS);
+    const isMessagesCountTokensPath = requestPath === "/v1/messages/count_tokens";
+    const isFilesEndpoint = requestPath?.startsWith("/v1/files") ?? false;
 
-  if (!signatureEnabled) {
-    betas.push("interleaved-thinking-2025-05-14");
-    if (isMessagesCountTokensPath) {
-      betas.push(TOKEN_COUNTING_BETA_FLAG);
+    if (!signatureEnabled) {
+        betas.push("interleaved-thinking-2025-05-14");
+        if (isMessagesCountTokensPath) {
+            betas.push(TOKEN_COUNTING_BETA_FLAG);
+        }
+        let mergedBetas = [...new Set([...betas, ...incomingBetasList])];
+        if (disableExperimentalBetas) {
+            mergedBetas = mergedBetas.filter((beta) => !EXPERIMENTAL_BETA_FLAGS.has(beta));
+        }
+        return mergedBetas.join(",");
     }
+
+    const haiku = isHaikuModel(model);
+    const isRoundRobin = strategy === "round-robin";
+
+    if (!haiku) {
+        betas.push(CLAUDE_CODE_BETA_FLAG);
+    }
+
+    // Files API beta is endpoint/content-scoped instead of globally applied.
+    if ((isFilesEndpoint || hasFileReferences) && !disableExperimentalBetas) {
+        betas.push("files-api-2025-04-14");
+    }
+
+    // NOTE: redact-thinking-2026-02-12 is in upstream 2.1.79+ base profile but
+    // intentionally NOT auto-included here — OpenCode users benefit from seeing
+    // thinking blocks. Available via /anthropic betas add redact-thinking-2026-02-12.
+
+    // CC 2.1.98 Proxyman capture shows these are NOT in the actual request headers
+    // even though they're in the source. Only include when explicitly requested.
+    // advanced-tool-use and fast-mode were causing fingerprint mismatch.
+
+    // Advisor tool — CC 2.1.98 always includes this.
+    betas.push("advisor-tool-2026-03-01");
+
+    if (isAdaptiveThinkingModel(model)) {
+        // Adaptive thinking models (Opus 4.6, Sonnet 4.6) use effort-based thinking controls.
+        betas.push(EFFORT_BETA_FLAG);
+    } else if (
+        !disableExperimentalBetas &&
+        !isTruthyEnv(process.env.DISABLE_INTERLEAVED_THINKING) &&
+        supportsThinking(model)
+    ) {
+        betas.push("interleaved-thinking-2025-05-14");
+    }
+
+    // context-1m-2025-08-07 is only supported for API key users; OAuth provider does not support it.
+    // For OAuth (this plugin's only auth mode), compaction is gated by model.limit.input instead.
+    if (!disableExperimentalBetas && hasOneMillionContext(model) && provider !== "anthropic") {
+        betas.push("context-1m-2025-08-07");
+    }
+
+    // Context management: upstream CC adds this for Claude 4+ models (thinking
+    // preservation) or when ant users opt in via USE_API_CONTEXT_MANAGEMENT.
+    if (!disableExperimentalBetas && supportsContextManagement(model)) {
+        betas.push("context-management-2025-06-27");
+    }
+
+    if (!disableExperimentalBetas && supportsStructuredOutputs(model) && isTruthyEnv(process.env.TENGU_TOOL_PEAR)) {
+        betas.push("structured-outputs-2025-12-15");
+    }
+
+    if (!disableExperimentalBetas && (provider === "vertex" || provider === "foundry") && supportsWebSearch(model)) {
+        betas.push("web-search-2025-03-05");
+    }
+
+    // Upstream CC always sends prompt-caching-scope for firstParty providers.
+    // Skip in round-robin (zero cache hits, doubled costs).
+    if (!disableExperimentalBetas && !isRoundRobin) {
+        betas.push("prompt-caching-scope-2026-01-05");
+    }
+
+    if (isMessagesCountTokensPath) {
+        betas.push(TOKEN_COUNTING_BETA_FLAG);
+    }
+
+    if (process.env.ANTHROPIC_BETAS) {
+        const envBetas = process.env.ANTHROPIC_BETAS.split(",")
+            .map((b) => b.trim())
+            .filter(Boolean);
+        betas.push(...envBetas);
+    }
+
+    if (Array.isArray(customBetas)) {
+        betas.push(...customBetas.filter(Boolean));
+    }
+
     let mergedBetas = [...new Set([...betas, ...incomingBetasList])];
     if (disableExperimentalBetas) {
-      mergedBetas = mergedBetas.filter((beta) => !EXPERIMENTAL_BETA_FLAGS.has(beta));
+        mergedBetas = mergedBetas.filter((beta) => !EXPERIMENTAL_BETA_FLAGS.has(beta));
+    }
+    if (provider === "bedrock") {
+        return mergedBetas.filter((beta) => !BEDROCK_UNSUPPORTED_BETAS.has(beta)).join(",");
     }
     return mergedBetas.join(",");
-  }
-
-  const haiku = isHaikuModel(model);
-  const isRoundRobin = strategy === "round-robin";
-
-  if (!haiku) {
-    betas.push(CLAUDE_CODE_BETA_FLAG);
-  }
-
-  // Files API beta is endpoint/content-scoped instead of globally applied.
-  if ((isFilesEndpoint || hasFileReferences) && !disableExperimentalBetas) {
-    betas.push("files-api-2025-04-14");
-  }
-
-  // NOTE: redact-thinking-2026-02-12 is in upstream 2.1.79+ base profile but
-  // intentionally NOT auto-included here — OpenCode users benefit from seeing
-  // thinking blocks. Available via /anthropic betas add redact-thinking-2026-02-12.
-
-  // CC 2.1.98 Proxyman capture shows these are NOT in the actual request headers
-  // even though they're in the source. Only include when explicitly requested.
-  // advanced-tool-use and fast-mode were causing fingerprint mismatch.
-
-  // Advisor tool — CC 2.1.98 always includes this.
-  betas.push("advisor-tool-2026-03-01");
-
-  if (isAdaptiveThinkingModel(model)) {
-    // Adaptive thinking models (Opus 4.6, Sonnet 4.6) use effort-based thinking controls.
-    betas.push(EFFORT_BETA_FLAG);
-  } else if (
-    !disableExperimentalBetas &&
-    !isTruthyEnv(process.env.DISABLE_INTERLEAVED_THINKING) &&
-    supportsThinking(model)
-  ) {
-    betas.push("interleaved-thinking-2025-05-14");
-  }
-
-  // context-1m-2025-08-07 is only supported for API key users; OAuth provider does not support it.
-  // For OAuth (this plugin's only auth mode), compaction is gated by model.limit.input instead.
-  if (!disableExperimentalBetas && hasOneMillionContext(model) && provider !== "anthropic") {
-    betas.push("context-1m-2025-08-07");
-  }
-
-  // Context management: upstream CC adds this for Claude 4+ models (thinking
-  // preservation) or when ant users opt in via USE_API_CONTEXT_MANAGEMENT.
-  if (!disableExperimentalBetas && supportsContextManagement(model)) {
-    betas.push("context-management-2025-06-27");
-  }
-
-  if (!disableExperimentalBetas && supportsStructuredOutputs(model) && isTruthyEnv(process.env.TENGU_TOOL_PEAR)) {
-    betas.push("structured-outputs-2025-12-15");
-  }
-
-  if (!disableExperimentalBetas && (provider === "vertex" || provider === "foundry") && supportsWebSearch(model)) {
-    betas.push("web-search-2025-03-05");
-  }
-
-  // Upstream CC always sends prompt-caching-scope for firstParty providers.
-  // Skip in round-robin (zero cache hits, doubled costs).
-  if (!disableExperimentalBetas && !isRoundRobin) {
-    betas.push("prompt-caching-scope-2026-01-05");
-  }
-
-  if (isMessagesCountTokensPath) {
-    betas.push(TOKEN_COUNTING_BETA_FLAG);
-  }
-
-  if (process.env.ANTHROPIC_BETAS) {
-    const envBetas = process.env.ANTHROPIC_BETAS.split(",")
-      .map((b) => b.trim())
-      .filter(Boolean);
-    betas.push(...envBetas);
-  }
-
-  if (Array.isArray(customBetas)) {
-    betas.push(...customBetas.filter(Boolean));
-  }
-
-  let mergedBetas = [...new Set([...betas, ...incomingBetasList])];
-  if (disableExperimentalBetas) {
-    mergedBetas = mergedBetas.filter((beta) => !EXPERIMENTAL_BETA_FLAGS.has(beta));
-  }
-  if (provider === "bedrock") {
-    return mergedBetas.filter((beta) => !BEDROCK_UNSUPPORTED_BETAS.has(beta)).join(",");
-  }
-  return mergedBetas.join(",");
 }
 
 /**
@@ -140,8 +140,8 @@ export function buildAnthropicBetaHeader(
  * Falls back to the original value if no shortcut is found.
  */
 export function resolveBetaShortcut(value: string | undefined): string {
-  if (!value) return "";
-  const trimmed = value.trim();
-  const mapped = BETA_SHORTCUTS.get(trimmed.toLowerCase());
-  return mapped || trimmed;
+    if (!value) return "";
+    const trimmed = value.trim();
+    const mapped = BETA_SHORTCUTS.get(trimmed.toLowerCase());
+    return mapped || trimmed;
 }

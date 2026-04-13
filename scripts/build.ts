@@ -10,25 +10,25 @@
 import { build } from "esbuild";
 
 const shared = {
-  bundle: true,
-  format: "esm",
-  platform: "node",
-  target: "node20",
-  // Node builtins stay as imports
-  external: ["node:*"],
+    bundle: true,
+    format: "esm",
+    platform: "node",
+    target: "node20",
+    // Node builtins stay as imports
+    external: ["node:*"],
 };
 
 await Promise.all([
-  build({
-    ...shared,
-    entryPoints: ["src/index.ts"],
-    outfile: "dist/opencode-anthropic-auth-plugin.js",
-  }),
-  build({
-    ...shared,
-    entryPoints: ["src/cli.ts"],
-    outfile: "dist/opencode-anthropic-auth-cli.mjs",
-  }),
+    build({
+        ...shared,
+        entryPoints: ["src/index.ts"],
+        outfile: "dist/opencode-anthropic-auth-plugin.js",
+    }),
+    build({
+        ...shared,
+        entryPoints: ["src/cli.ts"],
+        outfile: "dist/opencode-anthropic-auth-cli.mjs",
+    }),
 ]);
 
 console.log("Built dist/opencode-anthropic-auth-plugin.js and dist/opencode-anthropic-auth-cli.mjs");

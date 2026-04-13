@@ -10,16 +10,16 @@ import type { ThinkingEffort } from "./types.ts";
  * Used when an Opus 4.6 request arrives with the legacy budgetTokens shape.
  */
 export function budgetTokensToEffort(budgetTokens: number): ThinkingEffort {
-  if (budgetTokens <= 1024) return "low";
-  if (budgetTokens <= 8000) return "medium";
-  return "high";
+    if (budgetTokens <= 1024) return "low";
+    if (budgetTokens <= 8000) return "medium";
+    return "high";
 }
 
 /**
  * Validate that a given value is a valid ThinkingEffort string.
  */
 export function isValidEffort(value: unknown): value is ThinkingEffort {
-  return value === "low" || value === "medium" || value === "high";
+    return value === "low" || value === "medium" || value === "high";
 }
 
 /**
@@ -33,25 +33,26 @@ export function isValidEffort(value: unknown): value is ThinkingEffort {
  *   3. Absent / disabled: no transform
  */
 export function normalizeThinkingBlock(thinking: unknown, model: string): unknown {
-  if (!thinking || typeof thinking !== "object" || (thinking as Record<string, unknown>).type !== "enabled") {
-    return thinking;
-  }
+    if (!thinking || typeof thinking !== "object" || (thinking as Record<string, unknown>).type !== "enabled") {
+        return thinking;
+    }
 
-  if (!isAdaptiveThinkingModel(model)) {
-    // Older models: pass through unchanged (may have budget_tokens)
-    return thinking;
-  }
+    if (!isAdaptiveThinkingModel(model)) {
+        // Older models: pass through unchanged (may have budget_tokens)
+        return thinking;
+    }
 
-  const t = thinking as Record<string, unknown>;
+    const t = thinking as Record<string, unknown>;
 
-  // Adaptive thinking models: use adaptive thinking with effort
-  if (isValidEffort(t.effort)) {
-    // Already in adaptive shape — just strip any legacy budget_tokens field
-    const { budget_tokens: _dropped, ...rest } = t;
-    return rest;
-  }
+    // Adaptive thinking models: use adaptive thinking with effort
+    if (isValidEffort(t.effort)) {
+        // Already in adaptive shape — just strip any legacy budget_tokens field
+        const { budget_tokens: _dropped, ...rest } = t;
+        return rest;
+    }
 
-  const effort: ThinkingEffort = typeof t.budget_tokens === "number" ? budgetTokensToEffort(t.budget_tokens) : "medium"; // v2.1.68 default
+    const effort: ThinkingEffort =
+        typeof t.budget_tokens === "number" ? budgetTokensToEffort(t.budget_tokens) : "medium"; // v2.1.68 default
 
-  return { type: "enabled", effort };
+    return { type: "enabled", effort };
 }

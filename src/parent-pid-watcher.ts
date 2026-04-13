@@ -2,98 +2,98 @@ const DEFAULT_POLL_INTERVAL_MS = 5_000;
 const DEFAULT_PARENT_EXIT_CODE = 1;
 
 export interface ParentPidWatcherOptions {
-  parentPid: number;
-  pollIntervalMs?: number;
-  onParentGone: () => void;
+    parentPid: number;
+    pollIntervalMs?: number;
+    onParentGone: () => void;
 }
 
 function assertValidParentPid(parentPid: number): void {
-  if (!Number.isInteger(parentPid) || parentPid <= 0) {
-    throw new Error("Parent PID must be a positive integer.");
-  }
+    if (!Number.isInteger(parentPid) || parentPid <= 0) {
+        throw new Error("Parent PID must be a positive integer.");
+    }
 }
 
 function assertValidPollInterval(pollIntervalMs: number): void {
-  if (!Number.isFinite(pollIntervalMs) || pollIntervalMs <= 0) {
-    throw new Error("Poll interval must be a positive number.");
-  }
+    if (!Number.isFinite(pollIntervalMs) || pollIntervalMs <= 0) {
+        throw new Error("Poll interval must be a positive number.");
+    }
 }
 
 function isParentAlive(parentPid: number): boolean {
-  try {
-    process.kill(parentPid, 0);
-    return true;
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === "ESRCH") {
-      return false;
-    }
+    try {
+        process.kill(parentPid, 0);
+        return true;
+    } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === "ESRCH") {
+            return false;
+        }
 
-    if (code === "EPERM") {
-      return true;
-    }
+        if (code === "EPERM") {
+            return true;
+        }
 
-    return true;
-  }
+        return true;
+    }
 }
 
 export class ParentPidWatcher {
-  private readonly parentPid: number;
-  private readonly pollIntervalMs: number;
-  private readonly onParentGone: () => void;
+    private readonly parentPid: number;
+    private readonly pollIntervalMs: number;
+    private readonly onParentGone: () => void;
 
-  private interval: ReturnType<typeof setInterval> | null = null;
-  private shouldMonitorPpidDrift = false;
+    private interval: ReturnType<typeof setInterval> | null = null;
+    private shouldMonitorPpidDrift = false;
 
-  constructor(options: ParentPidWatcherOptions) {
-    this.parentPid = options.parentPid;
-    this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
-    this.onParentGone = options.onParentGone;
-  }
-
-  start(): void {
-    if (this.interval) {
-      return;
+    constructor(options: ParentPidWatcherOptions) {
+        this.parentPid = options.parentPid;
+        this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+        this.onParentGone = options.onParentGone;
     }
 
-    assertValidParentPid(this.parentPid);
-    assertValidPollInterval(this.pollIntervalMs);
+    start(): void {
+        if (this.interval) {
+            return;
+        }
 
-    this.shouldMonitorPpidDrift = process.ppid === this.parentPid;
+        assertValidParentPid(this.parentPid);
+        assertValidPollInterval(this.pollIntervalMs);
 
-    this.interval = setInterval(() => {
-      if (this.shouldMonitorPpidDrift && process.ppid !== this.parentPid) {
-        this.handleParentGone();
-        return;
-      }
+        this.shouldMonitorPpidDrift = process.ppid === this.parentPid;
 
-      if (!isParentAlive(this.parentPid)) {
-        this.handleParentGone();
-      }
-    }, this.pollIntervalMs);
-  }
+        this.interval = setInterval(() => {
+            if (this.shouldMonitorPpidDrift && process.ppid !== this.parentPid) {
+                this.handleParentGone();
+                return;
+            }
 
-  stop(): void {
-    if (!this.interval) {
-      return;
+            if (!isParentAlive(this.parentPid)) {
+                this.handleParentGone();
+            }
+        }, this.pollIntervalMs);
     }
 
-    clearInterval(this.interval);
-    this.interval = null;
-    this.shouldMonitorPpidDrift = false;
-  }
+    stop(): void {
+        if (!this.interval) {
+            return;
+        }
 
-  private handleParentGone(): void {
-    this.stop();
-    this.onParentGone();
-  }
+        clearInterval(this.interval);
+        this.interval = null;
+        this.shouldMonitorPpidDrift = false;
+    }
+
+    private handleParentGone(): void {
+        this.stop();
+        this.onParentGone();
+    }
 }
 
 export function watchParentAndExit(parentPid: number, exitCode = DEFAULT_PARENT_EXIT_CODE): ParentPidWatcher {
-  return new ParentPidWatcher({
-    parentPid,
-    onParentGone: () => {
-      process.exit(exitCode);
-    },
-  });
+    return new ParentPidWatcher({
+        parentPid,
+        onParentGone: () => {
+            process.exit(exitCode);
+        },
+    });
 }

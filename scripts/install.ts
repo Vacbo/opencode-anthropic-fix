@@ -35,8 +35,8 @@ const CLI_BIN_NAME = "opencode-anthropic-auth";
  * @returns {string}
  */
 function getPluginDir() {
-  const configHome = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
-  return join(configHome, "opencode", "plugin");
+    const configHome = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
+    return join(configHome, "opencode", "plugin");
 }
 
 /**
@@ -44,7 +44,7 @@ function getPluginDir() {
  * @returns {string}
  */
 function getBinDir() {
-  return join(homedir(), ".local", "bin");
+    return join(homedir(), ".local", "bin");
 }
 
 const DIST_DIR = join(PROJECT_ROOT, "dist");
@@ -60,14 +60,14 @@ const red = (t: string) => `\x1b[31m${t}\x1b[0m`;
 const dim = (t: string) => `\x1b[2m${t}\x1b[0m`;
 
 function printEnvReminder() {
-  console.log(yellow("\nNote: if using OpenCode v1.1.52 or earlier, set OPENCODE_DISABLE_DEFAULT_PLUGINS=1"));
-  console.log(dim("This is not needed on newer versions where user plugins take priority."));
+    console.log(yellow("\nNote: if using OpenCode v1.1.52 or earlier, set OPENCODE_DISABLE_DEFAULT_PLUGINS=1"));
+    console.log(dim("This is not needed on newer versions where user plugins take priority."));
 }
 
 function shortPath(p: string) {
-  const home = homedir();
-  if (p.startsWith(home)) return "~" + p.slice(home.length);
-  return p;
+    const home = homedir();
+    if (p.startsWith(home)) return "~" + p.slice(home.length);
+    return p;
 }
 
 /**
@@ -76,20 +76,20 @@ function shortPath(p: string) {
  * @returns {{ exists: boolean, isSymlink: boolean, target: string | null, isDir: boolean }}
  */
 function checkExisting(path: string) {
-  if (!existsSync(path)) {
-    return { exists: false, isSymlink: false, target: null, isDir: false };
-  }
-  const stat = lstatSync(path);
-  const isSymlink = stat.isSymbolicLink();
-  let target = null;
-  if (isSymlink) {
-    try {
-      target = readlinkSync(path);
-    } catch {
-      // ignore
+    if (!existsSync(path)) {
+        return { exists: false, isSymlink: false, target: null, isDir: false };
     }
-  }
-  return { exists: true, isSymlink, target, isDir: stat.isDirectory() };
+    const stat = lstatSync(path);
+    const isSymlink = stat.isSymbolicLink();
+    let target = null;
+    if (isSymlink) {
+        try {
+            target = readlinkSync(path);
+        } catch {
+            // ignore
+        }
+    }
+    return { exists: true, isSymlink, target, isDir: stat.isDirectory() };
 }
 
 /**
@@ -100,32 +100,32 @@ function checkExisting(path: string) {
  * @returns {Promise<boolean>} true if created, false if already correct
  */
 async function ensureSymlink(target: string, linkPath: string, label: string) {
-  await mkdir(dirname(linkPath), { recursive: true });
+    await mkdir(dirname(linkPath), { recursive: true });
 
-  const existing = checkExisting(linkPath);
+    const existing = checkExisting(linkPath);
 
-  if (existing.exists) {
-    if (existing.isSymlink && existing.target === target) {
-      console.log(green(`${label}: already linked.`));
-      console.log(dim(`  ${shortPath(linkPath)} -> ${shortPath(target)}`));
-      return false;
+    if (existing.exists) {
+        if (existing.isSymlink && existing.target === target) {
+            console.log(green(`${label}: already linked.`));
+            console.log(dim(`  ${shortPath(linkPath)} -> ${shortPath(target)}`));
+            return false;
+        }
+
+        if (existing.isSymlink) {
+            console.log(yellow(`${label}: replacing symlink (was -> ${existing.target})`));
+        } else if (existing.isDir) {
+            console.log(yellow(`${label}: replacing directory`));
+            await rm(linkPath, { recursive: true, force: true });
+        } else {
+            console.log(yellow(`${label}: replacing existing file`));
+        }
+        if (!existing.isDir) await unlink(linkPath);
     }
 
-    if (existing.isSymlink) {
-      console.log(yellow(`${label}: replacing symlink (was -> ${existing.target})`));
-    } else if (existing.isDir) {
-      console.log(yellow(`${label}: replacing directory`));
-      await rm(linkPath, { recursive: true, force: true });
-    } else {
-      console.log(yellow(`${label}: replacing existing file`));
-    }
-    if (!existing.isDir) await unlink(linkPath);
-  }
-
-  await symlink(target, linkPath);
-  console.log(green(`${label}: linked.`));
-  console.log(dim(`  ${shortPath(linkPath)} -> ${shortPath(target)}`));
-  return true;
+    await symlink(target, linkPath);
+    console.log(green(`${label}: linked.`));
+    console.log(dim(`  ${shortPath(linkPath)} -> ${shortPath(target)}`));
+    return true;
 }
 
 /**
@@ -135,23 +135,23 @@ async function ensureSymlink(target: string, linkPath: string, label: string) {
  * @returns {Promise<boolean>} true if something was removed
  */
 async function removePath(path: string, label: string) {
-  // Use lstatSync to detect broken symlinks (existsSync returns false for them)
-  let stat;
-  try {
-    stat = lstatSync(path);
-  } catch {
-    return false;
-  }
+    // Use lstatSync to detect broken symlinks (existsSync returns false for them)
+    let stat;
+    try {
+        stat = lstatSync(path);
+    } catch {
+        return false;
+    }
 
-  if (stat.isDirectory()) {
-    await rm(path, { recursive: true, force: true });
-    console.log(green(`${label}: removed directory ${shortPath(path)}/`));
-  } else {
-    await unlink(path);
-    const kind = stat.isSymbolicLink() ? "symlink" : "file";
-    console.log(green(`${label}: removed ${kind} ${shortPath(path)}`));
-  }
-  return true;
+    if (stat.isDirectory()) {
+        await rm(path, { recursive: true, force: true });
+        console.log(green(`${label}: removed directory ${shortPath(path)}/`));
+    } else {
+        await unlink(path);
+        const kind = stat.isSymbolicLink() ? "symlink" : "file";
+        console.log(green(`${label}: removed ${kind} ${shortPath(path)}`));
+    }
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -162,38 +162,38 @@ async function removePath(path: string, label: string) {
  * Symlink both plugin and CLI for development.
  */
 async function cmdLink() {
-  console.log(bold("Linking opencode-anthropic-auth...\n"));
+    console.log(bold("Linking opencode-anthropic-auth...\n"));
 
-  // Plugin: symlink entry point
-  const pluginDir = getPluginDir();
-  const pluginEntry = join(pluginDir, PLUGIN_ENTRY);
-  const pluginTarget = join(PROJECT_ROOT, "src", "index.ts");
+    // Plugin: symlink entry point
+    const pluginDir = getPluginDir();
+    const pluginEntry = join(pluginDir, PLUGIN_ENTRY);
+    const pluginTarget = join(PROJECT_ROOT, "src", "index.ts");
 
-  // Clean up old-named entry if present
-  const oldEntry = join(pluginDir, "opencode-anthropic-auth.js");
-  if (existsSync(oldEntry) && oldEntry !== pluginEntry) {
-    await unlink(oldEntry);
-    console.log(dim("Plugin: removed old opencode-anthropic-auth.js"));
-  }
+    // Clean up old-named entry if present
+    const oldEntry = join(pluginDir, "opencode-anthropic-auth.js");
+    if (existsSync(oldEntry) && oldEntry !== pluginEntry) {
+        await unlink(oldEntry);
+        console.log(dim("Plugin: removed old opencode-anthropic-auth.js"));
+    }
 
-  await ensureSymlink(pluginTarget, pluginEntry, "Plugin");
+    await ensureSymlink(pluginTarget, pluginEntry, "Plugin");
 
-  // CLI: symlink to cli.mjs
-  const binDir = getBinDir();
-  const cliBin = join(binDir, CLI_BIN_NAME);
-  const cliTarget = join(PROJECT_ROOT, "src", "cli.ts");
-  await ensureSymlink(cliTarget, cliBin, "CLI");
+    // CLI: symlink to cli.mjs
+    const binDir = getBinDir();
+    const cliBin = join(binDir, CLI_BIN_NAME);
+    const cliTarget = join(PROJECT_ROOT, "src", "cli.ts");
+    await ensureSymlink(cliTarget, cliBin, "CLI");
 
-  console.log(dim("\nEdits to source files take effect immediately."));
+    console.log(dim("\nEdits to source files take effect immediately."));
 
-  // Check if ~/.local/bin is on PATH
-  const pathDirs = (process.env.PATH || "").split(":");
-  if (!pathDirs.includes(binDir)) {
-    console.log(yellow(`\nNote: ${shortPath(binDir)} is not on your PATH.`));
-    console.log(dim(`Add to your shell profile:  export PATH="${shortPath(binDir)}:$PATH"`));
-  }
+    // Check if ~/.local/bin is on PATH
+    const pathDirs = (process.env.PATH || "").split(":");
+    if (!pathDirs.includes(binDir)) {
+        console.log(yellow(`\nNote: ${shortPath(binDir)} is not on your PATH.`));
+        console.log(dim(`Add to your shell profile:  export PATH="${shortPath(binDir)}:$PATH"`));
+    }
 
-  printEnvReminder();
+    printEnvReminder();
 }
 
 /**
@@ -201,90 +201,90 @@ async function cmdLink() {
  * Requires `npm run build` first (install:copy runs it automatically).
  */
 async function cmdCopy() {
-  console.log(bold("Copying opencode-anthropic-auth...\n"));
+    console.log(bold("Copying opencode-anthropic-auth...\n"));
 
-  const pluginSrc = join(DIST_DIR, "opencode-anthropic-auth-plugin.js");
-  const cliSrc = join(DIST_DIR, "opencode-anthropic-auth-cli.mjs");
+    const pluginSrc = join(DIST_DIR, "opencode-anthropic-auth-plugin.js");
+    const cliSrc = join(DIST_DIR, "opencode-anthropic-auth-cli.mjs");
 
-  if (!existsSync(pluginSrc) || !existsSync(cliSrc)) {
-    console.error(red("dist/ not found. Run `npm run build` first."));
-    process.exit(1);
-  }
+    if (!existsSync(pluginSrc) || !existsSync(cliSrc)) {
+        console.error(red("dist/ not found. Run `npm run build` first."));
+        process.exit(1);
+    }
 
-  // --- Plugin: single file copy ---
-  const pluginDir = getPluginDir();
-  const pluginDest = join(pluginDir, PLUGIN_ENTRY);
+    // --- Plugin: single file copy ---
+    const pluginDir = getPluginDir();
+    const pluginDest = join(pluginDir, PLUGIN_ENTRY);
 
-  await mkdir(pluginDir, { recursive: true });
+    await mkdir(pluginDir, { recursive: true });
 
-  // Clean up old multi-file copy directory if present
-  const oldCopyDir = join(pluginDir, PLUGIN_NAME);
-  if (existsSync(oldCopyDir)) {
-    await rm(oldCopyDir, { recursive: true, force: true });
-    console.log(dim("Plugin: removed old copy directory."));
-  }
+    // Clean up old multi-file copy directory if present
+    const oldCopyDir = join(pluginDir, PLUGIN_NAME);
+    if (existsSync(oldCopyDir)) {
+        await rm(oldCopyDir, { recursive: true, force: true });
+        console.log(dim("Plugin: removed old copy directory."));
+    }
 
-  if (existsSync(pluginDest)) await unlink(pluginDest);
-  await copyFile(pluginSrc, pluginDest);
+    if (existsSync(pluginDest)) await unlink(pluginDest);
+    await copyFile(pluginSrc, pluginDest);
 
-  console.log(green("Plugin: copied."));
-  console.log(dim(`  ${shortPath(pluginDest)}`));
+    console.log(green("Plugin: copied."));
+    console.log(dim(`  ${shortPath(pluginDest)}`));
 
-  // --- CLI: single file copy ---
-  const binDir = getBinDir();
-  const cliBin = join(binDir, CLI_BIN_NAME);
+    // --- CLI: single file copy ---
+    const binDir = getBinDir();
+    const cliBin = join(binDir, CLI_BIN_NAME);
 
-  await mkdir(binDir, { recursive: true });
-  if (existsSync(cliBin)) await unlink(cliBin);
-  await copyFile(cliSrc, cliBin);
-  await chmod(cliBin, 0o755);
+    await mkdir(binDir, { recursive: true });
+    if (existsSync(cliBin)) await unlink(cliBin);
+    await copyFile(cliSrc, cliBin);
+    await chmod(cliBin, 0o755);
 
-  console.log(green("CLI: copied."));
-  console.log(dim(`  ${shortPath(cliBin)}`));
+    console.log(green("CLI: copied."));
+    console.log(dim(`  ${shortPath(cliBin)}`));
 
-  console.log(dim("\nThis is a snapshot. Re-run to update."));
+    console.log(dim("\nThis is a snapshot. Re-run to update."));
 
-  // Check if ~/.local/bin is on PATH
-  const pathDirs = (process.env.PATH || "").split(":");
-  if (!pathDirs.includes(binDir)) {
-    console.log(yellow(`\nNote: ${shortPath(binDir)} is not on your PATH.`));
-    console.log(dim(`Add to your shell profile:  export PATH="${shortPath(binDir)}:$PATH"`));
-  }
+    // Check if ~/.local/bin is on PATH
+    const pathDirs = (process.env.PATH || "").split(":");
+    if (!pathDirs.includes(binDir)) {
+        console.log(yellow(`\nNote: ${shortPath(binDir)} is not on your PATH.`));
+        console.log(dim(`Add to your shell profile:  export PATH="${shortPath(binDir)}:$PATH"`));
+    }
 }
 
 /**
  * Remove both plugin and CLI.
  */
 async function cmdUninstall() {
-  console.log(bold("Uninstalling opencode-anthropic-auth...\n"));
+    console.log(bold("Uninstalling opencode-anthropic-auth...\n"));
 
-  let removed = false;
+    let removed = false;
 
-  // Plugin entry point (current and old name)
-  const pluginDir = getPluginDir();
-  const pluginEntry = join(pluginDir, PLUGIN_ENTRY);
-  if (await removePath(pluginEntry, "Plugin")) removed = true;
-  const oldEntry = join(pluginDir, "opencode-anthropic-auth.js");
-  if (await removePath(oldEntry, "Plugin (old name)")) removed = true;
+    // Plugin entry point (current and old name)
+    const pluginDir = getPluginDir();
+    const pluginEntry = join(pluginDir, PLUGIN_ENTRY);
+    if (await removePath(pluginEntry, "Plugin")) removed = true;
+    const oldEntry = join(pluginDir, "opencode-anthropic-auth.js");
+    if (await removePath(oldEntry, "Plugin (old name)")) removed = true;
 
-  // Plugin copy directory
-  const copyDir = join(pluginDir, PLUGIN_NAME);
-  if (await removePath(copyDir, "Plugin")) removed = true;
+    // Plugin copy directory
+    const copyDir = join(pluginDir, PLUGIN_NAME);
+    if (await removePath(copyDir, "Plugin")) removed = true;
 
-  // CLI binary
-  const binDir = getBinDir();
-  const cliBin = join(binDir, CLI_BIN_NAME);
-  if (await removePath(cliBin, "CLI")) removed = true;
+    // CLI binary
+    const binDir = getBinDir();
+    const cliBin = join(binDir, CLI_BIN_NAME);
+    if (await removePath(cliBin, "CLI")) removed = true;
 
-  // Also clean up any old npm link global install
-  const npmGlobal = join("/opt/homebrew/bin", "anthropic-auth");
-  if (await removePath(npmGlobal, "CLI (old npm link)")) removed = true;
+    // Also clean up any old npm link global install
+    const npmGlobal = join("/opt/homebrew/bin", "anthropic-auth");
+    if (await removePath(npmGlobal, "CLI (old npm link)")) removed = true;
 
-  if (!removed) {
-    console.log(dim("Nothing to remove. Not installed."));
-  } else {
-    console.log(dim("\nUninstalled."));
-  }
+    if (!removed) {
+        console.log(dim("Nothing to remove. Not installed."));
+    } else {
+        console.log(dim("\nUninstalled."));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -294,17 +294,17 @@ async function cmdUninstall() {
 const command = process.argv[2];
 
 switch (command) {
-  case "link":
-    await cmdLink();
-    break;
-  case "copy":
-    await cmdCopy();
-    break;
-  case "uninstall":
-    await cmdUninstall();
-    break;
-  default:
-    console.log(`${bold("Installer for opencode-anthropic-auth")}
+    case "link":
+        await cmdLink();
+        break;
+    case "copy":
+        await cmdCopy();
+        break;
+    case "uninstall":
+        await cmdUninstall();
+        break;
+    default:
+        console.log(`${bold("Installer for opencode-anthropic-auth")}
 
 ${dim("Installs:")}
   Plugin  ${dim("->")}  ~/.config/opencode/plugin/${PLUGIN_ENTRY}
@@ -315,5 +315,5 @@ ${dim("Usage:")}
   bun scripts/install.ts ${bold("copy")}         Copy both (stable deployment)
   bun scripts/install.ts ${bold("uninstall")}    Remove both
 `);
-    process.exit(command ? 1 : 0);
+        process.exit(command ? 1 : 0);
 }

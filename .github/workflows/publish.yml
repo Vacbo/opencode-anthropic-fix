@@ -1,64 +1,64 @@
 name: Publish to npm
 
 on:
-  workflow_dispatch:
-    inputs:
-      bump:
-        description: "Optional version bump type (patch, minor, major). Leave blank when the version was already bumped locally."
-        required: false
-        default: ""
+    workflow_dispatch:
+        inputs:
+            bump:
+                description: "Optional version bump type (patch, minor, major). Leave blank when the version was already bumped locally."
+                required: false
+                default: ""
 
 # OIDC: id-token enables npm trusted publishing — no NPM_TOKEN secret needed.
 # setup-node@v4 automatically exchanges the OIDC token for a short-lived npm token.
 permissions:
-  id-token: write
-  contents: write
+    id-token: write
+    contents: write
 
 concurrency:
-  group: publish-npm
-  cancel-in-progress: false
+    group: publish-npm
+    cancel-in-progress: false
 
 jobs:
-  publish:
-    runs-on: ubuntu-latest
-    env:
-      HUSKY: 0
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      # OIDC: this step acquires a short-lived npm token via GitHub's OIDC endpoint.
-      # The id-token: write permission above enables this automatically.
-      # No NPM_TOKEN secret is needed — trusted publishing handles auth.
-      - uses: actions/setup-node@v5
-        with:
-          node-version: "24"
-          registry-url: "https://registry.npmjs.org/"
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - run: npm ci
-
-      - name: Build
-        run: npm run build
-
-      - name: Test
-        run: npm test
-
-      - name: Version bump
-        if: ${{ github.event.inputs.bump != '' }}
+    publish:
+        runs-on: ubuntu-latest
         env:
-          BUMP_TYPE: ${{ github.event.inputs.bump }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          npm version "$BUMP_TYPE" -m "chore(release): v%s"
-          git push --follow-tags origin HEAD:master
+            HUSKY: 0
+        steps:
+            - uses: actions/checkout@v5
+              with:
+                  fetch-depth: 0
 
-      # OIDC: NODE_AUTH_TOKEN is not set. setup-node handles authentication via OIDC
-      # and npm automatically uses the short-lived token for this authenticated session.
-      - name: Publish
-        run: npm publish --access public
+            # OIDC: this step acquires a short-lived npm token via GitHub's OIDC endpoint.
+            # The id-token: write permission above enables this automatically.
+            # No NPM_TOKEN secret is needed — trusted publishing handles auth.
+            - uses: actions/setup-node@v5
+              with:
+                  node-version: "24"
+                  registry-url: "https://registry.npmjs.org/"
+
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: latest
+
+            - run: npm ci
+
+            - name: Build
+              run: npm run build
+
+            - name: Test
+              run: npm test
+
+            - name: Version bump
+              if: ${{ github.event.inputs.bump != '' }}
+              env:
+                  BUMP_TYPE: ${{ github.event.inputs.bump }}
+              run: |
+                  git config user.name "github-actions[bot]"
+                  git config user.email "github-actions[bot]@users.noreply.github.com"
+                  npm version "$BUMP_TYPE" -m "chore(release): v%s"
+                  git push --follow-tags origin HEAD:master
+
+            # OIDC: NODE_AUTH_TOKEN is not set. setup-node handles authentication via OIDC
+            # and npm automatically uses the short-lived token for this authenticated session.
+            - name: Publish
+              run: npm publish --access public
