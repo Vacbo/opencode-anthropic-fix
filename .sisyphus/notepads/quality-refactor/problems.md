@@ -1,3 +1,5 @@
-# Problems — Quality Refactor
+# Quality Refactor Problems
 
-(No unresolved blockers yet)
+## Unresolved Blockers
+
+## Technical Debt

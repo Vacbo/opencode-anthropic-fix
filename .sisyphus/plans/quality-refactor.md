@@ -1,24 +1,23 @@
-# Quality Sweep & Refactor — opencode-anthropic-fix
+# Quality Refactor Plan — opencode-anthropic-fix
 
 ## TL;DR
 
-> **Quick Summary**: Complete quality overhaul of the opencode-anthropic-fix plugin — fix debug output leaking, eliminate silent error swallowing, decompose the 890-line index.ts, harden proxy lifecycle, fix regex bugs, clean up unbounded state growth, verify system prompt against CC source, and add tests for everything changed.
+> **Quick Summary**: Stabilize the current baseline, then perform a surgical maintainability refactor of the repo’s highest-risk hotspot files without changing public behavior.
 >
 > **Deliverables**:
 >
-> - Debug output properly gated behind `config.debug` across all modules including subprocess
-> - All silent `catch(() => {})` replaced with logged errors
-> - `index.ts` decomposed into focused modules (~300 lines each)
-> - Proxy lifecycle hardened with timeouts, signal handling, cleanup
-> - Sanitization regex bugs fixed (word boundaries)
-> - Unbounded state growth capped (fileAccountMap, pendingSlashOAuth, statsDeltas)
-> - CC system prompt structure verified against source
-> - Debug dump to /tmp removed
-> - Tests covering all changed behavior
+> - Baseline diagnostics, test, build, and lint state recorded
+> - Pre-existing type/test failures documented and reduced where they block safe refactoring
+> - `src/cli.ts` decomposed into focused command/support modules
+> - `src/index.ts` orchestration path flattened via helper extraction
+> - `src/accounts.ts` persistence/reconciliation responsibilities separated
+> - `src/commands/router.ts` reduced to routing plus thin command coordination
+> - Boundary typing improved where `any`/`Record<string, any>` are avoidable
+> - Tests added or expanded for newly extracted or behavior-critical modules
 >
 > **Estimated Effort**: Large
-> **Parallel Execution**: YES — 4 waves
-> **Critical Path**: Task 1 (baseline) → Task 2-5 (debug/error fixes) → Task 6-8 (decomposition) → Task 9-14 (hardening/regex/state) → Task 15 (CC verification) → Task 16 (tests) → Final verification
+> **Parallel Execution**: YES — 4 implementation waves plus final verification wave
+> **Critical Path**: Baseline stabilization → CLI decomposition → index orchestration extraction → account manager decomposition → router thinning → verification
 
 ---
 
@@ -26,39 +25,32 @@
 
 ### Original Request
 
-Fix debug output leaking when `debug: false`. Do a complete quality check and code review. Refactor the code for proper behavior. Include unfixed gaps from the prior session. Verify system prompt against Claude Code's actual source.
+Convert the project-wide review into a refactor plan with exceptional quality.
 
 ### Interview Summary
 
 **Key Discussions**:
 
-- **Scope**: Full aggressive sweep — fix everything, defer nothing
-- **Decompose index.ts**: YES — extract helpers into separate modules
-- **Test strategy**: Tests-after (vitest exists, preserve existing tests)
-- **Prior session gaps**: Include documented-but-unimplemented fixes
-- **CC system prompt**: Extract from CC source and verify plugin's accuracy
-- **User on Metis conservatism**: "Too conservative. This is a major revamp."
+- User allowed full-project scope if needed.
+- User wants a plan now, not implementation.
+- The safest interpretation is a surgical hotspot-first refactor, not a repo-wide rewrite.
 
-### Research Findings
+**Research Findings**:
 
-- **Debug leak root cause**: `bun-fetch.ts` (6 ungated console.error) and `bun-proxy.ts` (5 ungated console.error) — these files were added recently without threading the debug flag
-- **bun-proxy.ts constraint**: Runs as separate Bun subprocess with zero access to plugin config — needs env var mechanism
-- **Silent error swallowing**: 6 confirmed QS-ERR-01 violations across accounts.ts, token-refresh.ts, index.ts, body.ts, metadata.ts
-- **CC system prompt**: Full prompt is embedded in CC's compiled binary, not in open-source repo. Binary analysis already performed in `.omc/research/cch-source-analysis.md`
-- **CC tool prefix**: CC uses `mcp__<server>__<tool>` (double underscore), plugin uses `mcp_` (single) — needs investigation
-- **cache_control stripping**: Intentional design choice (documented in normalize.ts:75-79) — preserve, don't "fix"
-- **Prior session comparison doc** (`.omc/research/cc-vs-plugin-comparison.md`): All headers, betas, billing format match CC 2.1.98 ✅
+- The repo is disciplined overall, with a healthy modular runtime structure.
+- The main maintainability pain is concentrated in a few oversized files rather than everywhere.
+- Strong existing patterns should be preserved, especially in request/response/header/system-prompt modules.
+- Baseline LSP diagnostics already show pre-existing test/type issues, so stabilization must come first.
 
 ### Metis Review
 
-**Identified Gaps** (addressed — expanded beyond Metis's conservative scope):
+**Identified Gaps** (addressed in this plan):
 
-- Decomposition ordering: Do bug fixes first in current structure, THEN decompose (pure structural move)
-- bun-proxy.ts debug: Needs env var mechanism, not just `debugLog()` wrapper
-- cache_control stripping: Confirmed intentional — NOT a bug
-- `cc_entrypoint` default: CC uses `"unknown"`, plugin uses `"cli"` — minor discrepancy to fix
-- `cc_workload` field: CC includes AsyncLocalStorage workload tracking — plugin omits (acceptable)
-- Tool prefix `mcp_` vs `mcp__`: Needs verification during execution
+- Added strict no-breaking-public-API and no-feature-work guardrails.
+- Added explicit out-of-scope boundaries to prevent “fix everything” sprawl.
+- Added acceptance criteria for backward compatibility, performance neutrality, and security-sensitive touched paths.
+- Added explicit treatment of pre-existing failures as baseline conditions that must be documented before refactoring.
+- Added sequencing gates so structural refactors happen only after the baseline is stable enough.
 
 ---
 
@@ -66,94 +58,75 @@ Fix debug output leaking when `debug: false`. Do a complete quality check and co
 
 ### Core Objective
 
-Transform the plugin from "shipped fast with debug residue" to production-quality code with proper logging, error handling, architecture, and verified CC mimicry.
-
-### Priority Ordering (CRITICAL — follow this sequence)
-
-**Phase A — Fix broken behavior first:**
-
-- Debug output leaking when it shouldn't (Tasks 2-4)
-- Silent error swallowing hiding real problems (Task 5)
-- Proxy not shutting down properly — validate and fix (Task 12, expanded)
-- Debug dump writing to /tmp on every request (Task 4)
-
-**Phase B — Code quality refactor after behavior is correct:**
-
-- Decompose index.ts into focused modules (Tasks 6-8)
-- Fix regex bugs, billing edge cases (Tasks 9-10)
-- Harden proxy lifecycle with timeout (Task 11)
-- Cap unbounded state growth (Task 13)
-- Verify tool prefix and CC system prompt alignment (Tasks 14-15)
-- Add tests (Task 16)
-
-The wave structure reflects this: Wave 1 = behavior fixes, Wave 2+ = quality.
+Improve maintainability and refactorability of the repository by stabilizing existing issues and decomposing the largest, most coupled files while preserving runtime behavior and existing external interfaces.
 
 ### Concrete Deliverables
 
-- All console output gated behind debug flag (config or env var)
-- 6 silent error catches replaced with proper logging
-- `index.ts` split into 3-4 focused modules
-- Proxy subprocess gets debug flag via env var
-- Debug request dump to /tmp removed or gated
-- Sanitization regex hardened with word boundaries
-- Unbounded Maps/Sets capped with cleanup
-- CC system prompt block structure verified against source analysis
-- Tool prefix convention verified against CC behavior
-- `cc_entrypoint` default corrected to match CC
-- Tests for all changed behavior
+- Recorded baseline for tests, type diagnostics, lint, and build
+- Hotspot refactor of `src/cli.ts`
+- Hotspot refactor of `src/index.ts`
+- Hotspot refactor of `src/accounts.ts`
+- Router/business-logic split in `src/commands/router.ts`
+- Reduced avoidable boundary type escapes
+- Expanded tests around changed behavior and extracted modules
 
 ### Definition of Done
 
-- [ ] `npx vitest run` — all tests pass (baseline count + new tests)
-- [ ] `npx tsc --noEmit` — same or fewer type errors than baseline
-- [ ] `npm run build` — builds successfully, produces 3 dist artifacts
-- [ ] No `console.error`/`console.log` in src/ that isn't gated by debug check (except CLI user output and IPC)
-- [ ] No `catch(() => {})` or `catch { }` without at least a debugLog call
-- [ ] `index.ts` significantly reduced from 890 lines (guideline: under 500, but quality over LOC — don't sacrifice readability for a number)
-- [ ] All `/tmp/opencode-*` debug dumps removed or gated
-- [ ] Proxy subprocess is killed on parent exit (verified via signal tests)
+- [ ] `npm test` exits successfully or shows no regressions beyond explicitly documented pre-existing failures
+- [ ] `npx tsc --noEmit` shows the same or fewer errors than the captured baseline
+- [ ] `npm run lint` shows the same or fewer issues than baseline, with zero new warnings/errors in changed files
+- [ ] `npm run build` exits 0 and expected dist artifacts exist
+- [ ] No public CLI command signatures or documented plugin behavior are unintentionally changed
+- [ ] Changed modules have direct tests or expanded regression coverage
 
 ### Must Have
 
-- Debug output gated across ALL modules
-- Silent error swallowing eliminated
-- index.ts decomposed
-- Proxy lifecycle hardened with timeout
-- CC system prompt structure verified
+- Baseline-first execution
+- Hotspot-first refactoring order
+- No public API/CLI breakage
+- No new features
+- Manual QA on actual CLI/plugin-facing behavior touched by the refactor
 
 ### Must NOT Have (Guardrails)
 
-- Do NOT change function signatures during decomposition — pure move only
-- Do NOT introduce a `PluginContext` class or state management redesign
-- Do NOT change the closure-based state pattern — extract functions, not state ownership
-- Do NOT modify refresh-lock.ts error handling — its catches are correctly structured
-- Do NOT "fix" cache_control stripping — it's intentional (normalize.ts:75-79)
-- Do NOT change the hardcoded proxy port without migration path
-- Do NOT add speculative abstractions — solve known problems only
-- Do NOT backfill tests for existing untested code — test only changed behavior
+- Do NOT do a blind whole-project rewrite
+- Do NOT redesign account rotation, OAuth semantics, or plugin architecture unless strictly required to preserve current behavior during extraction
+- Do NOT change exported command names, plugin hooks, or config file schema
+- Do NOT bundle unrelated cleanup into the hotspot tasks
+- Do NOT “fix” every historic lint/type issue across untouched files
+- Do NOT replace working module boundaries in `headers/`, `request/`, `response/`, or `system-prompt/` with a new architecture
+- Do NOT add features, UX improvements, or new configuration options
+
+### Out of Scope
+
+- New product behavior
+- Public API redesign
+- Config schema migration
+- Switching test frameworks or build tooling
+- Reworking core algorithms such as account selection strategy unless needed for behavior-preserving extraction
 
 ---
 
 ## Verification Strategy
 
-> **ZERO HUMAN INTERVENTION** — ALL verification is agent-executed. No exceptions.
+> **ZERO HUMAN INTERVENTION** — verification must be agent-executed and evidence-backed.
 
 ### Test Decision
 
-- **Infrastructure exists**: YES (vitest, 15 test files, 5000+ lines)
-- **Automated tests**: Tests-after
-- **Framework**: vitest
-- **Baseline**: Capture `npx vitest run` output BEFORE any changes
+- **Infrastructure exists**: YES (`vitest`, TypeScript, ESLint, build script)
+- **Automated tests**: Tests-after, with baseline capture first
+- **Framework**: Vitest + TypeScript diagnostics + ESLint
+- **Baseline policy**: Capture and document pre-existing failures before changes; no false claims of “all green” if baseline is already failing
 
 ### QA Policy
 
-Every task MUST include agent-executed QA scenarios.
+Every task must include direct QA scenarios.
 Evidence saved to `.sisyphus/evidence/task-{N}-{scenario-slug}.{ext}`.
 
-- **Module changes**: Use Bash — `npx vitest run` + `npx tsc --noEmit`
-- **Debug gating**: Use Bash — grep for ungated console calls, run with debug env vars
-- **Proxy lifecycle**: Use Bash (tmux) — spawn proxy, verify output, kill, verify cleanup
-- **Build verification**: Use Bash — `npm run build` + check dist/ artifacts
+- **CLI changes**: Run actual CLI commands and capture output
+- **Plugin/runtime changes**: Run targeted tests and build, plus inspect behavior-driving outputs
+- **Type-safety changes**: Run `npx tsc --noEmit` and compare against baseline
+- **Lint changes**: Run `npm run lint` or file-scoped lint if needed
 
 ---
 
@@ -162,1193 +135,1087 @@ Evidence saved to `.sisyphus/evidence/task-{N}-{scenario-slug}.{ext}`.
 ### Parallel Execution Waves
 
 ```
-Wave 1a (Foundation — baseline):
-└── Task 1: Capture test baseline                           [quick]
+Wave 1 (Baseline stabilization and safety gates):
+├── Task 1: Capture baseline diagnostics/test/build/lint state           [quick]
+├── Task 2: Classify and document pre-existing failures                  [unspecified-high]
+├── Task 3: Fix or isolate refactor-blocking test/type issues            [deep]
+└── Task 4: Add/expand safety tests around hotspot behavior              [unspecified-high]
 
-Wave 1b (Behavior fixes — after baseline):
-├── Task 2: Gate debug output in bun-fetch.ts               [quick]  ──┐
-├── Task 4: Remove/gate debug dump to /tmp                  [quick]  ──┘ SERIAL (same file: bun-fetch.ts)
-├── Task 3: Gate debug output in bun-proxy.ts (env var)     [quick]    (parallel with 2+4)
-└── Task 5: Fix silent error swallowing (6 violations)      [unspecified-high] (parallel with 2+4, 3)
+Wave 2 (CLI-focused decomposition):
+├── Task 5: Extract CLI formatting/rendering utilities                   [quick]
+├── Task 6: Extract CLI auth/account command handlers                    [deep]
+├── Task 7: Extract CLI usage/config/manage command handlers             [deep]
+└── Task 8: Thin CLI dispatch and replace avoidable account any-types    [unspecified-high]
 
-NOTE: Tasks 2 and 4 MUST run serially (both edit bun-fetch.ts).
-      Tasks 3 and 5 can run in parallel with each other and with 2→4.
+Wave 3 (Runtime hotspot decomposition):
+├── Task 9: Extract index.ts request-attempt/orchestration helpers       [deep]
+├── Task 10: Extract account persistence/reconciliation helpers          [deep]
+├── Task 11: Reduce router.ts business logic into focused helper module  [unspecified-high]
+└── Task 12: Remove avoidable boundary type escapes in touched paths     [quick]
 
-Wave 2 (Decomposition — pure structural moves):
-├── Task 6: Extract refresh helpers from index.ts           [deep]   ──┐
-├── Task 7: Extract plugin helpers from index.ts            [deep]   ──┘ SERIAL (same file: index.ts)
-└── Task 8: Clean up residual index.ts                      [quick]  (after 6→7)
-
-NOTE: Tasks 6 and 7 MUST run serially (both edit index.ts).
-      Task 6 first, then Task 7 operates on the already-modified index.ts.
-
-Wave 3 (Hardening + correctness — all independent):
-├── Task 9: Fix sanitization regex word boundaries          [quick]
-├── Task 10: Fix cc_entrypoint default + billing edge cases [quick]
-├── Task 11: Add upstream timeout to bun-proxy fetch        [quick]
-├── Task 12: Validate & fix proxy shutdown lifecycle        [deep]
-├── Task 13: Cap unbounded state growth                     [unspecified-high]
-├── Task 14: Verify tool prefix convention against CC       [quick]
-└── Task 17: Tighten ESLint + enforce zero warnings/errors  [unspecified-high]
-
-Wave 4 (Verification + tests):
-├── Task 15: Verify system prompt against CC source         [deep]
-└── Task 16: Add tests for all changed behavior             [unspecified-high]
+Wave 4 (Tightening and regression net):
+├── Task 13: Add/expand tests for extracted modules                      [unspecified-high]
+├── Task 14: Run hotspot-focused cleanup for duplication/dead seams      [quick]
+└── Task 15: Documentation touch-ups for any externally visible nuances  [writing]
 
 Wave FINAL (After ALL tasks — 4 parallel reviews, then user okay):
-├── Task F1: Plan compliance audit                          [oracle]
-├── Task F2: Code quality review                            [unspecified-high]
-├── Task F3: Real manual QA                                 [unspecified-high]
-└── Task F4: Scope fidelity check                           [deep]
+├── Task F1: Plan compliance audit                                       [oracle]
+├── Task F2: Code quality review                                         [unspecified-high]
+├── Task F3: Real manual QA                                              [unspecified-high]
+└── Task F4: Scope fidelity check                                        [deep]
 -> Present results -> Get explicit user okay
 
-Critical Path: T1 → T2-5 → T6-8 → T9-14,17 → T15-16 → F1-F4 → user okay
-Parallel Speedup: ~60% faster than sequential
-Max Concurrent: 5 (Wave 1) or 7 (Wave 3)
+Critical Path: T1 -> T2 -> T3 -> T4 -> T6-8 -> T9-12 -> T13 -> F1-F4 -> user okay
+Parallel Speedup: ~55% faster than fully sequential execution
+Max Concurrent: 4
 ```
 
 ### Dependency Matrix
 
-| Task  | Depends On | Blocks | Serial Constraint          |
-| ----- | ---------- | ------ | -------------------------- |
-| 1     | —          | 2-17   | —                          |
-| 2     | 1          | 4      | bun-fetch.ts → T4 after T2 |
-| 3     | 1          | 6      | — (parallel with 2,5)      |
-| 4     | 2          | 6      | bun-fetch.ts (after T2)    |
-| 5     | 1          | 6      | — (parallel with 2,3)      |
-| 6     | 3,4,5      | 7      | index.ts → T7 after T6     |
-| 7     | 6          | 8      | index.ts (after T6)        |
-| 8     | 7          | 9-17   | —                          |
-| 9     | 8          | 16     | —                          |
-| 10    | 8          | 16     | —                          |
-| 11    | 8          | 16     | —                          |
-| 12    | 8          | 16     | —                          |
-| 13    | 8          | 16     | —                          |
-| 14    | 8          | 16     | —                          |
-| 15    | 8          | 16     | —                          |
-| 16    | 9-15,17    | F1-F4  | —                          |
-| 17    | 8          | 16     | —                          |
-| F1-F4 | 16         | —      | —                          |
+| Task | Depends On | Blocks | Notes |
+|------|------------|--------|-------|
+| 1 | — | 2-15 | Baseline capture first |
+| 2 | 1 | 3-4 | Documents failure policy |
+| 3 | 2 | 5-15 | Must stabilize blockers before structural refactor |
+| 4 | 2 | 5-15 | Safety tests can run alongside T3 where independent |
+| 5 | 3,4 | 6-8 | CLI utility extraction |
+| 6 | 5 | 8 | CLI auth/account split |
+| 7 | 5 | 8 | CLI usage/config/manage split |
+| 8 | 6,7 | 9-15 | Thin CLI entry and type cleanup |
+| 9 | 3,4,8 | 13-15 | index.ts extraction |
+| 10 | 3,4,8 | 13-15 | accounts.ts decomposition |
+| 11 | 3,4,8 | 13-15 | router decomposition |
+| 12 | 9-11 | 13-15 | Boundary typing cleanup in touched paths only |
+| 13 | 9-12 | 14-15, F1-F4 | Regression net |
+| 14 | 9-13 | F1-F4 | Duplication/dead seams after extraction |
+| 15 | 13-14 | F1-F4 | Docs only if needed |
+| F1-F4 | 13-15 | — | Final evidence-backed review |
 
 ### Agent Dispatch Summary
 
-- **Wave 1**: **5 tasks** — T1 `quick`, T2 `quick`, T3 `quick`, T4 `quick`, T5 `unspecified-high`
-- **Wave 2**: **3 tasks** — T6 `deep`, T7 `deep`, T8 `quick`
-- **Wave 3**: **7 tasks** — T9-11,14 `quick`, T12 `deep`, T13 `unspecified-high`, T17 `unspecified-high`
-- **Wave 4**: **2 tasks** — T15 `deep`, T16 `unspecified-high`
-- **FINAL**: **4 tasks** — F1 `oracle`, F2 `unspecified-high`, F3 `unspecified-high`, F4 `deep`
+- **Wave 1**: 4 tasks — `quick`, `unspecified-high`, `deep`, `unspecified-high`
+- **Wave 2**: 4 tasks — `quick`, `deep`, `deep`, `unspecified-high`
+- **Wave 3**: 4 tasks — `deep`, `deep`, `unspecified-high`, `quick`
+- **Wave 4**: 3 tasks — `unspecified-high`, `quick`, `writing`
+- **FINAL**: 4 tasks — `oracle`, `unspecified-high`, `unspecified-high`, `deep`
 
 ---
 
 ## TODOs
 
-- [x] 1. Capture Test Baseline
+- [x] 1. Capture baseline diagnostics, tests, lint, and build state
 
   **What to do**:
-  - Run `npx vitest run` and record exact pass/fail counts
-  - Run `npx tsc --noEmit` and record current type errors (the LSP already shows ~150 in index.test.ts — these are pre-existing)
-  - Run `npm run build` and verify 3 dist artifacts exist
-  - Save all output as baseline evidence
+  - Run `npm test`
+  - Run `npx tsc --noEmit`
+  - Run `npm run lint`
+  - Run `npm run build`
+  - Save exact pass/fail output as baseline evidence
 
   **Must NOT do**:
-  - Do NOT fix any pre-existing test failures or type errors — just record them
+  - Do NOT start refactoring during baseline capture
+  - Do NOT normalize away pre-existing failures
 
   **Recommended Agent Profile**:
   - **Category**: `quick`
+    - Reason: pure verification and evidence capture
   - **Skills**: []
+  - **Skills Evaluated but Omitted**:
+    - `testing`: not needed for raw baseline capture
 
   **Parallelization**:
-  - **Can Run In Parallel**: NO — must complete first
-  - **Blocks**: Tasks 2-16
+  - **Can Run In Parallel**: NO
+  - **Parallel Group**: Wave 1
+  - **Blocks**: Tasks 2-15
   - **Blocked By**: None
 
   **References**:
-  - `package.json` — test/build scripts
-  - `index.test.ts` — main test file (has pre-existing type errors, that's expected)
-  - `src/__tests__/` — additional test files
+  - `package.json` — canonical build/test/lint commands
+  - `tsconfig.json` — current type-checking baseline
+  - `vitest.config.ts` — test file coverage pattern
 
   **Acceptance Criteria**:
-  - [ ] Baseline test count recorded in evidence file
-  - [ ] Build output recorded
+  - [ ] Baseline outputs saved
+  - [ ] Pre-existing failures clearly identified
 
   **QA Scenarios**:
 
   ```
-  Scenario: Record test baseline
+  Scenario: Capture baseline command outputs
     Tool: Bash
+    Preconditions: Clean working tree
     Steps:
-      1. Run `npx vitest run 2>&1` — capture full output
-      2. Run `npx tsc --noEmit 2>&1 | tail -5` — capture error summary
-      3. Run `npm run build 2>&1` — capture build result
-      4. Run `ls -la dist/` — verify artifacts
-    Expected Result: All outputs saved, baseline numbers recorded
+      1. Run `npm test 2>&1`
+      2. Run `npx tsc --noEmit 2>&1`
+      3. Run `npm run lint 2>&1`
+      4. Run `npm run build 2>&1`
+    Expected Result: Full outputs captured with exit codes and failure counts
+    Failure Indicators: Missing command output, truncated evidence, undocumented failing command
     Evidence: .sisyphus/evidence/task-1-baseline.txt
+
+  Scenario: Verify build artifacts when build succeeds
+    Tool: Bash
+    Preconditions: `npm run build` exits 0
+    Steps:
+      1. List `dist/`
+      2. Record produced artifacts
+    Expected Result: Dist artifacts documented
+    Failure Indicators: Build succeeds but no artifacts or unexpected output shape
+    Evidence: .sisyphus/evidence/task-1-dist.txt
   ```
 
-  **Commit**: NO (evidence only)
+  **Commit**: NO
 
-- [x] 2. Gate Debug Output in bun-fetch.ts
+- [x] 2. Classify and document pre-existing failures
 
   **What to do**:
-  - Accept `debug` boolean parameter in `ensureBunProxy()` and `fetchViaBun()` — thread it from the plugin's `config.debug`
-  - Gate ALL 6 `console.error` calls (lines 159, 175, 176, 202, 206, 216) behind the debug flag
-  - Exception: line 202 WARNING about falling back to Node.js fetch — keep this one as it's a user-visible degradation warning, but downgrade to single line
-  - Pass `debug` flag to `spawnProxy()` calls so it can set `OPENCODE_ANTHROPIC_DEBUG` env var on the child process (needed for Task 3)
+  - Categorize baseline failures into refactor-blocking vs non-blocking
+  - Trace each failure to file/module owner
+  - Define whether each failure must be fixed before hotspot refactoring
 
   **Must NOT do**:
-  - Do NOT make debug a module-level variable — pass it as parameter
-  - Do NOT change the proxy spawn logic beyond adding the env var
-
-  **Recommended Agent Profile**:
-  - **Category**: `quick`
-  - **Skills**: []
-
-  **Parallelization**:
-  - **Can Run In Parallel**: YES (with Tasks 3, 5 — but NOT Task 4)
-  - **Parallel Group**: Wave 1b (parallel with 3 and 5)
-  - **Blocks**: Task 4 (same file: bun-fetch.ts — Task 4 runs AFTER Task 2)
-  - **Blocked By**: Task 1
-
-  **References**:
-  - `src/bun-fetch.ts:148-260` — `ensureBunProxy()` and `fetchViaBun()` are the public API; callers in `src/index.ts` have access to `config.debug`
-  - `src/index.ts:134-137` — `debugLog()` pattern to follow (stderr, `[opencode-anthropic-auth]` prefix)
-  - `src/bun-fetch.ts:100-103` — `spawn()` call where env var should be set via `env: { ...process.env, OPENCODE_ANTHROPIC_DEBUG: debug ? "1" : "0" }`
-
-  **Acceptance Criteria**:
-  - [ ] `npx vitest run` passes (same count as baseline)
-  - [ ] `grep -n 'console\.\(log\|error\)' src/bun-fetch.ts` shows zero ungated calls (except the degradation warning)
-
-  **QA Scenarios**:
-
-  ```
-  Scenario: No debug output when debug=false
-    Tool: Bash
-    Steps:
-      1. grep -c 'console\.\(log\|error\)' src/bun-fetch.ts
-      2. Verify all remaining console calls are inside `if (debug)` blocks or are the degradation warning
-    Expected Result: 0-1 ungated console calls (only degradation warning)
-    Evidence: .sisyphus/evidence/task-2-grep-output.txt
-
-  Scenario: Debug output when debug=true
-    Tool: Bash
-    Steps:
-      1. Read the modified bun-fetch.ts
-      2. Verify debug parameter is threaded through ensureBunProxy → spawnProxy → env var
-      3. Verify fetchViaBun accepts and uses debug parameter
-    Expected Result: Debug flag properly threaded, all logging gated
-    Evidence: .sisyphus/evidence/task-2-code-review.txt
-  ```
-
-  **Commit**: YES
-  - Message: `fix: gate debug output in bun-fetch.ts behind config.debug`
-  - Files: `src/bun-fetch.ts`, `src/index.ts` (caller update)
-  - Pre-commit: `npx vitest run`
-
-- [x] 3. Gate Debug Output in bun-proxy.ts via Environment Variable
-
-  **What to do**:
-  - Read `OPENCODE_ANTHROPIC_DEBUG` env var at startup (set by parent in Task 2)
-  - Gate the request logging block (lines 26-45 — the `=== /v1/messages REQUEST ===` dump) behind `process.env.OPENCODE_ANTHROPIC_DEBUG === "1"`
-  - Keep `console.log(\`BUN_PROXY_PORT=${server.port}\`)` on line 71 UNGATED — it's IPC, not debug
-  - Keep error response logging (the catch block on line 64-67) UNGATED — actual errors should always be visible
-
-  **Must NOT do**:
-  - Do NOT import any modules from the main plugin — bun-proxy.ts is standalone
-  - Do NOT change the proxy's HTTP behavior
-
-  **Recommended Agent Profile**:
-  - **Category**: `quick`
-  - **Skills**: []
-
-  **Parallelization**:
-  - **Can Run In Parallel**: YES
-  - **Parallel Group**: Wave 1 (with Tasks 2, 4, 5)
-  - **Blocks**: Tasks 6, 7
-  - **Blocked By**: Task 1
-
-  **References**:
-  - `src/bun-proxy.ts:26-45` — the request logging block to gate
-  - `src/bun-proxy.ts:71` — IPC output, must remain ungated
-  - `src/bun-fetch.ts:100-103` — where parent passes env var to child (modified in Task 2)
-
-  **Acceptance Criteria**:
-  - [ ] `npm run build` succeeds (bun-proxy.mjs built)
-  - [ ] Request logging block wrapped in `if (process.env.OPENCODE_ANTHROPIC_DEBUG === "1")`
-
-  **QA Scenarios**:
-
-  ```
-  Scenario: Request logging gated by env var
-    Tool: Bash
-    Steps:
-      1. Read src/bun-proxy.ts
-      2. Verify lines 26-45 (request dump) are inside env var check
-      3. Verify line 71 (BUN_PROXY_PORT IPC) is NOT gated
-      4. Run `npm run build` — verify bun-proxy.mjs is produced
-    Expected Result: Only IPC line remains ungated
-    Evidence: .sisyphus/evidence/task-3-proxy-review.txt
-  ```
-
-  **Commit**: YES
-  - Message: `fix: gate debug output in bun-proxy.ts via DEBUG env var`
-  - Files: `src/bun-proxy.ts`
-  - Pre-commit: `npm run build`
-
-- [x] 4. Remove Ungated Debug Dump to /tmp
-
-  **What to do**:
-  - Remove or gate the request/header dump block in `bun-fetch.ts:208-218` that writes to `/tmp/opencode-last-request.json` and `/tmp/opencode-last-headers.json` on EVERY `/v1/messages` request
-  - This is debug instrumentation that was left in from the development session — it writes full request bodies to disk ungated
-  - Gate behind `debug` parameter: only dump when debug is true
-  - Security concern: this dumps authorization headers (redacted) and full request bodies to world-readable /tmp
-
-  **Must NOT do**:
-  - Do NOT remove the entire fetchViaBun function — only the dump block
-
-  **Recommended Agent Profile**:
-  - **Category**: `quick`
-  - **Skills**: []
-
-  **Parallelization**:
-  - **Can Run In Parallel**: NO — same file as Task 2 (bun-fetch.ts)
-  - **Parallel Group**: Wave 1b (runs AFTER Task 2 completes)
-  - **Blocks**: Task 6
-  - **Blocked By**: Task 2 (same file serialization)
-
-  **References**:
-  - `src/bun-fetch.ts:208-218` — the dump block: `writeFileSync("/tmp/opencode-last-request.json", ...)` and `writeFileSync("/tmp/opencode-last-headers.json", ...)`
-  - QS-SEC-08: "Logs MUST NOT contain secrets, credentials, or PII"
-
-  **Acceptance Criteria**:
-  - [ ] No writes to `/tmp/opencode-*` unless `debug` is true
-  - [ ] `grep -n '/tmp/opencode' src/bun-fetch.ts` shows calls inside debug guard
-
-  **QA Scenarios**:
-
-  ```
-  Scenario: No /tmp dump when debug=false
-    Tool: Bash
-    Steps:
-      1. Read src/bun-fetch.ts
-      2. Verify writeFileSync calls to /tmp are inside `if (debug)` block
-      3. Verify no other ungated file writes exist
-    Expected Result: All /tmp writes gated behind debug flag
-    Evidence: .sisyphus/evidence/task-4-tmp-dump.txt
-  ```
-
-  **Commit**: YES (grouped with Task 2)
-  - Message: `fix: gate /tmp debug dump behind config.debug`
-  - Files: `src/bun-fetch.ts`
-  - Pre-commit: `npx vitest run`
-
-- [x] 5. Fix Silent Error Swallowing (6 Violations)
-
-  **What to do**:
-  - Replace every `catch(() => {})` and `catch { }` with proper error logging. For each:
-  1. **`src/accounts.ts:477`** — `this.saveToDisk().catch(() => {})` → `.catch((err) => { if (this.debug) console.error("[opencode-anthropic-auth] saveToDisk failed:", err.message); })` — Accept `debug` in AccountManager constructor or via a setter
-  2. **`src/token-refresh.ts:236`** — `await onTokensUpdated().catch(() => undefined)` → `await onTokensUpdated().catch((err) => { debugLog?.("onTokensUpdated failed:", err.message); })` — Thread debugLog as parameter
-  3. **`src/token-refresh.ts:249`** — `.catch(() => undefined)` on auth.set → same pattern, log the error
-  4. **`src/index.ts:151`** — version fetch `.catch(() => {})` → `.catch((err) => debugLog("CC version fetch failed:", err.message))`
-  5. **`src/request/body.ts:130-133`** — JSON parse `catch { return body }` → `catch (err) { debugLog?.("body parse failed:", (err as Error).message); return body; }` — Accept optional debugLog parameter
-  6. **`src/request/metadata.ts:46`** — file ID extraction `catch { return [] }` → `catch (err) { debugLog?.("extractFileIds failed:", (err as Error).message); return []; }`
-  - For `index.ts:127-131` (toast catch) — narrow to specific error: `catch (err) { if (!(err instanceof TypeError)) debugLog("toast failed:", err); }`
-
-  **Must NOT do**:
-  - Do NOT add `throw` to any of these — they were caught for a reason (prevent crash propagation). Just add logging.
-  - Do NOT change error handling in `refresh-lock.ts` — its catches are correctly structured (rethrow non-EEXIST, non-ENOENT)
-  - Do NOT change the return values of any catch blocks
+  - Do NOT assume every baseline failure is a bug to “fix” immediately
 
   **Recommended Agent Profile**:
   - **Category**: `unspecified-high`
+    - Reason: requires cross-file reasoning over baseline failures
   - **Skills**: [`quality-standard`]
+    - `quality-standard`: classify blocking quality issues precisely
+  - **Skills Evaluated but Omitted**:
+    - `testing`: useful later, but this task is triage first
 
   **Parallelization**:
-  - **Can Run In Parallel**: YES
-  - **Parallel Group**: Wave 1 (with Tasks 2, 3, 4)
-  - **Blocks**: Tasks 6, 7
+  - **Can Run In Parallel**: NO
+  - **Parallel Group**: Wave 1
+  - **Blocks**: Tasks 3-15
   - **Blocked By**: Task 1
 
   **References**:
-  - `src/index.ts:134-137` — `debugLog()` function pattern: `function debugLog(...args: unknown[]) { if (!config.debug) return; console.error("[opencode-anthropic-auth]", ...args); }`
-  - `src/accounts.ts:477` — `requestSaveToDisk()` is called from a debounced path
-  - `src/token-refresh.ts:236,249` — token refresh callback chain
-  - `src/request/body.ts:130-133` — JSON parse of request body
-  - `src/request/metadata.ts:46` — file ID extraction from messages
-  - QS-ERR-01: "No silent failures. `catch(e) {}` is forbidden."
+  - `src/backoff.test.ts` — current baseline diagnostics include type mismatch
+  - `src/rotation.test.ts` — current baseline diagnostics include nullable and union issues
+  - `src/circuit-breaker.test.ts` — current baseline diagnostics include discriminated-union misuse
+  - `src/parent-pid-watcher.test.ts` — current baseline diagnostics include unused `@ts-expect-error`
 
   **Acceptance Criteria**:
-  - [ ] `npx vitest run` passes (same count as baseline)
-  - [ ] `grep -rn 'catch.*{.*}' src/ --include='*.ts' | grep -v test | grep -v debugLog | grep -v 'cli\|commands'` — zero empty catches in non-CLI code
+  - [ ] Every baseline failure labeled blocking or non-blocking
+  - [ ] Stabilization order documented
 
   **QA Scenarios**:
 
   ```
-  Scenario: No silent catches in plugin code
+  Scenario: Failure triage document is evidence-backed
     Tool: Bash
+    Preconditions: Baseline evidence exists
     Steps:
-      1. Run: grep -rn 'catch\s*{' src/ --include='*.ts' | grep -v '__tests__' | grep -v 'cli.ts' | grep -v 'commands/' | grep -v debugLog | grep -v console
-      2. Run: grep -rn '\.catch(()' src/ --include='*.ts' | grep -v '__tests__' | grep -v 'cli.ts' | grep -v 'commands/'
-    Expected Result: Zero matches — all catches now have logging
-    Evidence: .sisyphus/evidence/task-5-catch-audit.txt
+      1. Read baseline output
+      2. Map each failure to a source file
+      3. Produce a blocking/non-blocking classification note
+    Expected Result: No baseline failure remains unclassified
+    Failure Indicators: Vague “some tests fail” summary or missing file mapping
+    Evidence: .sisyphus/evidence/task-2-failure-triage.md
 
-  Scenario: Error logging works when debug=true
+  Scenario: Blocking set is minimal and justified
     Tool: Bash
+    Preconditions: Triage complete
     Steps:
-      1. Read each modified file
-      2. Verify each catch block includes debugLog or console.error with error message
-      3. Verify no catch blocks swallow errors silently
-    Expected Result: All 6 violations fixed with proper logging
-    Evidence: .sisyphus/evidence/task-5-code-review.txt
+      1. Review each blocking classification
+      2. Confirm it materially affects safe refactoring of hotspots
+    Expected Result: Only true refactor blockers are marked blocking
+    Failure Indicators: Over-broad blocker list or missing rationale
+    Evidence: .sisyphus/evidence/task-2-blockers.md
   ```
 
-  **Commit**: YES
-  - Message: `fix: replace silent error swallowing with debugLog (6 violations)`
-  - Files: `src/accounts.ts`, `src/token-refresh.ts`, `src/index.ts`, `src/request/body.ts`, `src/request/metadata.ts`
-  - Pre-commit: `npx vitest run`
+  **Commit**: NO
 
-- [x] 6. Extract Refresh Helpers from index.ts
+- [x] 3. Fix or isolate refactor-blocking test/type issues
 
   **What to do**:
-  - Create `src/refresh-helpers.ts` — extract these functions from `index.ts`:
-    - `parseRefreshFailure()` (~15 lines)
-    - `refreshAccountTokenSingleFlight()` (~55 lines)
-    - `refreshIdleAccount()` (~35 lines)
-    - `maybeRefreshIdleAccounts()` (~25 lines)
-  - Move associated state to the new module:
-    - `refreshInFlight` Map
-    - `idleRefreshLastAttempt` Map
-    - `idleRefreshInFlight` Set
-    - `IDLE_REFRESH_*` constants
-  - Export a factory function that accepts the dependencies these helpers need (accountManager, config, debugLog, toast, etc.) and returns the helper functions — preserves the closure pattern without introducing a class
-  - Update `index.ts` to import from `src/refresh-helpers.ts`
+  - Resolve only the baseline failures that would make safe refactoring or verification unreliable
+  - Prefer minimal fixes that preserve existing intended behavior
+  - If a failure should remain, isolate and document it explicitly
 
   **Must NOT do**:
-  - Do NOT change function signatures or behavior — pure structural move
-  - Do NOT introduce a PluginContext class
-  - Do NOT change the closure-based state pattern — the factory function captures state via closure, same as today
-  - Do NOT change any return values or error handling
+  - Do NOT use this as a license for a broad test cleanup
+  - Do NOT delete tests to get green output
 
   **Recommended Agent Profile**:
   - **Category**: `deep`
-  - **Skills**: [`quality-standard`]
+    - Reason: requires careful behavior-preserving fixes across baseline failures
+  - **Skills**: [`quality-standard`, `testing`]
+    - `quality-standard`: preserve correctness and avoid bad quick fixes
+    - `testing`: maintain test discipline while repairing baseline blockers
+  - **Skills Evaluated but Omitted**:
+    - `refactor`: later structural work, not baseline stabilization
 
   **Parallelization**:
-  - **Can Run In Parallel**: NO — same file as Task 7 (index.ts)
-  - **Parallel Group**: Wave 2 (runs FIRST, before Task 7)
-  - **Blocks**: Task 7 (same file serialization)
-  - **Blocked By**: Tasks 3, 4, 5
+  - **Can Run In Parallel**: YES
+  - **Parallel Group**: Wave 1 (with Task 4 if independent)
+  - **Blocks**: Tasks 5-15
+  - **Blocked By**: Task 2
 
   **References**:
-  - `src/index.ts:56-63` — state declarations to move (refreshInFlight, idle refresh state)
-  - `src/index.ts:156-174` — `parseRefreshFailure()` — error classification
-  - `src/index.ts:175-217` — `refreshAccountTokenSingleFlight()` — the main refresh orchestrator
-  - `src/index.ts:219-261` — `refreshIdleAccount()` — background refresh for single account
-  - `src/index.ts:263-290` — `maybeRefreshIdleAccounts()` — idle refresh sweep
-  - `src/token-refresh.ts` — `refreshAccountToken()` is the actual token refresh call that these helpers wrap
+  - `src/backoff.test.ts`
+  - `src/rotation.test.ts`
+  - `src/circuit-breaker.test.ts`
+  - `src/parent-pid-watcher.test.ts`
 
   **Acceptance Criteria**:
-  - [ ] `npx vitest run` passes (exact same count as baseline)
-  - [ ] `src/refresh-helpers.ts` exists with exported factory function
-  - [ ] `src/index.ts` no longer contains the moved functions
-  - [ ] `npx tsc --noEmit 2>&1 | grep -c 'error'` — same or fewer errors than baseline
+  - [ ] Refactor-blocking failures fixed or explicitly isolated
+  - [ ] No new failures introduced
 
   **QA Scenarios**:
 
   ```
-  Scenario: Decomposition preserves behavior
+  Scenario: Blocking failures no longer block safe refactor work
     Tool: Bash
+    Preconditions: Candidate fixes applied
     Steps:
-      1. Run `npx vitest run 2>&1` — capture full output
-      2. Compare test pass count to baseline (Task 1 evidence)
-      3. Run `wc -l src/index.ts` — verify reduced line count
-      4. Run `wc -l src/refresh-helpers.ts` — verify new file exists
-    Expected Result: Same test results, index.ts ~130 lines shorter
-    Evidence: .sisyphus/evidence/task-6-decompose.txt
+      1. Run `npx tsc --noEmit 2>&1`
+      2. Run targeted failing tests with `vitest run <file>`
+      3. Compare output against baseline triage
+    Expected Result: Blocking failures are gone or explicitly quarantined
+    Failure Indicators: New errors in unrelated files or unchanged blockers with no justification
+    Evidence: .sisyphus/evidence/task-3-blocker-fixes.txt
+
+  Scenario: No regression from blocker fixes
+    Tool: Bash
+    Preconditions: Blocking fixes complete
+    Steps:
+      1. Re-run `npm test 2>&1`
+      2. Compare failure count against baseline
+    Expected Result: Same or fewer failures than baseline
+    Failure Indicators: Additional test failures beyond documented baseline
+    Evidence: .sisyphus/evidence/task-3-regression-check.txt
   ```
 
   **Commit**: YES
-  - Message: `refactor: extract refresh helpers from index.ts`
-  - Files: `src/index.ts`, `src/refresh-helpers.ts` (new)
-  - Pre-commit: `npx vitest run`
+  - Message: `fix(testing): stabilize refactor-blocking baseline failures`
+  - Files: targeted baseline failure files only
+  - Pre-commit: `npm test && npx tsc --noEmit`
 
-- [x] 7. Extract Plugin Helpers from index.ts
+- [x] 4. Add or expand safety tests around hotspot behavior
 
   **What to do**:
-  - Create `src/plugin-helpers.ts` — extract these functions from `index.ts`:
-    - `toast()` (~15 lines)
-    - `sendCommandMessage()` (~10 lines)
-    - `runCliCommand()` (~25 lines)
-    - `reloadAccountManagerFromDisk()` (~20 lines)
-    - `persistOpenCodeAuth()` (~15 lines)
-  - Move associated state:
-    - `debouncedToastTimestamps` Map
-  - Same factory pattern as Task 6 — export a factory that captures dependencies via closure
+  - Add targeted characterization tests around CLI dispatch, plugin fetch orchestration, account persistence, and slash-command routing where coverage is currently indirect
+  - Ensure hotspot refactors have regression nets before structural extraction
 
   **Must NOT do**:
-  - Same constraints as Task 6 — pure move, no behavior changes
+  - Do NOT pursue blanket coverage growth across the whole repo
+
+  **Recommended Agent Profile**:
+  - **Category**: `unspecified-high`
+    - Reason: behavior-locking tests across multiple hotspots
+  - **Skills**: [`testing`, `quality-standard`]
+    - `testing`: create characterization/regression tests
+    - `quality-standard`: keep tests behavioral, deterministic, and scoped
+  - **Skills Evaluated but Omitted**:
+    - `writing`: not documentation work
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES
+  - **Parallel Group**: Wave 1 (with Task 3 where file overlap permits)
+  - **Blocks**: Tasks 5-15
+  - **Blocked By**: Task 2
+
+  **References**:
+  - `src/__tests__/index.parallel.test.ts` — regression style for orchestrated plugin behavior
+  - `src/__tests__/fingerprint-regression.test.ts` — example of strong behavior lock-in
+  - `vitest.config.ts` — where new tests must be discoverable
+
+  **Acceptance Criteria**:
+  - [ ] Each hotspot has direct safety coverage before decomposition
+  - [ ] New tests fail if extraction changes behavior
+
+  **QA Scenarios**:
+
+  ```
+  Scenario: Hotspot safety tests are active
+    Tool: Bash
+    Preconditions: New or expanded tests added
+    Steps:
+      1. Run targeted vitest files for cli/index/accounts/router coverage
+      2. Confirm tests are discovered and pass
+    Expected Result: Direct hotspot regression tests execute successfully
+    Failure Indicators: Tests not discovered, flaky, or only assert implementation details
+    Evidence: .sisyphus/evidence/task-4-safety-tests.txt
+
+  Scenario: Characterization tests protect current behavior
+    Tool: Bash
+    Preconditions: Tests written
+    Steps:
+      1. Read test assertions
+      2. Verify they target observable outputs/contracts
+    Expected Result: Tests lock behavior, not internals
+    Failure Indicators: Assertions on private structure or refactor-specific internals
+    Evidence: .sisyphus/evidence/task-4-test-review.txt
+  ```
+
+  **Commit**: YES
+  - Message: `test: add hotspot characterization coverage before refactor`
+  - Files: targeted hotspot test files
+  - Pre-commit: `npm test`
+
+- [x] 5. Extract CLI formatting and rendering utilities from `src/cli.ts`
+
+  **What to do**:
+  - Move ANSI/color helpers, duration/time formatting, padding/render-bar helpers into focused CLI support modules
+  - Leave behavior and command signatures unchanged
+
+  **Must NOT do**:
+  - Do NOT mix command-handler extraction into this step
+
+  **Recommended Agent Profile**:
+  - **Category**: `quick`
+    - Reason: mechanical extraction with low behavior risk
+  - **Skills**: [`quality-standard`]
+    - `quality-standard`: preserve single-responsibility boundaries
+  - **Skills Evaluated but Omitted**:
+    - `testing`: already handled by surrounding tasks
+
+  **Parallelization**:
+  - **Can Run In Parallel**: NO
+  - **Parallel Group**: Wave 2
+  - **Blocks**: Tasks 6-8
+  - **Blocked By**: Tasks 3-4
+
+  **References**:
+  - `src/cli.ts` — current mixed formatting/rendering helpers near file top
+  - `src/commands/router.ts:60-63` — existing `stripAnsi` implementation to avoid duplication
+
+  **Acceptance Criteria**:
+  - [ ] `src/cli.ts` shrinks meaningfully
+  - [ ] Formatting behavior remains unchanged
+
+  **QA Scenarios**:
+
+  ```
+  Scenario: CLI output formatting preserved after extraction
+    Tool: Bash
+    Preconditions: Utility extraction complete
+    Steps:
+      1. Run representative CLI commands (help, status, list)
+      2. Compare output shape to pre-refactor baseline
+    Expected Result: Same visible formatting and content structure
+    Failure Indicators: Broken alignment, lost color gating, changed labels, runtime import errors
+    Evidence: .sisyphus/evidence/task-5-cli-formatting.txt
+
+  Scenario: No duplicate ANSI helper remains
+    Tool: Bash
+    Preconditions: Extraction complete
+    Steps:
+      1. Search for `stripAnsi` implementations across `src/`
+      2. Verify duplicate logic is eliminated or intentionally centralized
+    Expected Result: Single maintained implementation path
+    Failure Indicators: Duplicate helper bodies remain in multiple files
+    Evidence: .sisyphus/evidence/task-5-duplication.txt
+  ```
+
+  **Commit**: YES
+  - Message: `refactor(cli): extract formatting and rendering helpers`
+  - Files: `src/cli.ts` + new CLI support modules
+  - Pre-commit: `npm test && npx tsc --noEmit`
+
+- [x] 6. Extract CLI auth/account command handlers
+
+  **What to do**:
+  - Move auth/account-oriented command logic from `src/cli.ts` into focused modules
+  - Preserve command names, behavior, and side effects
+
+  **Must NOT do**:
+  - Do NOT redesign command semantics
 
   **Recommended Agent Profile**:
   - **Category**: `deep`
-  - **Skills**: [`quality-standard`]
+    - Reason: sizable extraction with behavior-sensitive command logic
+  - **Skills**: [`quality-standard`, `testing`]
+    - `quality-standard`: prevent new god-modules
+    - `testing`: keep command behavior verified during extraction
+  - **Skills Evaluated but Omitted**:
+    - `writing`: not prose work
 
   **Parallelization**:
-  - **Can Run In Parallel**: NO — same file as Task 6 (index.ts)
-  - **Parallel Group**: Wave 2 (runs AFTER Task 6 completes)
+  - **Can Run In Parallel**: NO
+  - **Parallel Group**: Wave 2
   - **Blocks**: Task 8
-  - **Blocked By**: Task 6 (same file serialization)
+  - **Blocked By**: Task 5
 
   **References**:
-  - `src/index.ts:71-131` — toast, sendCommandMessage, runCliCommand (line numbers as of BEFORE Task 6 runs — executor must re-locate after Task 6 extracts refresh helpers)
-  - `src/index.ts:78-96` — reloadAccountManagerFromDisk, persistOpenCodeAuth
-  - `src/index.ts:54` — `debouncedToastTimestamps` Map
-  - **NOTE**: After Task 6 runs, line numbers in index.ts will shift. The executor must locate functions by name, not line number.
+  - `src/cli.ts` — auth/account command handlers and dispatch paths
+  - `README.md` — documented CLI command surface that must remain stable
 
   **Acceptance Criteria**:
-  - [ ] `npx vitest run` passes (same count as baseline)
-  - [ ] `src/plugin-helpers.ts` exists
-  - [ ] `src/index.ts` no longer contains the moved functions
+  - [ ] Auth/account commands still behave identically
+  - [ ] CLI dispatch continues to route correctly
 
   **QA Scenarios**:
 
   ```
-  Scenario: Decomposition preserves behavior
+  Scenario: Auth/account commands still resolve and run
     Tool: Bash
+    Preconditions: Extraction complete
     Steps:
-      1. Run `npx vitest run 2>&1`
-      2. Compare to baseline
-      3. Run `wc -l src/index.ts` — verify reduced
-    Expected Result: Same test results, index.ts ~85 lines shorter
-    Evidence: .sisyphus/evidence/task-7-decompose.txt
+      1. Run representative commands such as help/status/list using the CLI entrypoint
+      2. Verify command parsing and output are unchanged
+    Expected Result: Commands execute with expected outputs and no import/runtime failures
+    Failure Indicators: Unknown command behavior, argument parsing regressions, changed output contract
+    Evidence: .sisyphus/evidence/task-6-cli-auth-account.txt
+
+  Scenario: Public CLI surface unchanged
+    Tool: Bash
+    Preconditions: Extraction complete
+    Steps:
+      1. Compare command names/options against README-documented surface
+    Expected Result: No removed or renamed public commands
+    Failure Indicators: README drift or missing command paths
+    Evidence: .sisyphus/evidence/task-6-surface-check.txt
   ```
 
   **Commit**: YES
-  - Message: `refactor: extract plugin helpers from index.ts`
-  - Files: `src/index.ts`, `src/plugin-helpers.ts` (new)
-  - Pre-commit: `npx vitest run`
+  - Message: `refactor(cli): extract auth and account command handlers`
+  - Files: `src/cli.ts` + new CLI command modules
+  - Pre-commit: `npm test && npx tsc --noEmit`
 
-- [x] 8. Clean Up Residual index.ts
-
-  **What to do**:
-  - Review remaining `index.ts` after Tasks 6-7
-  - Clean up imports (remove unused)
-  - Add section comments for the remaining code blocks
-  - Verify the file is significantly smaller than the 890-line original
-  - Update `scripts/build.ts` if needed to include new files in the bundle
-  - **Quality over LOC**: The line count goal (~400) is a GUIDELINE, not a hard gate. If keeping a function in index.ts produces cleaner, more readable code than extracting it to a new file with awkward parameter plumbing, keep it. Readability and naming clarity trump arbitrary line limits.
-
-  **Must NOT do**:
-  - Do NOT force-extract code just to hit a line count — if extraction creates worse naming, more parameters, or harder-to-follow control flow, leave the code where it reads best
-  - Do NOT change behavior
-
-  **Recommended Agent Profile**:
-  - **Category**: `quick`
-  - **Skills**: []
-
-  **Parallelization**:
-  - **Can Run In Parallel**: NO
-  - **Blocks**: Tasks 9-16
-  - **Blocked By**: Tasks 6, 7
-
-  **References**:
-  - `src/index.ts` — post-decomposition state
-  - `scripts/build.ts` — build configuration (may need new entry points)
-
-  **Acceptance Criteria**:
-  - [ ] `wc -l src/index.ts` significantly reduced from 890 (target: under 500, flexible)
-  - [ ] `npx vitest run` passes
-  - [ ] `npm run build` produces all 3 dist artifacts
-  - [ ] No unused imports in index.ts
-  - [ ] Remaining code in index.ts reads clearly without needing comments to explain "why is this here"
-
-  **QA Scenarios**:
-
-  ```
-  Scenario: index.ts is clean and significantly smaller
-    Tool: Bash
-    Steps:
-      1. Run `wc -l src/index.ts` — verify reduced from 890
-      2. Run `npx vitest run`
-      3. Run `npm run build && ls -la dist/`
-    Expected Result: Meaningfully smaller, all tests pass, build succeeds
-    Evidence: .sisyphus/evidence/task-8-cleanup.txt
-  ```
-
-  **Commit**: YES
-  - Message: `refactor: clean up residual index.ts after decomposition`
-  - Files: `src/index.ts`, `scripts/build.ts`
-  - Pre-commit: `npx vitest run && npm run build`
-
-- [x] 9. Fix Sanitization Regex Word Boundaries
+- [x] 7. Extract CLI usage/config/manage command handlers
 
   **What to do**:
-  - `src/system-prompt/sanitize.ts:12` — `/opencode/gi` → `/\bopencode\b/gi` — prevents matching inside words like "myopencode"
-  - `src/system-prompt/sanitize.ts:11` — `/OpenCode/g` → `/\bOpenCode\b/g` — same word boundary fix
-  - `src/request/body.ts:50` — tighten THIRD_PARTY_MARKERS regex:
-    - `|ohmy|` → `|\bohmy\b|` — prevents matching inside "ohmygod" in user content
-    - `|\bomc\b|` is already bounded (good)
-    - `|\bomo\b|` is already bounded (good)
-  - Add test cases for edge cases: "myopencode", "ohmygod", "promotion" (should NOT match)
+  - Move usage/config/manage flows from `src/cli.ts` into dedicated modules
+  - Preserve interactive behavior and outputs
 
   **Must NOT do**:
-  - Do NOT redesign the sanitization system
-  - Do NOT change the list of markers — only add word boundaries
-
-  **Recommended Agent Profile**:
-  - **Category**: `quick`
-  - **Skills**: []
-
-  **Parallelization**:
-  - **Can Run In Parallel**: YES
-  - **Parallel Group**: Wave 3 (with Tasks 10-14)
-  - **Blocks**: Task 16
-  - **Blocked By**: Task 8
-
-  **References**:
-  - `src/system-prompt/sanitize.ts:8-19` — `sanitizeSystemText()` function
-  - `src/request/body.ts:50` — `THIRD_PARTY_MARKERS` regex
-
-  **Acceptance Criteria**:
-  - [ ] `npx vitest run` passes
-  - [ ] Regex patterns use `\b` word boundaries
-
-  **QA Scenarios**:
-
-  ```
-  Scenario: No false positive matches
-    Tool: Bash
-    Steps:
-      1. node -e "const r = /\bopencode\b/gi; console.log(r.test('myopencode'), r.test('opencode'), r.test('OpenCode is good'))"
-      2. Expected: false, true, true
-    Expected Result: Word boundaries prevent false matches
-    Evidence: .sisyphus/evidence/task-9-regex.txt
-  ```
-
-  **Commit**: YES
-  - Message: `fix: add word boundaries to sanitization regexes`
-  - Files: `src/system-prompt/sanitize.ts`, `src/request/body.ts`
-  - Pre-commit: `npx vitest run`
-
-- [x] 10. Fix cc_entrypoint Default + Document Billing Edge Cases
-
-  **What to do**:
-  - `src/headers/billing.ts:42` — CC uses `process.env.CLAUDE_CODE_ENTRYPOINT ?? "unknown"` but plugin uses `|| "cli"`. Change to match CC: `?? "cli"` (keep "cli" as default since plugin is always CLI context, but use nullish coalescing for correctness)
-  - Document the `cc_workload` field from CC's billing header that the plugin omits — add a comment explaining it's an AsyncLocalStorage workload tracker not applicable to the plugin
-  - Document why `cch` uses a dynamic hash instead of CC's `00000` placeholder — reference `.omc/research/cch-source-analysis.md`
-
-  **Must NOT do**:
-  - Do NOT change the cch algorithm — it works
-  - Do NOT add cc_workload — not applicable
-
-  **Recommended Agent Profile**:
-  - **Category**: `quick`
-  - **Skills**: []
-
-  **Parallelization**:
-  - **Can Run In Parallel**: YES
-  - **Parallel Group**: Wave 3 (with Tasks 9, 11-14)
-  - **Blocks**: Task 16
-  - **Blocked By**: Task 8
-
-  **References**:
-  - `src/headers/billing.ts:42` — `const entrypoint = process.env.CLAUDE_CODE_ENTRYPOINT || "cli"`
-  - `.omc/research/cch-source-analysis.md:28-39` — CC's `mk_()` function uses `?? "unknown"`
-  - `.omc/research/cch-source-analysis.md:124-131` — `cc_workload` from AsyncLocalStorage
-
-  **Acceptance Criteria**:
-  - [ ] `npx vitest run` passes
-  - [ ] Comments explain cc_workload omission and cch algorithm difference
-
-  **QA Scenarios**:
-
-  ```
-  Scenario: Entrypoint uses nullish coalescing
-    Tool: Bash
-    Steps:
-      1. grep 'entrypoint' src/headers/billing.ts
-      2. Verify uses ?? operator, not || operator
-    Expected Result: Uses ?? for correctness
-    Evidence: .sisyphus/evidence/task-10-billing.txt
-  ```
-
-  **Commit**: YES
-  - Message: `fix: use nullish coalescing for cc_entrypoint + document billing gaps`
-  - Files: `src/headers/billing.ts`
-  - Pre-commit: `npx vitest run`
-
-- [x] 11. Add Upstream Timeout to bun-proxy Fetch
-
-  **What to do**:
-  - `src/bun-proxy.ts:49` — add `signal: AbortSignal.timeout(600_000)` to the fetch call (600s = 10 minutes, matching CC's `x-stainless-timeout: 600`)
-  - This prevents the proxy from hanging indefinitely on a stalled upstream connection
-
-  **Must NOT do**:
-  - Do NOT change any other proxy behavior
-
-  **Recommended Agent Profile**:
-  - **Category**: `quick`
-  - **Skills**: []
-
-  **Parallelization**:
-  - **Can Run In Parallel**: YES
-  - **Parallel Group**: Wave 3
-  - **Blocks**: Task 16
-  - **Blocked By**: Task 8
-
-  **References**:
-  - `src/bun-proxy.ts:48-53` — the upstream fetch call with no timeout
-  - `.omc/research/cc-vs-plugin-comparison.md:33` — `x-stainless-timeout: 600`
-
-  **Acceptance Criteria**:
-  - [ ] `npm run build` succeeds
-  - [ ] fetch call includes AbortSignal.timeout
-
-  **QA Scenarios**:
-
-  ```
-  Scenario: Timeout added to proxy fetch
-    Tool: Bash
-    Steps:
-      1. grep -n 'AbortSignal.timeout' src/bun-proxy.ts
-    Expected Result: One match at the fetch call
-    Evidence: .sisyphus/evidence/task-11-timeout.txt
-  ```
-
-  **Commit**: YES
-  - Message: `fix: add 600s upstream timeout to bun-proxy fetch`
-  - Files: `src/bun-proxy.ts`
-  - Pre-commit: `npm run build`
-
-- [x] 12. Validate & Fix Proxy Shutdown Lifecycle
-
-  **What to do**:
-  This is a behavior-critical task. The proxy subprocess may not actually shut down correctly in all scenarios. Investigate, fix, and prove it.
-
-  **Step 1 — Audit current shutdown paths** in `src/bun-fetch.ts:23-38`:
-  - `process.on("exit", cleanup)` — fires on normal exit
-  - `process.on("SIGINT", ...)` — Ctrl+C
-  - `process.on("SIGTERM", ...)` — kill signal
-  - `process.on("SIGHUP", ...)` — terminal close
-  - `process.on("beforeExit", cleanup)` — event loop empty
-  - **MISSING**: `uncaughtException` — parent crashes, proxy orphaned
-  - **MISSING**: `unhandledRejection` — unhandled promise rejection
-
-  **Step 2 — Fix missing handlers**:
-  - Add `process.on('uncaughtException', (err) => { cleanup(); console.error(err); process.exit(1); })`
-  - Add `process.on('unhandledRejection', (err) => { cleanup(); console.error(err); process.exit(1); })`
-  - Do NOT swallow the error — log it and exit after cleanup
-
-  **Step 3 — Fix PID file cleanup**:
-  - `killStaleProxy()` reads PID file → kills process → deletes PID file
-  - Verify: what happens if PID file exists but process is already dead? (should be handled — `process.kill(pid, "SIGTERM")` throws if pid doesn't exist, caught by outer try/catch)
-  - Verify: what happens if PID file is stale from a previous session? (check `kill(pid, 0)` before `SIGTERM` to test if process is alive)
-  - Add staleness check: if PID file is older than 24 hours, just delete it without trying to kill
-
-  **Step 4 — Fix `stopBunProxy()` ordering**:
-  - `src/bun-fetch.ts:180-188` — verify `proxyProcess.kill()` waits for child to actually exit, not just sends signal
-  - Consider adding a timeout: if child doesn't exit within 2s of SIGTERM, escalate to SIGKILL
-
-  **Step 5 — Validate with actual proxy spawn/kill cycle**:
-  - Write a QA scenario that spawns the proxy, verifies it's running, kills the parent context, and verifies the proxy is dead
-
-  **Must NOT do**:
-  - Do NOT change the proxy port or IPC protocol
-  - Do NOT swallow uncaughtException errors
+  - Do NOT change prompt wording or command UX unless required to preserve behavior
 
   **Recommended Agent Profile**:
   - **Category**: `deep`
-  - **Skills**: [`quality-standard`]
-
-  **Parallelization**:
-  - **Can Run In Parallel**: YES
-  - **Parallel Group**: Wave 3
-  - **Blocks**: Task 16
-  - **Blocked By**: Task 8
-
-  **References**:
-  - `src/bun-fetch.ts:23-38` — current exit handlers
-  - `src/bun-fetch.ts:64-75` — `killStaleProxy()` — PID file handling
-  - `src/bun-fetch.ts:88-146` — `spawnProxy()` — child process spawn
-  - `src/bun-fetch.ts:180-188` — `stopBunProxy()` — manual stop
-  - Node.js docs: `child_process` event lifecycle, `process.kill()` semantics
-  - `.omc/handoffs/session-2026-04-09.md:35` — "Proxy not closing: Exit handlers may not fire if parent is SIGKILL'd"
-
-  **Acceptance Criteria**:
-  - [ ] `npx vitest run` passes
-  - [ ] `uncaughtException` and `unhandledRejection` handlers registered
-  - [ ] `stopBunProxy()` has SIGKILL escalation after timeout
-  - [ ] `killStaleProxy()` checks process liveness before sending SIGTERM
-  - [ ] PID file staleness check added (24h threshold)
-
-  **QA Scenarios**:
-
-  ```
-  Scenario: Proxy starts and stops cleanly (direct subprocess test)
-    Tool: Bash
-    Steps:
-      1. pkill -f bun-proxy 2>/dev/null; rm -f /tmp/opencode-bun-proxy.pid
-      2. npm run build
-      3. bun dist/bun-proxy.mjs 48372 & PROXY_PID=$!
-      4. sleep 1 && curl -s http://127.0.0.1:48372/__health
-      5. kill $PROXY_PID 2>/dev/null; sleep 1
-      6. curl -sf http://127.0.0.1:48372/__health || echo "PROXY_DEAD"
-    Expected Result: Step 3 prints BUN_PROXY_PORT=48372. Step 4 returns "ok". Step 6 prints "PROXY_DEAD" (process exited cleanly on signal).
-    Failure Indicators: Step 4 fails (proxy didn't start) or Step 6 returns "ok" (proxy survived kill)
-    Evidence: .sisyphus/evidence/task-12-proxy-lifecycle.txt
-
-  Scenario: Stale PID file from dead process
-    Tool: Bash
-    Steps:
-      1. echo "99999" > /tmp/opencode-bun-proxy.pid
-      2. bun -e "import {ensureBunProxy,stopBunProxy} from './src/bun-fetch.ts'; const p = await ensureBunProxy(); console.log('PORT=' + p); stopBunProxy(); process.exit(0);" 2>&1
-      3. grep 'PORT=48372' from output
-    Expected Result: Stale PID handled gracefully, fresh proxy starts on 48372
-    Evidence: .sisyphus/evidence/task-12-stale-pid.txt
-
-  Scenario: Exception handlers registered in code
-    Tool: Bash
-    Steps:
-      1. grep -n 'uncaughtException\|unhandledRejection' src/bun-fetch.ts
-    Expected Result: Both handlers present in registerExitHandler()
-    Evidence: .sisyphus/evidence/task-12-handlers.txt
-  ```
-
-  **Commit**: YES
-  - Message: `fix: harden proxy shutdown lifecycle with exception handlers and PID staleness checks`
-  - Files: `src/bun-fetch.ts`
-  - Pre-commit: `npx vitest run`
-
-- [x] 13. Cap Unbounded State Growth
-
-  **What to do**:
-  - **`fileAccountMap`** (index.ts) — add max size cap (e.g., 1000 entries). When exceeded, evict oldest entries (FIFO). Files API is per-account, this map remembers which account owns each file_id.
-  - **`pendingSlashOAuth`** (index.ts) — add TTL-based cleanup. Entries should expire after `PENDING_OAUTH_TTL_MS` (10 minutes, already defined in constants.ts:74). Add a cleanup sweep before each new entry.
-  - **`statsDeltas`** (accounts.ts) — add max delta count. If `saveToDisk()` has failed and deltas exceed 100, force a synchronous save attempt and log failure. Prevents unbounded accumulation.
-  - **`debouncedToastTimestamps`** (after Task 7, in plugin-helpers.ts) — cap at 50 entries, evict oldest on overflow.
-
-  **Must NOT do**:
-  - Do NOT change the data structures (Map/Set) to something else
-  - Do NOT remove any existing entries — only add bounds
-
-  **Recommended Agent Profile**:
-  - **Category**: `unspecified-high`
-  - **Skills**: [`quality-standard`]
-
-  **Parallelization**:
-  - **Can Run In Parallel**: YES
-  - **Parallel Group**: Wave 3
-  - **Blocks**: Task 16
-  - **Blocked By**: Task 8
-
-  **References**:
-  - `src/index.ts:67` — `fileAccountMap = new Map<string, number>()` — no cleanup
-  - `src/index.ts:66` — `pendingSlashOAuth = new Map<string, PendingOAuthEntry>()` — no TTL enforcement
-  - `src/accounts.ts:51` — `#statsDeltas = new Map<string, StatsDelta>()` — grows on every request
-  - `src/constants.ts:74` — `PENDING_OAUTH_TTL_MS = 10 * 60 * 1000`
-
-  **Acceptance Criteria**:
-  - [ ] `npx vitest run` passes
-  - [ ] Each Map/Set has a documented max size or TTL
-
-  **QA Scenarios**:
-
-  ```
-  Scenario: Maps have bounds
-    Tool: Bash
-    Steps:
-      1. grep -n 'MAX_\|_CAP\|_LIMIT\|evict\|cleanup\|expire' src/index.ts src/plugin-helpers.ts src/accounts.ts
-    Expected Result: Each unbounded collection has a cap constant and enforcement logic
-    Evidence: .sisyphus/evidence/task-13-bounds.txt
-  ```
-
-  **Commit**: YES
-  - Message: `fix: cap unbounded state growth in maps and sets`
-  - Files: `src/index.ts` (or post-decomposition files), `src/accounts.ts`
-  - Pre-commit: `npx vitest run`
-
-- [x] 14. Verify Tool Prefix Convention Against CC
-
-  **What to do**:
-  - Investigate the `mcp_` prefix in `src/request/body.ts:21,107-128`
-  - CC uses `mcp__<server>__<tool>` (double underscore) for MCP-connected tools, but native tools have no prefix
-  - The plugin currently adds `mcp_` (single underscore) to ALL tools indiscriminately
-  - Read the existing tests and CC comparison doc to determine the correct behavior
-  - If the current behavior is correct for the opencode ↔ plugin context (opencode already adds tool names differently than CC), document why. If incorrect, fix it.
-  - This is an investigation + documentation task — fix only if clearly wrong
-
-  **Must NOT do**:
-  - Do NOT blindly change the prefix without understanding what opencode sends as tool names
-
-  **Recommended Agent Profile**:
-  - **Category**: `quick`
-  - **Skills**: []
-
-  **Parallelization**:
-  - **Can Run In Parallel**: YES
-  - **Parallel Group**: Wave 3
-  - **Blocks**: Task 16
-  - **Blocked By**: Task 8
-
-  **References**:
-  - `src/request/body.ts:21` — `const TOOL_PREFIX = "mcp_"`
-  - `src/request/body.ts:106-128` — tool name prefixing logic
-  - `src/response/streaming.ts` — tool name prefix stripping on response
-  - `.omc/research/cc-vs-plugin-comparison.md` — CC tool naming not explicitly compared
-  - CC source: `mcp__<server>__<tool>` pattern for MCP tools
-
-  **Acceptance Criteria**:
-  - [ ] Tool prefix behavior documented with clear rationale
-  - [ ] If incorrect: fixed and tested. If correct: comment explains why single underscore is used.
-
-  **QA Scenarios**:
-
-  ```
-  Scenario: Tool prefix is documented
-    Tool: Bash
-    Steps:
-      1. Read src/request/body.ts — check TOOL_PREFIX and its usage
-      2. Read src/response/streaming.ts — check how prefix is stripped
-      3. Verify comment explains the convention choice
-    Expected Result: Clear documentation of prefix choice with rationale
-    Evidence: .sisyphus/evidence/task-14-tool-prefix.txt
-  ```
-
-  **Commit**: YES (if code changes) or NO (if documentation only)
-  - Message: `docs: document tool prefix convention vs CC`
-  - Files: `src/request/body.ts`
-  - Pre-commit: `npx vitest run`
-
-- [x] 15. Verify System Prompt Structure Against CC Source
-
-  **What to do**:
-  - This is an **audit and documentation task**, not a fix — the current system prompt works for routing
-  - Compare the plugin's system prompt structure against CC's documented structure:
-    1. Read `.omc/research/cch-source-analysis.md` — binary analysis of CC's prompt construction
-    2. Read `.omc/research/cc-vs-plugin-comparison.md` — existing comparison
-    3. Read `src/system-prompt/builder.ts` — current plugin implementation
-    4. Verify: billing block placement (first, no cache_control) ✅
-    5. Verify: identity string text and cache_control ✅
-    6. Verify: block ordering (billing → identity → rest) ✅
-  - Document any remaining discrepancies as **future hardening notes** — things Anthropic might tighten checks on:
-    - CC's full system prompt is much larger (includes tool instructions, permissions, etc.)
-    - CC uses `cacheScope: null` internally; plugin uses no cache_control on billing (equivalent)
-    - CC may add `cc_workload` field in the future
-    - CC's tool naming uses `mcp__` double underscore
-  - Save findings as a summary comment block in `src/system-prompt/builder.ts` header
-
-  **Must NOT do**:
-  - Do NOT try to replicate CC's full system prompt — it's embedded in the binary and irrelevant for routing
-  - Do NOT change working behavior for "future-proofing" without evidence
-
-  **Recommended Agent Profile**:
-  - **Category**: `deep`
-  - **Skills**: []
-
-  **Parallelization**:
-  - **Can Run In Parallel**: YES
-  - **Parallel Group**: Wave 4 (with Task 16)
-  - **Blocks**: Task 16
-  - **Blocked By**: Task 8
-
-  **References**:
-  - `.omc/research/cch-source-analysis.md` — full binary analysis
-  - `.omc/research/cc-vs-plugin-comparison.md` — side-by-side comparison
-  - `src/system-prompt/builder.ts` — current implementation
-  - `src/constants.ts:14` — identity string
-  - `src/headers/billing.ts` — billing header construction
-
-  **Acceptance Criteria**:
-  - [ ] Summary comment block added to `src/system-prompt/builder.ts` documenting CC alignment status
-  - [ ] All verified items marked ✅ or noted as future hardening
-
-  **QA Scenarios**:
-
-  ```
-  Scenario: Documentation exists in builder.ts
-    Tool: Bash
-    Steps:
-      1. Read src/system-prompt/builder.ts header
-      2. Verify comment block documents CC alignment status
-      3. Verify future hardening items are listed
-    Expected Result: Comprehensive alignment documentation present
-    Evidence: .sisyphus/evidence/task-15-cc-verification.txt
-  ```
-
-  **Commit**: YES
-  - Message: `docs: verify and document system prompt alignment with CC source`
-  - Files: `src/system-prompt/builder.ts`
-  - Pre-commit: `npx vitest run`
-
-- [x] 16. Add Tests for All Changed Behavior
-
-  **What to do**:
-  - Add vitest tests covering the behavior changes from Tasks 2-15:
-  1. **Debug gating tests**: Verify `ensureBunProxy()` and `fetchViaBun()` respect debug parameter — mock child_process.spawn, verify console.error is not called when debug=false
-  2. **Error logging tests**: Verify catch blocks call debugLog on failure — mock failing operations, verify debugLog was called
-  3. **Sanitization regex tests**: Add edge case tests — "myopencode" should not match, "opencode" should match, "OpenCode" should match, "ohmygod" should not trigger third-party marker
-  4. **State bounds tests**: Verify fileAccountMap evicts at cap, pendingSlashOAuth expires old entries, statsDeltas caps
-  5. **Billing tests**: Verify `cc_entrypoint` uses `??` not `||`, verify version suffix edge cases (empty message, short message)
-  6. **Decomposition smoke tests**: Import from `refresh-helpers.ts` and `plugin-helpers.ts`, verify exports exist and are callable
-
-  **Must NOT do**:
-  - Do NOT backfill tests for existing untested behavior
-  - Do NOT modify existing test assertions
-
-  **Recommended Agent Profile**:
-  - **Category**: `unspecified-high`
-  - **Skills**: [`quality-standard`]
+    - Reason: interactive and stateful command extraction
+  - **Skills**: [`quality-standard`, `testing`]
+    - `quality-standard`: maintain clean boundaries
+    - `testing`: keep behavior stable under extraction
+  - **Skills Evaluated but Omitted**:
+    - `writing`: not a copy-editing task
 
   **Parallelization**:
   - **Can Run In Parallel**: NO
-  - **Blocks**: F1-F4
-  - **Blocked By**: Tasks 9-15
+  - **Parallel Group**: Wave 2
+  - **Blocks**: Task 8
+  - **Blocked By**: Task 5
 
   **References**:
-  - `index.test.ts` — existing test patterns: `makeClient()`, `makeStoredAccount()`, `vi.mock()`
-  - `src/__tests__/fingerprint-regression.test.ts` — example of targeted regression tests
-  - `src/__tests__/cc-comparison.test.ts` — example of comparison tests
+  - `src/cli.ts` — usage/config/manage handler logic
+  - `src/commands/router.ts` — reference for thinner command dispatch style
 
   **Acceptance Criteria**:
-  - [ ] `npx vitest run` passes with MORE tests than baseline
-  - [ ] New tests cover: debug gating, error logging, regex edge cases, state bounds, billing edge cases
+  - [ ] Manage/config/usage flows work as before
+  - [ ] `src/cli.ts` is reduced to orchestration rather than implementation
 
   **QA Scenarios**:
 
   ```
-  Scenario: New tests pass and increase coverage
+  Scenario: Usage/config commands preserve output contracts
     Tool: Bash
+    Preconditions: Extraction complete
     Steps:
-      1. Run `npx vitest run 2>&1`
-      2. Compare test count to baseline (Task 1 evidence)
-      3. Verify new test count > baseline test count
-    Expected Result: More tests, all passing
-    Evidence: .sisyphus/evidence/task-16-tests.txt
+      1. Run representative usage/config commands
+      2. Verify output structure and command completion
+    Expected Result: Same observable behavior as before extraction
+    Failure Indicators: Missing command output, changed labels, broken parsing
+    Evidence: .sisyphus/evidence/task-7-cli-usage-config.txt
 
-  Scenario: Regex edge case tests exist
+  Scenario: Interactive manage flow remains intact
     Tool: Bash
+    Preconditions: Extraction complete
     Steps:
-      1. grep -n 'myopencode\|ohmygod\|word.bound' src/__tests__/*.test.ts index.test.ts
-    Expected Result: Edge case test assertions found
-    Evidence: .sisyphus/evidence/task-16-regex-tests.txt
+      1. Invoke manage/help path non-destructively
+      2. Verify command reaches the expected prompt/help behavior
+    Expected Result: Manage flow still initializes correctly
+    Failure Indicators: Runtime failures or detached prompt behavior
+    Evidence: .sisyphus/evidence/task-7-manage-flow.txt
   ```
 
   **Commit**: YES
-  - Message: `test: add coverage for refactored and fixed modules`
-  - Files: `index.test.ts`, `src/__tests__/*.test.ts`
-  - Pre-commit: `npx vitest run`
+  - Message: `refactor(cli): extract usage config and manage handlers`
+  - Files: `src/cli.ts` + new CLI command modules
+  - Pre-commit: `npm test && npx tsc --noEmit`
 
-- [x] 17. Tighten ESLint Rules + Enforce Zero Warnings/Errors
+- [x] 8. Thin CLI dispatch and remove avoidable account `any` usage
 
   **What to do**:
-  Currently ESLint has 1 error (a `require()` in bun-fetch.ts debug dump — removed by Task 4) and 1 stale warning. The config is permissive: `no-explicit-any` is off, `no-console` is off.
-
-  **Step 1 — Tighten ESLint rules** in `eslint.config.ts`:
-  - Turn on `@typescript-eslint/no-explicit-any` as `"warn"` (not error — let teams tighten gradually). Allow `// eslint-disable-next-line` for justified cases with a comment explaining why.
-  - Add `no-console: "warn"` for `src/` files (excluding `src/cli.ts`, `src/commands/`, `src/__tests__/`, `src/bun-proxy.ts`). This catches ungated console calls at lint time instead of relying on grep.
-  - Add `@typescript-eslint/no-unused-vars` as `"error"` (currently "warn") — unused vars are dead code, not "maybe later" code.
-  - Add `@typescript-eslint/consistent-type-imports` as `"warn"` — enforce `import type` where possible (already used in some files).
-  - Keep `no-explicit-any: "warn"` not "error" — existing code has legitimate `any` uses (plugin API boundary, JSON parsing). Warnings surface them without blocking.
-
-  **Step 2 — Fix all warnings and errors**:
-  - Run `npx eslint .` and fix every warning/error
-  - For justified `any` usage: add `// eslint-disable-next-line @typescript-eslint/no-explicit-any -- [reason]`
-  - For console calls in non-CLI code: convert to debugLog or gate behind config.debug (most already done by Tasks 2-4)
-  - Remove unused vars/imports
-  - Convert imports to `import type` where applicable
-
-  **Step 3 — Add lint to pre-commit and CI gate**:
-  - Verify `.husky/pre-commit` runs lint (check if `lint-staged` is configured — it is, per package.json)
-  - Add `npx eslint .` to the verification commands in the plan's success criteria
+  - Reduce `src/cli.ts` to a thin entrypoint/dispatcher
+  - Replace avoidable `Record<string, any>` account shapes with stronger types where practical in touched CLI code
 
   **Must NOT do**:
-  - Do NOT set `no-explicit-any` to "error" — too disruptive for existing code. "warn" surfaces issues without blocking.
-  - Do NOT add rules that don't serve the project (no style-only rules like `semi` or `quotes` — prettier handles that)
-  - Do NOT suppress warnings with blanket `eslint-disable` at file level — per-line only, with reason
+  - Do NOT force perfect typing across untouched boundaries
 
   **Recommended Agent Profile**:
   - **Category**: `unspecified-high`
+    - Reason: combines final cleanup with type-boundary tightening
   - **Skills**: [`quality-standard`]
+    - `quality-standard`: maintain safe, explicit boundaries
+  - **Skills Evaluated but Omitted**:
+    - `testing`: surrounding command tests already cover behavior
 
   **Parallelization**:
-  - **Can Run In Parallel**: YES
-  - **Parallel Group**: Wave 3 (with Tasks 9-14)
-  - **Blocks**: Task 16
-  - **Blocked By**: Task 8
+  - **Can Run In Parallel**: NO
+  - **Parallel Group**: Wave 2
+  - **Blocks**: Tasks 9-15
+  - **Blocked By**: Tasks 6-7
 
   **References**:
-  - `eslint.config.ts` — current ESLint config (flat config format, typescript-eslint)
-  - `package.json` — `lint-staged` config runs `eslint --fix` on staged files
-  - `.husky/` — pre-commit hooks
-  - Current lint status: 1 error (`require()` in bun-fetch.ts — removed by Task 4), 1 stale warning
+  - `src/accounts.ts` — `ManagedAccount` and related account types
+  - `src/cli.ts` — current `Record<string, any>` seams
 
   **Acceptance Criteria**:
-  - [ ] `npx eslint . 2>&1 | grep -c 'problem'` outputs `0 problems` (zero warnings, zero errors)
-  - [ ] `eslint.config.ts` includes `no-console`, `no-explicit-any`, `consistent-type-imports` rules
-  - [ ] Every `eslint-disable` comment includes a `-- reason` explanation
-  - [ ] `npx vitest run` still passes
+  - [ ] `src/cli.ts` is materially smaller and mostly orchestration
+  - [ ] Avoidable account-shape `any` usage in touched CLI paths is reduced
 
   **QA Scenarios**:
 
   ```
-  Scenario: Clean lint pass
+  Scenario: CLI entrypoint remains functional after thinning
     Tool: Bash
+    Preconditions: Thinning complete
     Steps:
-      1. Run `npx eslint . 2>&1`
-    Expected Result: "0 problems" — zero warnings, zero errors
-    Failure Indicators: Any warning or error in output
-    Evidence: .sisyphus/evidence/task-17-lint.txt
+      1. Run representative CLI entry commands
+      2. Run `npx tsc --noEmit`
+    Expected Result: Commands still work and touched CLI typings are accepted
+    Failure Indicators: Entry wiring failures or new type errors in CLI modules
+    Evidence: .sisyphus/evidence/task-8-cli-thin.txt
 
-  Scenario: no-console catches ungated calls
+  Scenario: Avoidable account any-usage reduced in touched code
     Tool: Bash
+    Preconditions: Typing cleanup complete
     Steps:
-      1. Temporarily add `console.log("test")` to src/index.ts
-      2. Run `npx eslint src/index.ts 2>&1`
-      3. Verify warning is raised
-      4. Revert the test line
-    Expected Result: ESLint catches the ungated console call
-    Evidence: .sisyphus/evidence/task-17-no-console.txt
-
-  Scenario: Lint rules documented
-    Tool: Bash
-    Steps:
-      1. grep -c 'eslint-disable.*--' src/*.ts src/**/*.ts
-    Expected Result: Every disable has a reason comment
-    Evidence: .sisyphus/evidence/task-17-disable-reasons.txt
+      1. Search for `Record<string, any>` and `as any` in touched CLI files
+    Expected Result: Count is reduced where stronger domain types exist
+    Failure Indicators: No reduction despite direct opportunities in touched CLI code
+    Evidence: .sisyphus/evidence/task-8-type-cleanup.txt
   ```
 
   **Commit**: YES
-  - Message: `chore: tighten ESLint rules and enforce zero warnings`
-  - Files: `eslint.config.ts`, all files with lint fixes
-  - Pre-commit: `npx eslint . && npx vitest run`
+  - Message: `refactor(cli): thin entrypoint and strengthen touched account typing`
+  - Files: `src/cli.ts` + extracted CLI modules
+  - Pre-commit: `npm test && npx tsc --noEmit`
+
+- [x] 9. Extract `src/index.ts` request-attempt and orchestration helpers
+
+  **What to do**:
+  - Break the oversized fetch/orchestration path into focused helper functions/modules
+  - Preserve closure-based state and existing behavior
+
+  **Must NOT do**:
+  - Do NOT redesign plugin state ownership
+  - Do NOT change exported plugin hook behavior
+
+  **Recommended Agent Profile**:
+  - **Category**: `deep`
+    - Reason: most behavior-sensitive runtime extraction in the repo
+  - **Skills**: [`quality-standard`, `testing`]
+    - `quality-standard`: preserve single responsibility and safe boundaries
+    - `testing`: protect hot-path behavior under extraction
+  - **Skills Evaluated but Omitted**:
+    - `architecture`: this is surgical extraction, not architecture redesign
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES
+  - **Parallel Group**: Wave 3 (with Tasks 10-11 where file overlap is absent)
+  - **Blocks**: Tasks 12-15
+  - **Blocked By**: Task 8 and baseline stabilization
+
+  **References**:
+  - `src/index.ts` — current plugin factory and large fetch path
+  - `src/plugin-helpers.ts`, `src/refresh-helpers.ts` — existing extraction style already used in repo
+  - `src/__tests__/index.parallel.test.ts` — important regression protection for plugin behavior
+
+  **Acceptance Criteria**:
+  - [ ] `src/index.ts` is materially smaller
+  - [ ] Runtime behavior is preserved under existing regression tests
+
+  **QA Scenarios**:
+
+  ```
+  Scenario: Plugin orchestration behavior preserved
+    Tool: Bash
+    Preconditions: Extraction complete
+    Steps:
+      1. Run targeted plugin runtime tests including parallel/index-focused suites
+      2. Run `npm run build`
+    Expected Result: Existing plugin behavior tests still pass and build succeeds
+    Failure Indicators: Runtime regression in request transformation, retry, or account handling paths
+    Evidence: .sisyphus/evidence/task-9-index-runtime.txt
+
+  Scenario: Closure-based state preserved
+    Tool: Bash
+    Preconditions: Extraction complete
+    Steps:
+      1. Review touched helper signatures and call sites
+      2. Verify state remains closure-owned, not moved into new singleton/class state
+    Expected Result: Extraction is structural, not architectural
+    Failure Indicators: New state owner objects or behavior-changing indirection introduced
+    Evidence: .sisyphus/evidence/task-9-state-review.txt
+  ```
+
+  **Commit**: YES
+  - Message: `refactor(plugin): extract index orchestration helpers`
+  - Files: `src/index.ts` + new/existing helper modules
+  - Pre-commit: `npm test && npm run build`
+
+- [x] 10. Extract account persistence and reconciliation helpers from `src/accounts.ts`
+
+  **What to do**:
+  - Separate save/load/reconciliation logic into focused helpers while preserving `AccountManager` behavior
+  - Keep matching/merge logic explicit and test-backed
+
+  **Must NOT do**:
+  - Do NOT redesign account selection semantics
+
+  **Recommended Agent Profile**:
+  - **Category**: `deep`
+    - Reason: stateful domain logic with persistence concerns
+  - **Skills**: [`quality-standard`, `testing`]
+    - `quality-standard`: preserve responsibility boundaries and avoid accidental semantic changes
+    - `testing`: account-state behavior must remain locked down
+  - **Skills Evaluated but Omitted**:
+    - `database`: file-based storage only; not a DB schema task
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES
+  - **Parallel Group**: Wave 3
+  - **Blocks**: Tasks 12-15
+  - **Blocked By**: Task 8 and baseline stabilization
+
+  **References**:
+  - `src/accounts.ts` — `AccountManager`, save/load/reconciliation logic
+  - `src/storage.ts` — existing persistence model/types
+  - `src/accounts.test.ts`, `src/account-state.test.ts`, `src/accounts.dedup.test.ts` — important behavior coverage
+
+  **Acceptance Criteria**:
+  - [ ] Persistence/reconciliation concerns are structurally separated
+  - [ ] Account behavior remains unchanged under current tests
+
+  **QA Scenarios**:
+
+  ```
+  Scenario: Account persistence behavior preserved
+    Tool: Bash
+    Preconditions: Extraction complete
+    Steps:
+      1. Run account-related test suites
+      2. Review touched persistence helper boundaries
+    Expected Result: Save/load/reconciliation behavior remains stable
+    Failure Indicators: Account dedup, identity matching, or active-index regressions
+    Evidence: .sisyphus/evidence/task-10-account-tests.txt
+
+  Scenario: No semantic drift in reconciliation logic
+    Tool: Bash
+    Preconditions: Extraction complete
+    Steps:
+      1. Compare old/new responsibility split
+      2. Verify matching precedence and merge semantics are unchanged
+    Expected Result: Refactor is structural only
+    Failure Indicators: Changed matching order or persistence semantics
+    Evidence: .sisyphus/evidence/task-10-reconciliation-review.txt
+  ```
+
+  **Commit**: YES
+  - Message: `refactor(accounts): separate persistence and reconciliation helpers`
+  - Files: `src/accounts.ts` + helper modules
+  - Pre-commit: `npm test && npx tsc --noEmit`
+
+- [x] 11. Reduce `src/commands/router.ts` to routing plus thin coordination
+
+  **What to do**:
+  - Extract inline Files API or command-specific business logic into focused helper modules
+  - Keep router centered on parse/dispatch/response flow
+
+  **Must NOT do**:
+  - Do NOT change slash-command surface
+
+  **Recommended Agent Profile**:
+  - **Category**: `unspecified-high`
+    - Reason: router thinning plus helper extraction
+  - **Skills**: [`quality-standard`, `testing`]
+    - `quality-standard`: keep routing thin and explicit
+    - `testing`: protect slash-command behavior and output
+  - **Skills Evaluated but Omitted**:
+    - `writing`: not a docs-first task
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES
+  - **Parallel Group**: Wave 3
+  - **Blocks**: Tasks 12-15
+  - **Blocked By**: Task 8 and baseline stabilization
+
+  **References**:
+  - `src/commands/router.ts` — current mixed routing/business logic
+  - `src/commands/oauth-flow.ts` — example of moving command behavior into a focused module
+
+  **Acceptance Criteria**:
+  - [ ] Router is materially thinner
+  - [ ] Slash-command behavior remains unchanged
+
+  **QA Scenarios**:
+
+  ```
+  Scenario: Slash command behavior preserved after router thinning
+    Tool: Bash
+    Preconditions: Extraction complete
+    Steps:
+      1. Run representative slash-command-related tests
+      2. Verify router output/messages remain consistent
+    Expected Result: Same routing semantics and command handling
+    Failure Indicators: Changed parsing, broken files/account flows, or message drift
+    Evidence: .sisyphus/evidence/task-11-router-tests.txt
+
+  Scenario: Router no longer owns extracted business logic
+    Tool: Bash
+    Preconditions: Extraction complete
+    Steps:
+      1. Review router file structure
+      2. Confirm helper modules own command-specific work
+    Expected Result: Router is primarily coordination/dispatch
+    Failure Indicators: Large inline business-logic blocks remain in router
+    Evidence: .sisyphus/evidence/task-11-router-review.txt
+  ```
+
+  **Commit**: YES
+  - Message: `refactor(commands): move router business logic into helpers`
+  - Files: `src/commands/router.ts` + helper modules
+  - Pre-commit: `npm test && npx tsc --noEmit`
+
+- [x] 12. Remove avoidable boundary type escapes in touched paths
+
+  **What to do**:
+  - Reduce avoidable `Record<string, any>` and `as any` usage in files touched by the hotspot refactor
+  - Preserve justified boundary suppressions where the external API is truly opaque
+
+  **Must NOT do**:
+  - Do NOT attempt repo-wide elimination of every `any`
+
+  **Recommended Agent Profile**:
+  - **Category**: `quick`
+    - Reason: scoped type cleanup after structural extraction
+  - **Skills**: [`quality-standard`]
+    - `quality-standard`: maintain explicit safe boundaries
+  - **Skills Evaluated but Omitted**:
+    - `testing`: type cleanup is verified via diagnostics and touched tests
+
+  **Parallelization**:
+  - **Can Run In Parallel**: NO
+  - **Parallel Group**: Wave 3 tail
+  - **Blocks**: Tasks 13-15
+  - **Blocked By**: Tasks 9-11
+
+  **References**:
+  - `src/index.ts` — current plugin API-boundary suppressions
+  - `src/cli.ts` — current account/usage shape looseness
+  - `src/plugin-helpers.ts`, `src/refresh-helpers.ts` — current forward-compatible config/client seams
+
+  **Acceptance Criteria**:
+  - [ ] Avoidable escapes reduced in touched files
+  - [ ] No new type errors introduced
+
+  **QA Scenarios**:
+
+  ```
+  Scenario: Touched-path type cleanup is real and safe
+    Tool: Bash
+    Preconditions: Type cleanup complete
+    Steps:
+      1. Search touched files for `Record<string, any>` and `as any`
+      2. Run `npx tsc --noEmit`
+    Expected Result: Reduced avoidable escapes with no new type errors
+    Failure Indicators: No actual reduction or diagnostic regressions
+    Evidence: .sisyphus/evidence/task-12-type-report.txt
+
+  Scenario: Justified boundary suppressions remain documented
+    Tool: Bash
+    Preconditions: Cleanup complete
+    Steps:
+      1. Review remaining suppressions in touched files
+      2. Verify each has a clear API-boundary rationale
+    Expected Result: Remaining escapes are intentional and documented
+    Failure Indicators: Undocumented or arbitrary residual `any` usage
+    Evidence: .sisyphus/evidence/task-12-suppression-review.txt
+  ```
+
+  **Commit**: YES
+  - Message: `refactor(types): reduce avoidable boundary any-usage in touched paths`
+  - Files: touched hotspot files only
+  - Pre-commit: `npx tsc --noEmit && npm test`
+
+- [ ] 13. Add or expand tests for extracted modules and changed behavior
+
+  **What to do**:
+  - Add direct tests for newly extracted helper modules where coverage was previously indirect
+  - Expand regression tests for hotspot behavior affected by decomposition
+
+  **Must NOT do**:
+  - Do NOT write tests that mirror implementation details
+
+  **Recommended Agent Profile**:
+  - **Category**: `unspecified-high`
+    - Reason: multi-module regression and unit test additions
+  - **Skills**: [`testing`, `quality-standard`]
+    - `testing`: behavior-first test additions
+    - `quality-standard`: keep tests deterministic and maintainable
+  - **Skills Evaluated but Omitted**:
+    - `writing`: not docs work
+
+  **Parallelization**:
+  - **Can Run In Parallel**: NO
+  - **Parallel Group**: Wave 4
+  - **Blocks**: Tasks 14-15 and final verification
+  - **Blocked By**: Task 12
+
+  **References**:
+  - `vitest.config.ts` — test inclusion rules
+  - existing hotspot-related tests in `src/` and `src/__tests__/`
+
+  **Acceptance Criteria**:
+  - [ ] Newly extracted modules have direct test coverage where needed
+  - [ ] Regression net for hotspot behavior is stronger than baseline
+
+  **QA Scenarios**:
+
+  ```
+  Scenario: Extracted-module tests are active and green
+    Tool: Bash
+    Preconditions: Test additions complete
+    Steps:
+      1. Run targeted vitest suites for new/extracted modules
+      2. Run full `npm test`
+    Expected Result: New tests run and pass; full suite shows no regression beyond documented baseline policy
+    Failure Indicators: New tests not discovered, flaky, or causing unrelated regressions
+    Evidence: .sisyphus/evidence/task-13-test-suite.txt
+
+  Scenario: Test intent remains behavioral
+    Tool: Bash
+    Preconditions: Tests added
+    Steps:
+      1. Review test assertions for extracted modules
+    Expected Result: Assertions target outputs/contracts, not implementation internals
+    Failure Indicators: Tests tightly coupled to refactor structure
+    Evidence: .sisyphus/evidence/task-13-test-review.txt
+  ```
+
+  **Commit**: YES
+  - Message: `test: expand regression coverage for extracted hotspot modules`
+  - Files: touched test files
+  - Pre-commit: `npm test`
+
+- [x] 14. Clean up duplication and dead seams exposed by the hotspot refactor
+
+  **What to do**:
+  - Remove duplicate helpers and dead transitional seams uncovered by extraction
+  - Focus only on duplication directly exposed by the hotspot work
+
+  **Must NOT do**:
+  - Do NOT launch a whole-repo dead-code purge
+
+  **Recommended Agent Profile**:
+  - **Category**: `quick`
+    - Reason: cleanup pass after structural changes are settled
+  - **Skills**: [`quality-standard`]
+    - `quality-standard`: remove debt without changing behavior
+  - **Skills Evaluated but Omitted**:
+    - `testing`: already handled by surrounding verification
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES
+  - **Parallel Group**: Wave 4 (with Task 15)
+  - **Blocks**: Final verification
+  - **Blocked By**: Task 13
+
+  **References**:
+  - `src/cli.ts` and `src/commands/router.ts` — duplicated `stripAnsi` area noted in review
+  - other touched hotspot files after extraction
+
+  **Acceptance Criteria**:
+  - [ ] Duplication directly exposed by the refactor is removed
+  - [ ] No orphaned dead seams remain in touched modules
+
+  **QA Scenarios**:
+
+  ```
+  Scenario: Duplicate helper logic reduced in touched modules
+    Tool: Bash
+    Preconditions: Cleanup complete
+    Steps:
+      1. Search for known duplicate helper signatures in touched areas
+      2. Verify one canonical implementation remains
+    Expected Result: No unnecessary duplicate helper bodies remain
+    Failure Indicators: Multiple active copies of the same helper logic in touched code
+    Evidence: .sisyphus/evidence/task-14-duplication.txt
+
+  Scenario: No dead seams remain after extraction
+    Tool: Bash
+    Preconditions: Cleanup complete
+    Steps:
+      1. Search touched modules for unused transitional wrappers/imports
+      2. Run lint and type-check
+    Expected Result: Touched modules are free of obvious dead seams
+    Failure Indicators: Unused imports, stale wrappers, or disconnected helper code
+    Evidence: .sisyphus/evidence/task-14-dead-seams.txt
+  ```
+
+  **Commit**: YES
+  - Message: `refactor: remove duplication and dead seams from hotspot cleanup`
+  - Files: touched hotspot modules only
+  - Pre-commit: `npm run lint && npx tsc --noEmit`
+
+- [x] 15. Update documentation only for externally visible refactor-impacting details
+
+  **What to do**:
+  - If command behavior, verification workflow, or maintainers’ expectations changed in an externally visible way, update README/related docs minimally
+  - Otherwise leave docs untouched
+
+  **Must NOT do**:
+  - Do NOT rewrite README just because code moved internally
+
+  **Recommended Agent Profile**:
+  - **Category**: `writing`
+    - Reason: this is prose/documentation work if needed at all
+  - **Skills**: [`writing`]
+    - `writing`: keep docs concise and non-sloppy
+  - **Skills Evaluated but Omitted**:
+    - `quality-standard`: docs quality is handled by writing skill here
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES
+  - **Parallel Group**: Wave 4
+  - **Blocks**: Final verification
+  - **Blocked By**: Task 13
+
+  **References**:
+  - `README.md` — public CLI/plugin documentation surface
+  - `AGENTS.md` — repo-specific contributor constraints, if affected
+
+  **Acceptance Criteria**:
+  - [ ] Docs updated only if external behavior/expectations changed
+  - [ ] No documentation drift for touched public surfaces
+
+  **QA Scenarios**:
+
+  ```
+  Scenario: Documentation changes are necessary and accurate
+    Tool: Bash
+    Preconditions: Candidate doc updates prepared
+    Steps:
+      1. Compare touched public behavior against README/AGENTS.md
+      2. Confirm each doc edit maps to a real externally visible change
+    Expected Result: Only necessary docs are touched, and they are accurate
+    Failure Indicators: Cosmetic or speculative doc churn with no behavior change
+    Evidence: .sisyphus/evidence/task-15-doc-review.txt
+
+  Scenario: Public command/docs remain aligned
+    Tool: Bash
+    Preconditions: Doc updates complete
+    Steps:
+      1. Run representative commands/help output
+      2. Compare to documented surface
+    Expected Result: Docs and actual behavior align
+    Failure Indicators: Documentation drift
+    Evidence: .sisyphus/evidence/task-15-doc-sync.txt
+  ```
+
+  **Commit**: YES
+  - Message: `docs: align documentation with hotspot refactor outcomes`
+  - Files: docs only if needed
+  - Pre-commit: manual doc/CLI alignment review
 
 ---
 
 ## Final Verification Wave
 
-> 4 review agents run in PARALLEL. ALL must APPROVE. Present consolidated results to user and get explicit "okay" before completing.
+- [x] F1. **Plan Compliance Audit** — `oracle` ✅ APPROVE
+  Verify that baseline stabilization happened first, hotspot ordering was respected, and all required deliverables exist. Confirm out-of-scope boundaries were honored.
 
-- [x] F1. **Plan Compliance Audit** — `oracle`
-
-  **QA Scenarios**:
+  **QA Scenario**:
 
   ```
-  Scenario: Must Have compliance
+  Scenario: Plan deliverables and ordering are satisfied
     Tool: Bash
+    Preconditions: All implementation tasks are marked complete and evidence files exist
     Steps:
-      1. grep -rn 'debugLog\|config\.debug\|OPENCODE_ANTHROPIC_DEBUG' src/bun-fetch.ts src/bun-proxy.ts — verify debug gating exists
-      2. grep -rn 'catch.*{' src/ --include='*.ts' | grep -v test | grep -v cli | grep -v commands | grep -v debugLog | grep -v console — verify zero empty catches
-      3. ls src/refresh-helpers.ts src/plugin-helpers.ts — verify decomposition files exist
-      4. grep -n 'AbortSignal.timeout' src/bun-proxy.ts — verify proxy timeout exists
-      5. grep -n 'uncaughtException' src/bun-fetch.ts — verify exception handler exists
-      6. ls .sisyphus/evidence/task-*.txt | wc -l — verify evidence files collected
-    Expected Result: All Must Have items verified with file evidence
-    Evidence: .sisyphus/evidence/final-qa/f1-compliance.txt
+      1. Read `.sisyphus/plans/quality-refactor.md`
+      2. Read the final change summary / diff map for implemented files
+      3. Verify baseline-capture evidence exists before hotspot-refactor evidence
+      4. Verify each planned deliverable has a corresponding changed file or verification artifact
+      5. Verify no out-of-scope category (feature work, API redesign, config migration) appears in the diff summary
+    Expected Result: Every deliverable is accounted for and execution order matches the plan
+    Failure Indicators: Missing deliverables, missing evidence, or out-of-scope work present
+    Evidence: .sisyphus/evidence/final-f1-plan-compliance.txt
   ```
 
-  Output: `Must Have [N/N] | Must NOT Have [N/N] | Tasks [N/N] | VERDICT: APPROVE/REJECT`
+- [x] F2. **Code Quality Review** — `unspecified-high` ✅ APPROVE
+  Run build, type-check, lint, and tests. Review changed files for residual god-functions, accidental complexity, undocumented `any`, silent error swallowing, duplication, and dead seams.
 
-- [x] F2. **Code Quality Review** — `unspecified-high`
-
-  **QA Scenarios**:
+  **QA Scenario**:
 
   ```
-  Scenario: Full quality gate pass
+  Scenario: Quality gates pass on final refactor result
     Tool: Bash
+    Preconditions: Final implementation state ready for review
     Steps:
-      1. npx eslint . 2>&1 — expected: 0 problems
-      2. npx tsc --noEmit 2>&1 | tail -3 — expected: same or fewer errors than baseline
-      3. npm run build 2>&1 — expected: success
-      4. npx vitest run 2>&1 — expected: all pass
-      5. grep -rn 'eslint-disable' src/ --include='*.ts' | grep -v '\-\-' — expected: zero (all disables must have reason)
-      6. grep -rn 'as any' src/ --include='*.ts' | grep -v test | grep -v 'eslint-disable' — count remaining unexcused any casts
-    Expected Result: Lint clean, build succeeds, tests pass, no unjustified suppressions
-    Evidence: .sisyphus/evidence/final-qa/f2-quality.txt
+      1. Run `npm test 2>&1`
+      2. Run `npx tsc --noEmit 2>&1`
+      3. Run `npm run lint 2>&1`
+      4. Run `npm run build 2>&1`
+      5. Search changed hotspot files for residual `as any`, `Record<string, any>`, silent catches, duplicate helper seams, and oversized residual god-functions
+    Expected Result: Same or fewer failures than baseline, no new quality regressions in changed files
+    Failure Indicators: New diagnostics, failing build, or unresolved quality smells in touched hotspots
+    Evidence: .sisyphus/evidence/final-f2-quality-review.txt
   ```
 
-  Output: `Lint [PASS/FAIL] | Build [PASS/FAIL] | Tests [N pass/N fail] | Files [N clean/N issues] | VERDICT`
+- [x] F3. **Real Manual QA** — `unspecified-high` ✅ APPROVE
+  Execute representative CLI commands and behavior-critical plugin tests. Confirm actual outputs, not just static diagnostics.
 
-- [x] F3. **Real Manual QA** — `unspecified-high`
-
-  **QA Scenarios**:
+  **QA Scenario**:
 
   ```
-  Scenario: Proxy lifecycle end-to-end (direct subprocess)
+  Scenario: Real user-facing behavior still works
     Tool: Bash
+    Preconditions: Build artifacts and tests are available
     Steps:
-      1. pkill -f bun-proxy 2>/dev/null; rm -f /tmp/opencode-bun-proxy.pid
-      2. npm run build
-      3. bun dist/bun-proxy.mjs 48372 & PROXY_PID=$!
-      4. sleep 1 && curl -s http://127.0.0.1:48372/__health
-      5. kill $PROXY_PID 2>/dev/null; sleep 1
-      6. ps aux | grep bun-proxy | grep -v grep | wc -l
-      7. ls /tmp/opencode-bun-proxy.pid 2>&1
-    Expected Result: Step 4 returns "ok". Step 6 = 0 (no orphan). Step 7 = "No such file".
-    Evidence: .sisyphus/evidence/final-qa/f3-proxy-lifecycle.txt
-
-  Scenario: Debug output silence when debug=false
-    Tool: Bash
-    Steps:
-      1. npm run build
-      2. OPENCODE_ANTHROPIC_DEBUG=0 bun dist/bun-proxy.mjs 48372 2>/tmp/f3-stderr.txt & PROXY_PID=$!
-      3. sleep 1 && curl -s -X POST http://127.0.0.1:48372/ -H "x-proxy-url: https://httpbin.org/post" -H "content-type: application/json" -d '{"test":true}' > /dev/null
-      4. kill $PROXY_PID 2>/dev/null; sleep 1
-      5. grep -c '\[bun-proxy\] ===' /tmp/f3-stderr.txt
-    Expected Result: Step 5 outputs 0 — no request dump on stderr when debug is off
-    Evidence: .sisyphus/evidence/final-qa/f3-debug-silence.txt
-
-  Scenario: Graceful fallback when bun is missing
-    Tool: Bash
-    Steps:
-      1. npm run build
-      2. PATH=/usr/bin:/bin node -e "const {ensureBunProxy} = require('./dist/opencode-anthropic-auth-plugin.js'); ensureBunProxy().then(p => { console.log('PORT=' + p); process.exit(0); });" 2>&1 | tee .sisyphus/evidence/final-qa/f3-no-bun.txt
-      3. grep 'PORT=null' .sisyphus/evidence/final-qa/f3-no-bun.txt
-    Expected Result: PORT=null printed (bun not in PATH, graceful fallback), no crash
-    Evidence: .sisyphus/evidence/final-qa/f3-no-bun.txt
+      1. Run representative CLI commands such as help/status/list using the real CLI entrypoint
+      2. Run the most behavior-critical plugin-focused regression tests for index/accounts/router paths
+      3. Capture actual command outputs and test outputs
+      4. Compare outputs against expected documented command surface and baseline behavior notes
+    Expected Result: Real CLI outputs and critical plugin behavior remain intact after refactor
+    Failure Indicators: Broken commands, changed visible behavior, or critical regression test failures
+    Evidence: .sisyphus/evidence/final-f3-manual-qa.txt
   ```
 
-  Output: `Scenarios [N/N pass] | Integration [N/N] | Edge Cases [N tested] | VERDICT`
+- [x] F4. **Scope Fidelity Check** — `deep` ✅ APPROVE
+  Confirm work stayed within the requested refactor scope: no feature additions, no API redesign, no broad unrelated cleanup.
 
-- [x] F4. **Scope Fidelity Check** — `deep`
-
-  **QA Scenarios**:
+  **QA Scenario**:
 
   ```
-  Scenario: Diff matches plan scope
+  Scenario: Work stayed inside the requested refactor scope
     Tool: Bash
+    Preconditions: Final diff summary available
     Steps:
-      1. git diff --stat HEAD~17..HEAD (or appropriate range for all task commits)
-      2. For each changed file: verify it's mentioned in at least one task's Commit → Files list
-      3. For each task: verify every file in the Commit → Files list was actually changed
-      4. grep -rn 'PluginContext\|class Plugin' src/ — verify no forbidden patterns introduced
-      5. wc -l src/index.ts — verify reduced from 890
-    Expected Result: 1:1 match between plan scope and actual changes, no scope creep
-    Evidence: .sisyphus/evidence/final-qa/f4-fidelity.txt
+      1. Review changed files and commit summaries
+      2. Compare all changes against the plan's Must NOT Have and Out of Scope sections
+      3. Flag any feature additions, public API redesign, config-schema changes, or unrelated cleanup outside hotspot work
+    Expected Result: All changes map directly to planned hotspot refactor work and stabilization tasks
+    Failure Indicators: New features, scope expansion, or unrelated repo-wide cleanup appears in the final diff
+    Evidence: .sisyphus/evidence/final-f4-scope-fidelity.txt
   ```
-
-  Output: `Tasks [N/N compliant] | Unaccounted [CLEAN/N files] | VERDICT`
 
 ---
 
 ## Commit Strategy
 
-| Commit | Message                                                      | Files                                                                                                       | Pre-commit                       |
-| ------ | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- | -------------------------------- |
-| 1      | `chore: capture test baseline`                               | vitest run output in commit msg                                                                             | —                                |
-| 2      | `fix: gate debug output in bun-fetch.ts behind config.debug` | `src/bun-fetch.ts`                                                                                          | `npx vitest run`                 |
-| 3      | `fix: gate debug output in bun-proxy.ts via DEBUG env var`   | `src/bun-proxy.ts`, `src/bun-fetch.ts`                                                                      | `npx vitest run`                 |
-| 4      | `fix: remove ungated debug dump to /tmp`                     | `src/bun-fetch.ts`                                                                                          | `npx vitest run`                 |
-| 5      | `fix: replace silent error swallowing with debugLog`         | `src/accounts.ts`, `src/token-refresh.ts`, `src/index.ts`, `src/request/body.ts`, `src/request/metadata.ts` | `npx vitest run`                 |
-| 6      | `refactor: extract refresh helpers from index.ts`            | `src/index.ts`, `src/refresh-helpers.ts` (new)                                                              | `npx vitest run`                 |
-| 7      | `refactor: extract plugin helpers from index.ts`             | `src/index.ts`, `src/plugin-helpers.ts` (new)                                                               | `npx vitest run`                 |
-| 8      | `refactor: clean up residual index.ts`                       | `src/index.ts`                                                                                              | `npx vitest run`                 |
-| 9      | `fix: add word boundaries to sanitization regexes`           | `src/system-prompt/sanitize.ts`, `src/request/body.ts`                                                      | `npx vitest run`                 |
-| 10     | `fix: correct cc_entrypoint default to match CC`             | `src/headers/billing.ts`                                                                                    | `npx vitest run`                 |
-| 11     | `fix: add upstream timeout to bun-proxy fetch`               | `src/bun-proxy.ts`                                                                                          | `npx vitest run`                 |
-| 12     | `fix: add uncaughtException handler for proxy cleanup`       | `src/bun-fetch.ts`                                                                                          | `npx vitest run`                 |
-| 13     | `fix: cap unbounded state growth in maps and sets`           | `src/index.ts`, `src/accounts.ts`                                                                           | `npx vitest run`                 |
-| 14     | `fix: verify and align tool prefix with CC convention`       | `src/request/body.ts`                                                                                       | `npx vitest run`                 |
-| 15     | `docs: verify system prompt structure against CC source`     | docs or inline comments                                                                                     | `npx vitest run`                 |
-| 16     | `test: add coverage for refactored and fixed modules`        | `src/__tests__/*.test.ts`, `index.test.ts`                                                                  | `npx vitest run`                 |
-| 17     | `chore: tighten ESLint rules and enforce zero warnings`      | `eslint.config.ts`, all files with lint fixes                                                               | `npx eslint . && npx vitest run` |
+- Stabilization commits separate from structural refactor commits
+- Prefer one commit per hotspot sub-phase:
+  - baseline blocker fixes
+  - CLI extraction series
+  - index extraction
+  - accounts extraction
+  - router extraction
+  - regression tests
+  - cleanup/docs if needed
 
 ---
 
@@ -1357,24 +1224,16 @@ Max Concurrent: 5 (Wave 1) or 7 (Wave 3)
 ### Verification Commands
 
 ```bash
-npx vitest run                          # Expected: all pass, 0 failures
-npx tsc --noEmit                        # Expected: same or fewer errors than baseline
-npm run build                           # Expected: success, 3 dist artifacts
-npx eslint .                            # Expected: 0 problems (0 errors, 0 warnings)
-grep -rn 'console\.\(log\|error\|warn\)' src/ --include='*.ts' | grep -v 'cli.ts\|commands/\|__tests__/' | grep -v debugLog | grep -v 'config\.debug\|process\.env\.\(VITEST\|DEBUG\)'  # Expected: only IPC line in bun-proxy.ts
-grep -rn 'catch.*{.*}' src/ --include='*.ts' | grep -v debugLog | grep -v 'test'  # Expected: 0 empty catches
-wc -l src/index.ts                      # Expected: significantly reduced from 890 (guideline: < 500)
-ls /tmp/opencode-last-*.json 2>/dev/null  # Expected: no files (or gated behind debug)
+npm test
+npx tsc --noEmit
+npm run lint
+npm run build
 ```
 
 ### Final Checklist
 
-- [ ] All "Must Have" present
-- [ ] All "Must NOT Have" absent
-- [ ] All tests pass (baseline + new)
-- [ ] Build succeeds
-- [ ] `npx eslint .` — zero warnings, zero errors
-- [ ] No ungated debug output
-- [ ] No silent error swallowing
-- [ ] index.ts significantly reduced from 890 lines (quality over LOC)
-- [ ] Proxy subprocess verified to shut down on parent exit
+- [ ] Baseline issues documented before refactor work
+- [ ] Hotspots refactored in planned order
+- [ ] No unintended public behavior changes
+- [ ] Same or fewer test/type/lint failures than baseline
+- [ ] Manual QA evidence captured for touched behaviors
