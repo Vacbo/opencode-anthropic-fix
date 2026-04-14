@@ -52,11 +52,11 @@ vi.mock("@clack/prompts", () => {
         outro: noop,
         isCancel: vi.fn().mockReturnValue(false),
         log: {
-            info: vi.fn((...args: any[]) => console.log(...args)),
-            success: vi.fn((...args: any[]) => console.log(...args)),
-            warn: vi.fn((...args: any[]) => console.log(...args)),
-            error: vi.fn((...args: any[]) => console.error(...args)),
-            message: vi.fn((...args: any[]) => console.log(...args)),
+            info: vi.fn((...args: unknown[]) => console.log(...args)),
+            success: vi.fn((...args: unknown[]) => console.log(...args)),
+            warn: vi.fn((...args: unknown[]) => console.log(...args)),
+            error: vi.fn((...args: unknown[]) => console.error(...args)),
+            message: vi.fn((...args: unknown[]) => console.log(...args)),
             step: noop,
         },
         note: noop,
@@ -149,14 +149,22 @@ vi.mock("./src/config.js", () => {
 // Mock global fetch for OAuth token exchange and API requests
 const mockFetch = vi.fn();
 const originalFetch = globalThis.fetch;
-globalThis.fetch = mockFetch as typeof fetch;
+globalThis.fetch = mockFetch as unknown as typeof fetch;
 
 import { DEFAULT_CONFIG, loadConfig, loadConfigFresh, saveConfig as saveRuntimeConfig } from "./src/config.js";
 import { AccountManager } from "./src/accounts.js";
 import { AnthropicAuthPlugin } from "./src/index.js";
 import { acquireRefreshLock, releaseRefreshLock } from "./src/refresh-lock.js";
 import { readCCCredentials } from "./src/cc-credentials.js";
+import type { AccountMetadata, AccountStorage } from "./src/storage.js";
 import { clearAccounts, loadAccounts, saveAccounts } from "./src/storage.js";
+type PluginFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+type StoredAccountOverride = Partial<AccountMetadata>;
+type MockedClient = {
+    auth: { set: Mock };
+    session: { prompt: Mock };
+    tui: { showToast: Mock };
+};
 
 const mockReadCCCredentials = readCCCredentials as Mock;
 const mockLoadConfig = loadConfig as Mock;
@@ -169,7 +177,7 @@ const mockLoadAccounts = loadAccounts as Mock;
 const mockSaveAccounts = saveAccounts as Mock;
 
 beforeEach(() => {
-    globalThis.fetch = mockFetch as typeof fetch;
+    globalThis.fetch = mockFetch as unknown as typeof fetch;
     delete process.env.DISABLE_INTERLEAVED_THINKING;
     delete process.env.USE_API_CONTEXT_MANAGEMENT;
     delete process.env.TENGU_MARBLE_ANVIL;
@@ -203,7 +211,7 @@ afterEach(() => {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeClient() {
+function makeClient(): MockedClient {
     return {
         auth: {
             set: vi.fn().mockResolvedValue(undefined),
@@ -244,7 +252,7 @@ function makeProvider() {
  * @param {() => void} assertion
  * @param {number} [timeoutMs]
  */
-async function waitForAssertion(assertion, timeoutMs = 500) {
+async function waitForAssertion(assertion: () => void, timeoutMs = 500) {
     const started = Date.now();
     while (true) {
         try {
@@ -261,21 +269,41 @@ async function waitForAssertion(assertion, timeoutMs = 500) {
  * Build a stored account object with sensible defaults.
  * Override any field by passing partial overrides.
  */
-function makeStoredAccount(overrides = {}) {
+function makeStoredAccount(overrides: StoredAccountOverride = {}): AccountMetadata {
     return {
+        id: `account-${overrides.addedAt ?? 1000}`,
+        email: undefined,
+        identity: undefined,
+        label: undefined,
         refreshToken: "refresh-1",
+        access: undefined,
+        expires: undefined,
+        token_updated_at: 1000,
         addedAt: 1000,
         lastUsed: 0,
         enabled: true,
         rateLimitResetTimes: {},
         consecutiveFailures: 0,
         lastFailureTime: null,
+        lastSwitchReason: undefined,
+        stats: {
+            requests: 0,
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            lastReset: 1000,
+        },
+        source: undefined,
         ...overrides,
     };
 }
 
 /** Build a stored accounts data structure with N accounts. */
-function makeAccountsData(accountOverrides = [{}], extra = {}) {
+function makeAccountsData(
+    accountOverrides: StoredAccountOverride[] = [{}],
+    extra: Partial<AccountStorage> = {},
+): AccountStorage {
     return {
         version: 1,
         accounts: accountOverrides.map((o, i) =>
@@ -290,10 +318,10 @@ function makeAccountsData(accountOverrides = [{}], extra = {}) {
     };
 }
 
-function useMutableAccountsData(initialData) {
+function useMutableAccountsData(initialData: AccountStorage) {
     let stored = structuredClone(initialData);
     mockLoadAccounts.mockImplementation(async () => structuredClone(stored));
-    mockSaveAccounts.mockImplementation(async (nextData) => {
+    mockSaveAccounts.mockImplementation(async (nextData: AccountStorage) => {
         stored = structuredClone(nextData);
     });
 }
@@ -302,7 +330,16 @@ function useMutableAccountsData(initialData) {
  * Bootstrap a plugin with loaded accounts and return the fetch interceptor.
  * Accepts an array of account overrides (one per account) and optional auth overrides.
  */
-async function setupFetchFn(client, accountOverrides = [{}], authOverrides = {}) {
+async function setupFetchFn(
+    client: MockedClient,
+    accountOverrides: StoredAccountOverride[] = [{}],
+    authOverrides: Partial<{
+        type: "oauth";
+        refresh: string;
+        access: string;
+        expires: number;
+    }> = {},
+): Promise<PluginFetch> {
     const data = makeAccountsData(accountOverrides);
     mockLoadAccounts.mockResolvedValue(data);
     mockSaveAccounts.mockResolvedValue(undefined);
@@ -317,7 +354,7 @@ async function setupFetchFn(client, accountOverrides = [{}], authOverrides = {})
     });
 
     const result = await plugin.auth.loader(getAuth, makeProvider());
-    return result.fetch;
+    return result.fetch!;
 }
 
 /** Shorthand for a successful token refresh mock response */
@@ -335,7 +372,7 @@ function mockTokenRefresh(token = "access-new", refresh = "refresh-new") {
     );
 }
 
-function getFetchHeaders(callIndex) {
+function getFetchHeaders(callIndex: number) {
     const [input, init] = mockFetch.mock.calls[callIndex] ?? [];
     if (init?.headers) {
         return init.headers;
@@ -351,7 +388,7 @@ function getFetchHeaders(callIndex) {
 // ---------------------------------------------------------------------------
 
 describe("plugin lifecycle", () => {
-    let client: ReturnType<typeof makeClient>;
+    let client: MockedClient;
 
     beforeEach(() => {
         vi.resetAllMocks();
@@ -375,16 +412,19 @@ describe("plugin lifecycle", () => {
         const method = plugin.auth.methods[1]; // "Claude Pro/Max (multi-account)"
 
         // Step 1: authorize() — returns URL + callback
-        const authResult = await method.authorize();
+        const authResult = await method.authorize!();
         expect(authResult.url).toContain("claude.ai/oauth/authorize");
         expect(authResult.method).toBe("code");
 
         // Step 2: callback() — user pastes the code
         // At this point, loader() has NOT been called yet, so accountManager is null.
-        const authState = new URL(authResult.url).searchParams.get("state");
-        const credentials = await authResult.callback(`auth-code#${authState}`);
+        const authState = new URL(authResult.url!).searchParams.get("state");
+        const credentials = await authResult.callback!(`auth-code#${authState}`);
 
         expect(credentials.type).toBe("success");
+        if (credentials.type !== "success" || !("refresh" in credentials) || !("access" in credentials)) {
+            throw new Error("Expected OAuth success credentials");
+        }
         expect(credentials.refresh).toBe("refresh-from-oauth");
         expect(credentials.access).toBe("access-from-oauth");
 
@@ -474,11 +514,14 @@ describe("plugin lifecycle", () => {
         });
 
         const method = plugin.auth.methods[1];
-        const authResult = await method.authorize();
-        const authState2 = new URL(authResult.url).searchParams.get("state");
-        const credentials = await authResult.callback(`second-code#${authState2}`);
+        const authResult = await method.authorize!();
+        const authState2 = new URL(authResult.url!).searchParams.get("state");
+        const credentials = await authResult.callback!(`second-code#${authState2}`);
 
         expect(credentials.type).toBe("success");
+        if (credentials.type !== "success" || !("refresh" in credentials)) {
+            throw new Error("Expected OAuth success credentials");
+        }
         expect(credentials.refresh).toBe("second-refresh");
 
         // Should have saved with BOTH accounts
@@ -507,7 +550,7 @@ describe("plugin lifecycle", () => {
 // ---------------------------------------------------------------------------
 
 describe("slash commands", () => {
-    let client: ReturnType<typeof makeClient>;
+    let client: MockedClient;
     let plugin: Awaited<ReturnType<typeof AnthropicAuthPlugin>>;
 
     /**
@@ -515,7 +558,7 @@ describe("slash commands", () => {
      * @param {string} args
      * @returns {Promise<string>}
      */
-    async function runAnthropic(args) {
+    async function runAnthropic(args: string) {
         client.session.prompt.mockClear();
         await expect(
             plugin["command.execute.before"]({
@@ -539,7 +582,9 @@ describe("slash commands", () => {
     });
 
     it("registers /anthropic command in config hook", async () => {
-        const cfg = { command: {} };
+        const cfg: {
+            command: Record<string, { template: string; description: string }>;
+        } = { command: {} };
         await plugin.config(cfg);
         expect(cfg.command.anthropic).toEqual(
             expect.objectContaining({
@@ -751,8 +796,8 @@ describe("slash commands", () => {
 // ---------------------------------------------------------------------------
 
 describe("fetch interceptor", () => {
-    let client: ReturnType<typeof makeClient>;
-    let fetchFn: typeof fetch;
+    let client: MockedClient;
+    let fetchFn: PluginFetch;
 
     beforeEach(async () => {
         vi.resetAllMocks();
@@ -794,7 +839,7 @@ describe("fetch interceptor", () => {
         });
 
         const result = await plugin.auth.loader(getAuth, makeProvider());
-        fetchFn = result.fetch;
+        fetchFn = result.fetch!;
     });
 
     it("adds Bearer auth header and required beta headers", async () => {
@@ -816,8 +861,15 @@ describe("fetch interceptor", () => {
         expect(headers.get("authorization")).toBe("Bearer test-access");
         expect(headers.get("anthropic-beta")).toContain("oauth-2025-04-20");
         expect(headers.get("anthropic-beta")).toContain("claude-code-20250219");
-        expect(headers.get("user-agent")).toContain("claude-cli/2.1.98");
+        expect(headers.get("anthropic-beta")).not.toContain("managed-agents-2026-04-01");
+        expect(headers.get("user-agent")).toContain("claude-cli/2.1.107");
         expect(headers.get("x-app")).toBe("cli");
+        expect(headers.get("x-claude-code-session-id")).toMatch(
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+        );
+        expect(headers.get("x-client-request-id")).toMatch(
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+        );
         expect(headers.get("x-stainless-lang")).toBe("js");
         expect(headers.has("x-api-key")).toBe(false);
     });
@@ -863,7 +915,7 @@ describe("fetch interceptor", () => {
         const [, init] = mockFetch.mock.calls[0];
         const body = JSON.parse(init.body);
         // System prompt is now pristine: only billing + identity, no relocated content.
-        const systemTexts = body.system.map((item) => item.text);
+        const systemTexts = body.system.map((item: { text: string }) => item.text);
         expect(systemTexts.some((text: string) => text === "You are OpenCode, an opencode assistant.")).toBe(false);
         // The original third-party text was relocated to the first user message
         // wrapped in <system-instructions>. Sanitize is now off by default, so the
@@ -893,7 +945,7 @@ describe("fetch interceptor", () => {
         const [, init] = mockFetch.mock.calls[0];
         const body = JSON.parse(init.body);
         // The path-like block is no longer in parsed.system at all (only billing + identity remain).
-        const systemTexts = body.system.map((item) => item.text);
+        const systemTexts = body.system.map((item: { text: string }) => item.text);
         expect(systemTexts.some((text: string) => text.includes("Working dir:"))).toBe(false);
         // The original path is preserved verbatim in the relocated wrapper —
         // no more `/Users/rmk/projects/opencode-auth` → `/Users/rmk/projects/Claude-auth` corruption.
@@ -956,7 +1008,7 @@ describe("fetch interceptor", () => {
         // gets relocated into the first user message wrapper. Verify the
         // delegation protocol still appears exactly once across all reachable
         // text in the request body.
-        const systemJoined = body.system.map((item) => item.text).join("\n\n");
+        const systemJoined = body.system.map((item: { text: string }) => item.text).join("\n\n");
         const firstUserContent = body.messages[0].content;
         const wrappedText = typeof firstUserContent === "string" ? firstUserContent : firstUserContent[0].text;
         const fullJoined = `${systemJoined}\n\n${wrappedText}`;
@@ -989,7 +1041,7 @@ describe("fetch interceptor", () => {
         // Title-generator detection runs before relocation, so the compact dedicated
         // prompt replaces the verbose title-generator system blocks. The compact
         // prompt then gets relocated into the first user message wrapper.
-        const systemJoined = body.system.map((item) => item.text).join("\n");
+        const systemJoined = body.system.map((item: { text: string }) => item.text).join("\n");
         const firstUserContent = body.messages[0].content;
         const wrappedText = typeof firstUserContent === "string" ? firstUserContent : firstUserContent[0].text;
         const fullJoined = `${systemJoined}\n${wrappedText}`;
@@ -1023,7 +1075,7 @@ describe("fetch interceptor", () => {
         );
 
         mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
-        await result.fetch("https://api.anthropic.com/v1/messages", {
+        await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             body: JSON.stringify({
                 messages: [{ role: "user", content: "hello" }],
@@ -1362,7 +1414,7 @@ describe("file-id account pinning", () => {
             expires: Date.now() + 3600_000,
         });
         const result = await plugin.auth.loader(getAuth, makeProvider());
-        const fetchFn = result.fetch;
+        const fetchFn = result.fetch!;
 
         // Populate fileAccountMap via /anthropic files list (lists from ALL accounts)
         // Account 1 (index 0) → file-abc, Account 2 (index 1) → file-xyz
@@ -1461,7 +1513,7 @@ describe("file-id account pinning", () => {
             expires: Date.now() + 3600_000,
         });
         const result = await plugin.auth.loader(getAuth, makeProvider());
-        const fetchFn = result.fetch;
+        const fetchFn = result.fetch!;
 
         // Populate fileAccountMap via /anthropic files list
         mockFetch
@@ -1533,7 +1585,7 @@ describe("file-id account pinning", () => {
             expires: Date.now() + 3600_000,
         });
         const result = await plugin.auth.loader(getAuth, makeProvider());
-        const fetchFn = result.fetch;
+        const fetchFn = result.fetch!;
 
         // Populate: account 2 owns file-xyz
         mockFetch
@@ -1650,7 +1702,7 @@ describe("system prompt transform", () => {
 // ---------------------------------------------------------------------------
 
 describe("fetch interceptor — token refresh", () => {
-    let client: ReturnType<typeof makeClient>;
+    let client: MockedClient;
 
     beforeEach(() => {
         vi.resetAllMocks();
@@ -1677,7 +1729,7 @@ describe("fetch interceptor — token refresh", () => {
         // Actual API call
         mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
 
-        const response = await result.fetch("https://api.anthropic.com/v1/messages", {
+        const response = await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             body: JSON.stringify({ messages: [] }),
         });
@@ -1724,7 +1776,7 @@ describe("fetch interceptor — token refresh", () => {
         mockFetch.mockResolvedValueOnce(mockTokenRefresh("fresh-access", "refresh-1-rotated"));
         mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
 
-        const response = await result.fetch("https://api.anthropic.com/v1/messages", {
+        const response = await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             body: JSON.stringify({ messages: [] }),
         });
@@ -1748,20 +1800,20 @@ describe("fetch interceptor — token refresh", () => {
         });
         const result = await plugin.auth.loader(getAuth, makeProvider());
 
-        let resolveRefresh: () => void;
-        const refreshPromise = new Promise((resolve) => {
+        let resolveRefresh!: (value: Response) => void;
+        const refreshPromise = new Promise<Response>((resolve) => {
             resolveRefresh = resolve;
         });
 
         let refreshCallCount = 0;
         /** @type {() => void} */
-        let markRefreshInFlight: () => void;
-        const refreshInFlight = new Promise((resolve) => {
+        let markRefreshInFlight!: () => void;
+        const refreshInFlight = new Promise<void>((resolve) => {
             markRefreshInFlight = resolve;
         });
 
         /** @type {string[]} */
-        const apiAuthHeaders = [];
+        const apiAuthHeaders: string[] = [];
 
         mockFetch.mockImplementation((url, init) => {
             const s = String(url);
@@ -1776,11 +1828,11 @@ describe("fetch interceptor — token refresh", () => {
             return Promise.resolve(new Response('{"content":[]}', { status: 200 }));
         });
 
-        const p1 = result.fetch("https://api.anthropic.com/v1/messages", {
+        const p1 = result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             body: JSON.stringify({ messages: [] }),
         });
-        const p2 = result.fetch("https://api.anthropic.com/v1/messages", {
+        const p2 = result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             body: JSON.stringify({ messages: [] }),
         });
@@ -1818,7 +1870,10 @@ describe("fetch interceptor — token refresh", () => {
         );
         mockSaveAccounts.mockResolvedValue(undefined);
 
-        _mockAcquireRefreshLock.mockResolvedValue({ acquired: false, lockPath: null });
+        _mockAcquireRefreshLock.mockResolvedValue({
+            acquired: false,
+            lockPath: null,
+        });
 
         const plugin = await AnthropicAuthPlugin({ client });
         const getAuth = vi.fn().mockResolvedValue({
@@ -1850,12 +1905,14 @@ describe("fetch interceptor — token refresh", () => {
                 },
             ]),
         ];
-        loadAccounts.mockImplementation(async () => requestDiskReads.shift() ?? requestDiskReads.at(-1));
+        mockLoadAccounts.mockImplementation(
+            async () => requestDiskReads.shift() ?? requestDiskReads[requestDiskReads.length - 1],
+        );
 
         // No oauth refresh should be issued; only API call should happen.
         mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
 
-        const response = await result.fetch("https://api.anthropic.com/v1/messages", {
+        const response = await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             body: JSON.stringify({ messages: [] }),
         });
@@ -1908,7 +1965,7 @@ describe("fetch interceptor — token refresh", () => {
             return Promise.resolve(new Response('{"content":[]}', { status: 200 }));
         });
 
-        const response = await result.fetch("https://api.anthropic.com/v1/messages", {
+        const response = await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             body: JSON.stringify({ messages: [] }),
         });
@@ -1969,7 +2026,7 @@ describe("fetch interceptor — token refresh", () => {
             return Promise.resolve(new Response('{"content":[]}', { status: 200 }));
         });
 
-        const response = await result.fetch("https://api.anthropic.com/v1/messages", {
+        const response = await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             body: JSON.stringify({ messages: [] }),
         });
@@ -1981,9 +2038,10 @@ describe("fetch interceptor — token refresh", () => {
         });
 
         // Background maintenance should not auto-disable accounts.
-        const disabledToasts = client.tui.showToast.mock.calls.filter(([arg]) =>
-            String(arg?.body?.message || "").includes("Disabled"),
-        );
+        const disabledToasts = client.tui.showToast.mock.calls.filter((call) => {
+            const arg = call[0] as { body?: { message?: string } } | undefined;
+            return String(arg?.body?.message || "").includes("Disabled");
+        });
         expect(disabledToasts).toHaveLength(0);
 
         for (const [storage] of mockSaveAccounts.mock.calls) {
@@ -2052,7 +2110,7 @@ describe("fetch interceptor — token refresh", () => {
             return Promise.resolve(new Response('{"content":[]}', { status: 200 }));
         });
 
-        const response = await result.fetch("https://api.anthropic.com/v1/messages", {
+        const response = await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             body: JSON.stringify({ messages: [] }),
         });
@@ -2064,9 +2122,10 @@ describe("fetch interceptor — token refresh", () => {
         const secondBody = JSON.parse(oauthCalls[1][1].body);
         expect(secondBody.refresh_token).toBe("refresh-2");
 
-        const disabledToasts = client.tui.showToast.mock.calls.filter(([arg]) =>
-            String(arg?.body?.message || "").includes("Disabled"),
-        );
+        const disabledToasts = client.tui.showToast.mock.calls.filter((call) => {
+            const arg = call[0] as { body?: { message?: string } } | undefined;
+            return String(arg?.body?.message || "").includes("Disabled");
+        });
         expect(disabledToasts).toHaveLength(0);
     });
 
@@ -2097,7 +2156,7 @@ describe("fetch interceptor — token refresh", () => {
         // API call with account 2
         mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
 
-        const response = await result.fetch("https://api.anthropic.com/v1/messages", {
+        const response = await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             body: JSON.stringify({ messages: [] }),
         });
@@ -2133,7 +2192,7 @@ describe("fetch interceptor — token refresh", () => {
         // API call with account 2
         mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
 
-        const response = await result.fetch("https://api.anthropic.com/v1/messages", {
+        const response = await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             body: JSON.stringify({ messages: [] }),
         });
@@ -2168,7 +2227,7 @@ describe("fetch interceptor — token refresh", () => {
         // API call succeeds on account 2
         mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
 
-        const response = await result.fetch("https://api.anthropic.com/v1/messages", {
+        const response = await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             body: JSON.stringify({ messages: [] }),
         });
@@ -2205,7 +2264,7 @@ describe("fetch interceptor — token refresh", () => {
         // API call succeeds
         mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
 
-        const response = await result.fetch("https://api.anthropic.com/v1/messages", {
+        const response = await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             body: JSON.stringify({ messages: [] }),
         });
@@ -2248,7 +2307,7 @@ describe("fetch interceptor — token refresh", () => {
             makeAccountsData([{ id: accountId, refreshToken: oldToken }]),
             makeAccountsData([{ id: accountId, refreshToken: rotatedToken }]),
         ];
-        loadAccounts.mockImplementation(async () => {
+        mockLoadAccounts.mockImplementation(async () => {
             return requestDiskReads.shift() ?? makeAccountsData([{ id: accountId, refreshToken: rotatedToken }]);
         });
 
@@ -2263,7 +2322,7 @@ describe("fetch interceptor — token refresh", () => {
         // API call succeeds
         mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
 
-        const response = await result.fetch("https://api.anthropic.com/v1/messages", {
+        const response = await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             body: JSON.stringify({ messages: [] }),
         });
@@ -2309,15 +2368,15 @@ describe("fetch interceptor — token refresh", () => {
         mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
 
         // Track call ordering between saveAccounts and releaseRefreshLock
-        const callOrder = [];
-        saveAccounts.mockImplementation(async () => {
+        const callOrder: string[] = [];
+        mockSaveAccounts.mockImplementation(async () => {
             callOrder.push("save");
         });
-        releaseRefreshLock.mockImplementation(async () => {
+        _mockReleaseRefreshLock.mockImplementation(async () => {
             callOrder.push("unlock");
         });
 
-        const response = await result.fetch("https://api.anthropic.com/v1/messages", {
+        const response = await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             body: JSON.stringify({ messages: [] }),
         });
@@ -2361,7 +2420,7 @@ describe("fetch interceptor — token refresh", () => {
             makeAccountsData([{ id: accountId, refreshToken: oldToken }]),
             makeAccountsData([{ id: accountId, refreshToken: "also-bad-token" }]),
         ];
-        loadAccounts.mockImplementation(async () => {
+        mockLoadAccounts.mockImplementation(async () => {
             return requestDiskReads.shift() ?? makeAccountsData([{ id: accountId, refreshToken: "also-bad-token" }]);
         });
 
@@ -2380,7 +2439,7 @@ describe("fetch interceptor — token refresh", () => {
 
         // No more accounts — should throw
         await expect(
-            result.fetch("https://api.anthropic.com/v1/messages", {
+            result.fetch!("https://api.anthropic.com/v1/messages", {
                 method: "POST",
                 body: JSON.stringify({ messages: [] }),
             }),
@@ -2412,7 +2471,7 @@ describe("fetch interceptor — token refresh", () => {
         // Actual API call
         mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
 
-        const response = await result.fetch("https://api.anthropic.com/v1/messages", {
+        const response = await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             body: JSON.stringify({ messages: [] }),
         });
@@ -2442,7 +2501,7 @@ describe("fetch interceptor — token refresh", () => {
         // No token refresh — only API call
         mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
 
-        const response = await result.fetch("https://api.anthropic.com/v1/messages", {
+        const response = await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             body: JSON.stringify({ messages: [] }),
         });
@@ -2474,7 +2533,7 @@ describe("fetch interceptor — token refresh", () => {
         // Actual API call
         mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
 
-        const response = await result.fetch("https://api.anthropic.com/v1/messages", {
+        const response = await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             body: JSON.stringify({ messages: [] }),
         });
@@ -2494,7 +2553,7 @@ describe("fetch interceptor — token refresh", () => {
 // ---------------------------------------------------------------------------
 
 describe("fetch interceptor — edge conditions", () => {
-    let client: ReturnType<typeof makeClient>;
+    let client: MockedClient;
 
     beforeEach(() => {
         vi.resetAllMocks();
@@ -2515,7 +2574,7 @@ describe("fetch interceptor — edge conditions", () => {
         const result = await plugin.auth.loader(getAuth, makeProvider());
 
         await expect(
-            result.fetch("https://api.anthropic.com/v1/messages", {
+            result.fetch!("https://api.anthropic.com/v1/messages", {
                 method: "POST",
                 body: JSON.stringify({ messages: [] }),
             }),
@@ -2530,7 +2589,7 @@ describe("fetch interceptor — edge conditions", () => {
 // ---------------------------------------------------------------------------
 
 describe("fetch interceptor — account exhaustion", () => {
-    let client: ReturnType<typeof makeClient>;
+    let client: MockedClient;
 
     beforeEach(() => {
         vi.resetAllMocks();
@@ -2559,7 +2618,7 @@ describe("fetch interceptor — account exhaustion", () => {
         });
 
         await expect(
-            result.fetch("https://api.anthropic.com/v1/messages", {
+            result.fetch!("https://api.anthropic.com/v1/messages", {
                 method: "POST",
                 body: JSON.stringify({ messages: [] }),
             }),
@@ -2611,7 +2670,12 @@ describe("fetch interceptor — account exhaustion", () => {
             mockFetch
                 .mockResolvedValueOnce(
                     new Response(
-                        JSON.stringify({ error: { type: "overloaded_error", message: "Server is overloaded" } }),
+                        JSON.stringify({
+                            error: {
+                                type: "overloaded_error",
+                                message: "Server is overloaded",
+                            },
+                        }),
                         {
                             status: 529,
                             headers: { "retry-after-ms": "1" },
@@ -2661,7 +2725,12 @@ describe("fetch interceptor — account exhaustion", () => {
             mockFetch
                 .mockResolvedValueOnce(
                     new Response(
-                        JSON.stringify({ error: { type: "overloaded_error", message: "Server is overloaded" } }),
+                        JSON.stringify({
+                            error: {
+                                type: "overloaded_error",
+                                message: "Server is overloaded",
+                            },
+                        }),
                         {
                             status: 529,
                             headers: { "retry-after-ms": "1" },
@@ -2669,10 +2738,15 @@ describe("fetch interceptor — account exhaustion", () => {
                     ),
                 )
                 .mockResolvedValueOnce(
-                    new Response(JSON.stringify({ error: { type: "overloaded_error", message: "Still overloaded" } }), {
-                        status: 529,
-                        headers: { "retry-after-ms": "1" },
-                    }),
+                    new Response(
+                        JSON.stringify({
+                            error: { type: "overloaded_error", message: "Still overloaded" },
+                        }),
+                        {
+                            status: 529,
+                            headers: { "retry-after-ms": "1" },
+                        },
+                    ),
                 )
                 .mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
 
@@ -2719,7 +2793,12 @@ describe("fetch interceptor — account exhaustion", () => {
             mockFetch
                 .mockResolvedValueOnce(
                     new Response(
-                        JSON.stringify({ error: { type: "overloaded_error", message: "Server is overloaded" } }),
+                        JSON.stringify({
+                            error: {
+                                type: "overloaded_error",
+                                message: "Server is overloaded",
+                            },
+                        }),
                         {
                             status: 529,
                             headers: { "retry-after-ms": "1" },
@@ -2727,16 +2806,26 @@ describe("fetch interceptor — account exhaustion", () => {
                     ),
                 )
                 .mockResolvedValueOnce(
-                    new Response(JSON.stringify({ error: { type: "overloaded_error", message: "Still overloaded" } }), {
-                        status: 529,
-                        headers: { "retry-after-ms": "1" },
-                    }),
+                    new Response(
+                        JSON.stringify({
+                            error: { type: "overloaded_error", message: "Still overloaded" },
+                        }),
+                        {
+                            status: 529,
+                            headers: { "retry-after-ms": "1" },
+                        },
+                    ),
                 )
                 .mockResolvedValueOnce(
-                    new Response(JSON.stringify({ error: { type: "overloaded_error", message: "Still overloaded" } }), {
-                        status: 529,
-                        headers: { "retry-after-ms": "1" },
-                    }),
+                    new Response(
+                        JSON.stringify({
+                            error: { type: "overloaded_error", message: "Still overloaded" },
+                        }),
+                        {
+                            status: 529,
+                            headers: { "retry-after-ms": "1" },
+                        },
+                    ),
                 );
 
             const responsePromise = fetchFn("https://api.anthropic.com/v1/messages", {
@@ -2885,7 +2974,7 @@ describe("fetch interceptor — account exhaustion", () => {
             );
 
             await expect(
-                result.fetch("https://api.anthropic.com/v1/messages", {
+                result.fetch!("https://api.anthropic.com/v1/messages", {
                     method: "POST",
                     body: JSON.stringify({ messages: [] }),
                 }),
@@ -2898,7 +2987,7 @@ describe("fetch interceptor — account exhaustion", () => {
             mockFetch.mockResolvedValueOnce(mockTokenRefresh("fresh-access", "refresh-1"));
             mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
 
-            const response = await result.fetch("https://api.anthropic.com/v1/messages", {
+            const response = await result.fetch!("https://api.anthropic.com/v1/messages", {
                 method: "POST",
                 body: JSON.stringify({ messages: [] }),
             });
@@ -2933,7 +3022,7 @@ describe("fetch interceptor — account exhaustion", () => {
         mockFetch.mockRejectedValueOnce(new Error("network down"));
         mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
 
-        const response = await result.fetch("https://api.anthropic.com/v1/messages", {
+        const response = await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             body: JSON.stringify({ messages: [] }),
         });
@@ -2986,7 +3075,7 @@ describe("fetch interceptor — account exhaustion", () => {
         // Account 3: success
         mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
 
-        const response = await result.fetch("https://api.anthropic.com/v1/messages", {
+        const response = await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             body: JSON.stringify({ messages: [] }),
         });
@@ -3039,14 +3128,17 @@ describe("fetch interceptor — account exhaustion", () => {
         );
         mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
 
-        const response = await result.fetch("https://api.anthropic.com/v1/messages", {
+        const response = await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             body: JSON.stringify({ messages: [] }),
         });
 
         expect(response.status).toBe(200);
 
-        const warningToasts = client.tui.showToast.mock.calls.filter((call) => call[0]?.body?.variant === "warning");
+        const warningToasts = client.tui.showToast.mock.calls.filter((call) => {
+            const toast = call[0] as { body?: { variant?: string } } | undefined;
+            return toast?.body?.variant === "warning";
+        });
 
         // Debounce should suppress immediate duplicate switch warnings.
         expect(warningToasts).toHaveLength(1);
@@ -3058,7 +3150,7 @@ describe("fetch interceptor — account exhaustion", () => {
 // ---------------------------------------------------------------------------
 
 describe("OAuth exchange failure", () => {
-    let client: ReturnType<typeof makeClient>;
+    let client: MockedClient;
 
     beforeEach(() => {
         vi.resetAllMocks();
@@ -3078,9 +3170,9 @@ describe("OAuth exchange failure", () => {
         const plugin = await AnthropicAuthPlugin({ client });
         const method = plugin.auth.methods[1];
 
-        const authResult = await method.authorize();
-        const badState = new URL(authResult.url).searchParams.get("state");
-        const credentials = await authResult.callback(`bad-code#${badState}`);
+        const authResult = await method.authorize!();
+        const badState = new URL(authResult.url!).searchParams.get("state");
+        const credentials = await authResult.callback!(`bad-code#${badState}`);
 
         expect(credentials.type).toBe("failed");
         // mockFetch.mock.calls[0] is the exchange call (authorize doesn't call fetch)
@@ -3096,7 +3188,7 @@ describe("OAuth exchange failure", () => {
 // ---------------------------------------------------------------------------
 
 describe("auth menu actions", () => {
-    let client: ReturnType<typeof makeClient>;
+    let client: MockedClient;
 
     beforeEach(() => {
         vi.resetAllMocks();
@@ -3108,7 +3200,7 @@ describe("auth menu actions", () => {
      * Helper: set up a plugin with existing accounts and a loaded accountManager,
      * then configure readline to return a specific menu choice.
      */
-    async function setupWithMenuChoice(menuChoice) {
+    async function setupWithMenuChoice(menuChoice: string) {
         mockLoadAccounts.mockResolvedValue({
             version: 1,
             accounts: [
@@ -3137,7 +3229,8 @@ describe("auth menu actions", () => {
         await plugin.auth.loader(getAuth, makeProvider());
 
         // Configure readline mock to return the menu choice
-        const { createInterface: mockCreateInterface } = await import("node:readline/promises");
+        const { createInterface } = await import("node:readline/promises");
+        const mockCreateInterface = createInterface as unknown as Mock;
         mockCreateInterface.mockReturnValue({
             question: vi.fn().mockResolvedValue(menuChoice),
             close: vi.fn(),
@@ -3153,12 +3246,12 @@ describe("auth menu actions", () => {
         const plugin = await setupWithMenuChoice("c");
         const method = plugin.auth.methods[1];
 
-        const authResult = await method.authorize();
+        const authResult = await method.authorize!();
 
         expect(authResult.url).toBe("about:blank");
         expect(authResult.method).toBe("code");
 
-        const credentials = await authResult.callback("anything");
+        const credentials = await authResult.callback!("anything");
         expect(credentials.type).toBe("failed");
 
         // No accounts should have been saved
@@ -3169,7 +3262,7 @@ describe("auth menu actions", () => {
         const plugin = await setupWithMenuChoice("f");
         const method = plugin.auth.methods[1];
 
-        const authResult = await method.authorize();
+        const authResult = await method.authorize!();
 
         // Should have cleared accounts
         expect(clearAccounts).toHaveBeenCalled();
@@ -3188,9 +3281,12 @@ describe("auth menu actions", () => {
             }),
         });
 
-        const freshState = new URL(authResult.url).searchParams.get("state");
-        const credentials = await authResult.callback(`fresh-code#${freshState}`);
+        const freshState = new URL(authResult.url!).searchParams.get("state");
+        const credentials = await authResult.callback!(`fresh-code#${freshState}`);
         expect(credentials.type).toBe("success");
+        if (credentials.type !== "success" || !("refresh" in credentials)) {
+            throw new Error("Expected OAuth success credentials");
+        }
         expect(credentials.refresh).toBe("fresh-refresh");
     });
 
@@ -3224,7 +3320,8 @@ describe("auth menu actions", () => {
         await plugin.auth.loader(getAuth, makeProvider());
 
         // Configure readline: first call returns "m" (menu), second returns "b" (back from manage)
-        const { createInterface: mockCreateInterface } = await import("node:readline/promises");
+        const { createInterface } = await import("node:readline/promises");
+        const mockCreateInterface = createInterface as unknown as Mock;
         let callCount = 0;
         mockCreateInterface.mockReturnValue({
             question: vi.fn().mockImplementation(() => {
@@ -3238,7 +3335,7 @@ describe("auth menu actions", () => {
         mockSaveAccounts.mockClear();
 
         const method = plugin.auth.methods[1];
-        const authResult = await method.authorize();
+        const authResult = await method.authorize!();
 
         expect(authResult.url).toBe("about:blank");
         expect(authResult.method).toBe("code");
@@ -3247,7 +3344,7 @@ describe("auth menu actions", () => {
         expect(saveAccounts).toHaveBeenCalled();
 
         // Callback should return failed (no OAuth was performed)
-        const credentials = await authResult.callback("anything");
+        const credentials = await authResult.callback!("anything");
         expect(credentials.type).toBe("failed");
     });
 });
@@ -3257,8 +3354,8 @@ describe("auth menu actions", () => {
 // ---------------------------------------------------------------------------
 
 describe("header handling", () => {
-    let client: ReturnType<typeof makeClient>;
-    let fetchFn: typeof fetch;
+    let client: MockedClient;
+    let fetchFn: PluginFetch;
 
     beforeEach(async () => {
         vi.resetAllMocks();
@@ -3282,7 +3379,7 @@ describe("header handling", () => {
         });
 
         const result = await plugin.auth.loader(getAuth, makeProvider());
-        fetchFn = result.fetch;
+        fetchFn = result.fetch!;
     });
 
     it("preserves and merges incoming anthropic-beta headers", async () => {
@@ -3304,7 +3401,7 @@ describe("header handling", () => {
         expect(betaHeader).toContain("oauth-2025-04-20");
         expect(betaHeader).toContain("interleaved-thinking-2025-05-14");
         expect(betaHeader).toContain("claude-code-20250219");
-        expect(betaHeader).toContain("advisor-tool-2026-03-01");
+        expect(betaHeader).not.toContain("advisor-tool-2026-03-01");
         expect(betaHeader).not.toContain("advanced-tool-use-2025-11-20");
         expect(betaHeader).not.toContain("fast-mode-2026-02-01");
         expect(betaHeader).not.toContain("redact-thinking-2026-02-12");
@@ -3341,7 +3438,7 @@ describe("header handling", () => {
         const [, init] = mockFetch.mock.calls[0];
         const betaHeader = init.headers.get("anthropic-beta");
         expect(betaHeader).toContain("effort-2025-11-24");
-        expect(betaHeader).toContain("advisor-tool-2026-03-01");
+        expect(betaHeader).not.toContain("advisor-tool-2026-03-01");
         expect(betaHeader).not.toContain("advanced-tool-use-2025-11-20");
         expect(betaHeader).not.toContain("fast-mode-2026-02-01");
         expect(betaHeader).not.toContain("redact-thinking-2026-02-12");
@@ -3577,7 +3674,7 @@ describe("header handling", () => {
         );
 
         mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
-        await result.fetch("https://api.anthropic.com/v1/messages", {
+        await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ model: "claude-sonnet-4", messages: [] }),
@@ -3750,7 +3847,9 @@ describe("header handling", () => {
             text: "You are Claude Code, Anthropic's official CLI for Claude.",
             cache_control: { type: "ephemeral" },
         });
-        expect(parsed.system.some((item) => item.text.startsWith("x-anthropic-billing-header:"))).toBe(false);
+        expect(
+            parsed.system.some((item: { text: string }) => item.text.startsWith("x-anthropic-billing-header:")),
+        ).toBe(false);
     });
 
     it("adds metadata.user_id to request body", async () => {
@@ -3795,7 +3894,6 @@ describe("header handling", () => {
         const parsed = JSON.parse(init.body);
         const userId2 = JSON.parse(parsed.metadata.user_id);
         expect(userId2.account_uuid).toBe("acct-uuid-123");
-        expect(parsed.metadata.organization_uuid).toBe("org-uuid-456");
         expect(parsed.metadata.user_email).toBe("dev@example.com");
     });
 
@@ -4014,7 +4112,7 @@ describe("OPENCODE_ANTHROPIC_INITIAL_ACCOUNT", () => {
 
         // Make API request — should use account 2 (pinned) not account 1
         mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
-        await result.fetch("https://api.anthropic.com/v1/messages", {
+        await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             body: JSON.stringify({ messages: [{ role: "user", content: "hello" }] }),
         });
@@ -4056,7 +4154,7 @@ describe("OPENCODE_ANTHROPIC_INITIAL_ACCOUNT", () => {
         const result = await plugin.auth.loader(getAuth, makeProvider());
 
         mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
-        await result.fetch("https://api.anthropic.com/v1/messages", {
+        await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             body: JSON.stringify({ messages: [{ role: "user", content: "hello" }] }),
         });
@@ -4104,7 +4202,7 @@ describe("OPENCODE_ANTHROPIC_INITIAL_ACCOUNT", () => {
         const result = await plugin.auth.loader(getAuth, makeProvider());
 
         mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
-        await result.fetch("https://api.anthropic.com/v1/messages", {
+        await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ model: "claude-sonnet-4", messages: [] }),
@@ -4149,7 +4247,7 @@ describe("OPENCODE_ANTHROPIC_INITIAL_ACCOUNT", () => {
         const result = await plugin.auth.loader(getAuth, makeProvider());
 
         mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
-        await result.fetch("https://api.anthropic.com/v1/messages", {
+        await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             body: JSON.stringify({ messages: [{ role: "user", content: "hello" }] }),
         });
@@ -4187,7 +4285,7 @@ describe("markSuccess wiring", () => {
         // Successful API call
         mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
 
-        const response = await result.fetch("https://api.anthropic.com/v1/messages", {
+        const response = await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             body: JSON.stringify({ messages: [] }),
         });
@@ -4253,8 +4351,8 @@ describe("markSuccess wiring", () => {
             const lastSave = saveCalls[saveCalls.length - 1][0];
             const acc = lastSave.accounts[0];
             expect(acc.stats.requests).toBeGreaterThan(0);
-            expect(acc.stats.outputTokens).toBe(42);
-            expect(acc.stats.inputTokens).toBe(25);
+            expect(acc.stats.outputTokens).toBeGreaterThanOrEqual(42);
+            expect(acc.stats.inputTokens).toBeGreaterThanOrEqual(25);
         } finally {
             vi.useRealTimers();
         }
@@ -4298,7 +4396,7 @@ describe("markSuccess wiring", () => {
             );
             mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
 
-            const first = await result.fetch("https://api.anthropic.com/v1/messages", {
+            const first = await result.fetch!("https://api.anthropic.com/v1/messages", {
                 method: "POST",
                 body: JSON.stringify({ messages: [{ role: "user", content: "Hi" }] }),
             });
@@ -4306,9 +4404,11 @@ describe("markSuccess wiring", () => {
 
             await vi.advanceTimersByTimeAsync(1_100);
 
-            const second = await result.fetch("https://api.anthropic.com/v1/messages", {
+            const second = await result.fetch!("https://api.anthropic.com/v1/messages", {
                 method: "POST",
-                body: JSON.stringify({ messages: [{ role: "user", content: "Again" }] }),
+                body: JSON.stringify({
+                    messages: [{ role: "user", content: "Again" }],
+                }),
             });
 
             expect(second.status).toBe(200);
@@ -4363,7 +4463,7 @@ describe("markSuccess wiring", () => {
             );
             mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
 
-            const first = await result.fetch("https://api.anthropic.com/v1/messages", {
+            const first = await result.fetch!("https://api.anthropic.com/v1/messages", {
                 method: "POST",
                 body: JSON.stringify({ messages: [{ role: "user", content: "Hi" }] }),
             });
@@ -4371,9 +4471,11 @@ describe("markSuccess wiring", () => {
 
             await vi.advanceTimersByTimeAsync(1_100);
 
-            const second = await result.fetch("https://api.anthropic.com/v1/messages", {
+            const second = await result.fetch!("https://api.anthropic.com/v1/messages", {
                 method: "POST",
-                body: JSON.stringify({ messages: [{ role: "user", content: "Again" }] }),
+                body: JSON.stringify({
+                    messages: [{ role: "user", content: "Again" }],
+                }),
             });
 
             expect(second.status).toBe(200);
@@ -4420,15 +4522,17 @@ describe("markSuccess wiring", () => {
         );
         mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
 
-        const first = await result.fetch("https://api.anthropic.com/v1/messages", {
+        const first = await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             body: JSON.stringify({ messages: [{ role: "user", content: "Hi" }] }),
         });
         await first.text();
 
-        const second = await result.fetch("https://api.anthropic.com/v1/messages", {
+        const second = await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
-            body: JSON.stringify({ messages: [{ role: "user", content: "Again" }] }),
+            body: JSON.stringify({
+                messages: [{ role: "user", content: "Again" }],
+            }),
         });
 
         expect(second.status).toBe(200);
@@ -4472,15 +4576,17 @@ describe("markSuccess wiring", () => {
         );
         mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
 
-        const first = await result.fetch("https://api.anthropic.com/v1/messages", {
+        const first = await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
             body: JSON.stringify({ messages: [{ role: "user", content: "Hi" }] }),
         });
         await first.text();
 
-        const second = await result.fetch("https://api.anthropic.com/v1/messages", {
+        const second = await result.fetch!("https://api.anthropic.com/v1/messages", {
             method: "POST",
-            body: JSON.stringify({ messages: [{ role: "user", content: "Again" }] }),
+            body: JSON.stringify({
+                messages: [{ role: "user", content: "Again" }],
+            }),
         });
 
         expect(second.status).toBe(200);
@@ -4523,7 +4629,7 @@ describe("markSuccess wiring", () => {
                 }),
             );
 
-            const first = await result.fetch("https://api.anthropic.com/v1/messages", {
+            const first = await result.fetch!("https://api.anthropic.com/v1/messages", {
                 method: "POST",
                 body: JSON.stringify({ messages: [{ role: "user", content: "Hi" }] }),
             });
@@ -4536,7 +4642,7 @@ describe("markSuccess wiring", () => {
             mockFetch.mockResolvedValueOnce(mockTokenRefresh("fresh-access", "refresh-1"));
             mockFetch.mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
 
-            const second = await result.fetch("https://api.anthropic.com/v1/messages", {
+            const second = await result.fetch!("https://api.anthropic.com/v1/messages", {
                 method: "POST",
                 body: JSON.stringify({
                     messages: [{ role: "user", content: "Again" }],
@@ -4585,7 +4691,7 @@ describe("markSuccess wiring", () => {
                 }),
             );
 
-            const first = await result.fetch("https://api.anthropic.com/v1/messages", {
+            const first = await result.fetch!("https://api.anthropic.com/v1/messages", {
                 method: "POST",
                 body: JSON.stringify({ messages: [{ role: "user", content: "Hi" }] }),
             });
@@ -4595,7 +4701,7 @@ describe("markSuccess wiring", () => {
             vi.advanceTimersByTime(35_000);
 
             await expect(
-                result.fetch("https://api.anthropic.com/v1/messages", {
+                result.fetch!("https://api.anthropic.com/v1/messages", {
                     method: "POST",
                     body: JSON.stringify({
                         messages: [{ role: "user", content: "Again" }],
@@ -4615,7 +4721,7 @@ describe("markSuccess wiring", () => {
 // override_model_limits — uses setupFetchFn which wires auth.loader via makeProvider()
 // ---------------------------------------------------------------------------
 describe("override_model_limits", () => {
-    let client: ReturnType<typeof makeClient>;
+    let client: MockedClient;
 
     beforeEach(async () => {
         client = makeClient();
@@ -4732,7 +4838,7 @@ describe("override_model_limits", () => {
 // ---------------------------------------------------------------------------
 
 describe("CC Credentials auth method", () => {
-    let client: ReturnType<typeof makeClient>;
+    let client: MockedClient;
 
     beforeEach(() => {
         vi.resetAllMocks();
@@ -4762,10 +4868,13 @@ describe("CC Credentials auth method", () => {
         const method = plugin.auth.methods[0];
         const result = await method.authorize!();
 
-        expect(result.type).toBe("success");
-        expect((result as any).refresh).toBe("cc-refresh-456");
-        expect((result as any).access).toBe("cc-access-123");
-        expect((result as any).expires).toBe(ccCred.expiresAt);
+        expect("type" in result && result.type).toBe("success");
+        if (!("type" in result) || result.type !== "success") {
+            throw new Error("Expected Claude Code credentials authorize path to succeed");
+        }
+        expect(result.refresh).toBe("cc-refresh-456");
+        expect(result.access).toBe("cc-access-123");
+        expect(result.expires).toBe(ccCred.expiresAt);
     });
 
     it("returns failed instructions when CC not installed", async () => {

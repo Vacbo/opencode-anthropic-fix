@@ -5,6 +5,8 @@
  * and capture console output to verify formatting.
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import type { AccountMetadata, AccountStorage } from "./src/storage.js";
+import { DEFAULT_SIGNATURE_PROFILE_ID, TOOL_SEARCH_SIGNATURE_PROFILE_ID } from "./src/profiles/index.js";
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -28,6 +30,7 @@ vi.mock("./src/storage.js", () => ({
 vi.mock("./src/config.js", () => {
     const DEFAULT_CONFIG = {
         account_selection_strategy: "sticky",
+        signature_profile: DEFAULT_SIGNATURE_PROFILE_ID,
         failure_ttl_seconds: 3600,
         debug: false,
         signature_emulation: {
@@ -65,6 +68,11 @@ vi.mock("./src/config.js", () => {
             window_minutes: 60,
             min_interval_minutes: 30,
         },
+        cc_credential_reuse: {
+            enabled: true,
+            auto_detect: true,
+            prefer_over_oauth: true,
+        },
     };
 
     const createDefaultConfig = () => ({
@@ -77,6 +85,7 @@ vi.mock("./src/config.js", () => {
         toasts: { ...DEFAULT_CONFIG.toasts },
         headers: { ...DEFAULT_CONFIG.headers },
         idle_refresh: { ...DEFAULT_CONFIG.idle_refresh },
+        cc_credential_reuse: { ...DEFAULT_CONFIG.cc_credential_reuse },
     });
 
     return {
@@ -160,6 +169,7 @@ import {
     cmdLogin,
     cmdLogout,
     cmdManage,
+    cmdProfile,
     cmdReauth,
     cmdRefresh,
     cmdRemove,
@@ -201,7 +211,7 @@ const mockSaveAccounts = saveAccounts as Mock;
 const ANSI_REGEX = new RegExp("\\x1b\\[[0-9;]*m", "g");
 
 beforeEach(() => {
-    globalThis.fetch = mockFetch as typeof fetch;
+    globalThis.fetch = mockFetch as unknown as typeof fetch;
     mockFetch.mockReset();
     // Default: all fetches fail gracefully (usage endpoints return null)
     mockFetch.mockResolvedValue({ ok: false, status: 500 });
@@ -240,8 +250,10 @@ function captureOutput() {
 }
 
 /** Temporarily set process.stdin.isTTY for interactive command tests. */
-function setStdinTTY(value) {
-    const stdinWithTTY = process.stdin as typeof process.stdin & { isTTY?: boolean };
+function setStdinTTY(value: boolean) {
+    const stdinWithTTY = process.stdin as typeof process.stdin & {
+        isTTY?: boolean;
+    };
     const previous = stdinWithTTY.isTTY;
     stdinWithTTY.isTTY = value;
     return () => {
@@ -281,38 +293,74 @@ function clackText() {
 }
 
 /** Make a standard test account storage object */
-function makeStorage(overrides: Record<string, any> = {}): any {
+function makeStorage(overrides: Partial<AccountStorage> = {}): AccountStorage {
     return {
         version: 1,
         accounts: [
             {
+                id: "account-alice",
                 email: "alice@example.com",
                 refreshToken: "refresh-alice",
+                access: undefined,
+                expires: undefined,
+                token_updated_at: 1000,
                 addedAt: 1000,
                 lastUsed: 5000,
                 enabled: true,
                 rateLimitResetTimes: {},
                 consecutiveFailures: 0,
                 lastFailureTime: null,
+                stats: {
+                    requests: 0,
+                    inputTokens: 0,
+                    outputTokens: 0,
+                    cacheReadTokens: 0,
+                    cacheWriteTokens: 0,
+                    lastReset: 1000,
+                },
             },
             {
+                id: "account-bob",
                 refreshToken: "refresh-bob",
+                access: undefined,
+                expires: undefined,
+                token_updated_at: 2000,
                 addedAt: 2000,
                 lastUsed: 3000,
                 enabled: true,
                 rateLimitResetTimes: {},
                 consecutiveFailures: 0,
                 lastFailureTime: null,
+                stats: {
+                    requests: 0,
+                    inputTokens: 0,
+                    outputTokens: 0,
+                    cacheReadTokens: 0,
+                    cacheWriteTokens: 0,
+                    lastReset: 2000,
+                },
             },
             {
+                id: "account-charlie",
                 email: "charlie@example.com",
                 refreshToken: "refresh-charlie",
+                access: undefined,
+                expires: undefined,
+                token_updated_at: 3000,
                 addedAt: 3000,
                 lastUsed: 1000,
                 enabled: false,
                 rateLimitResetTimes: {},
                 consecutiveFailures: 0,
                 lastFailureTime: null,
+                stats: {
+                    requests: 0,
+                    inputTokens: 0,
+                    outputTokens: 0,
+                    cacheReadTokens: 0,
+                    cacheWriteTokens: 0,
+                    lastReset: 3000,
+                },
             },
         ],
         activeIndex: 0,
@@ -369,7 +417,7 @@ describe("formatTimeAgo", () => {
 });
 
 /** Strip ANSI escape codes for test assertions. */
-function stripAnsi(str) {
+function stripAnsi(str: string) {
     return str.replace(ANSI_REGEX, "");
 }
 
@@ -483,6 +531,7 @@ describe("refreshAccessToken", () => {
             refreshToken: "old-refresh",
             access: undefined,
             expires: undefined,
+            token_updated_at: 0,
         };
         mockFetch.mockResolvedValueOnce({
             ok: true,
@@ -501,7 +550,7 @@ describe("refreshAccessToken", () => {
     });
 
     it("returns null on failure", async () => {
-        const account = { refreshToken: "bad-refresh" };
+        const account = { refreshToken: "bad-refresh", token_updated_at: 0 };
         mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
 
         const token = await refreshAccessToken(account);
@@ -509,7 +558,7 @@ describe("refreshAccessToken", () => {
     });
 
     it("returns null on network error", async () => {
-        const account = { refreshToken: "refresh" };
+        const account = { refreshToken: "refresh", token_updated_at: 0 };
         mockFetch.mockRejectedValueOnce(new Error("network error"));
 
         const token = await refreshAccessToken(account);
@@ -548,6 +597,7 @@ describe("ensureTokenAndFetchUsage", () => {
         const result = await ensureTokenAndFetchUsage({
             enabled: false,
             refreshToken: "x",
+            token_updated_at: 0,
         });
         expect(result).toEqual({ usage: null, tokenRefreshed: false });
         expect(mockFetch).not.toHaveBeenCalled();
@@ -559,6 +609,7 @@ describe("ensureTokenAndFetchUsage", () => {
             refreshToken: "refresh",
             access: "valid-access",
             expires: Date.now() + 3600_000,
+            token_updated_at: 0,
         };
         const usageData = {
             five_hour: { utilization: 5.0, resets_at: "2026-01-01T00:00:00Z" },
@@ -578,6 +629,7 @@ describe("ensureTokenAndFetchUsage", () => {
             refreshToken: "refresh",
             access: "expired-access",
             expires: Date.now() - 1000, // expired
+            token_updated_at: 0,
         };
         // First call: token refresh
         mockFetch.mockResolvedValueOnce({
@@ -606,6 +658,7 @@ describe("ensureTokenAndFetchUsage", () => {
             refreshToken: "bad-refresh",
             access: undefined,
             expires: undefined,
+            token_updated_at: 0,
         };
         mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
 
@@ -620,9 +673,9 @@ describe("ensureTokenAndFetchUsage", () => {
 // ---------------------------------------------------------------------------
 
 /** Helper to mock usage fetch for cmdList tests. */
-function mockUsageForAccounts(...usages) {
+function mockUsageForAccounts(...usages: Array<Record<string, unknown> | null>) {
     const queue = [...usages];
-    const usageByToken = new Map();
+    const usageByToken = new Map<string, Record<string, unknown>>();
     let tokenCounter = 0;
 
     mockFetch.mockImplementation((url, opts = {}) => {
@@ -634,6 +687,9 @@ function mockUsageForAccounts(...usages) {
             const usage = queue.shift();
             if (usage === null) {
                 return Promise.resolve({ ok: false, status: 401 });
+            }
+            if (typeof usage === "undefined") {
+                return Promise.resolve({ ok: false, status: 500 });
             }
 
             tokenCounter += 1;
@@ -669,7 +725,11 @@ describe("cmdList", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockSaveAccounts.mockResolvedValue(undefined);
-        mockSpinner.mockReturnValue({ start: vi.fn(), stop: vi.fn(), message: vi.fn() });
+        mockSpinner.mockReturnValue({
+            start: vi.fn(),
+            stop: vi.fn(),
+            message: vi.fn(),
+        });
     });
 
     it("shows 'no accounts' message when storage is empty", async () => {
@@ -1251,7 +1311,7 @@ describe("auth commands", () => {
         expect(revoke).toHaveBeenCalledWith("refresh-bob");
         const saved = mockSaveAccounts.mock.calls[0][0];
         expect(saved.accounts).toHaveLength(2);
-        expect(saved.accounts.find((a) => a.refreshToken === "refresh-bob")).toBeUndefined();
+        expect(saved.accounts.find((a: AccountMetadata) => a.refreshToken === "refresh-bob")).toBeUndefined();
     });
 
     it("cmdLogout --all revokes all accounts and writes explicit empty storage", async () => {
@@ -1524,6 +1584,7 @@ describe("cmdConfig", () => {
 
         expect(log.info).toHaveBeenCalledWith(expect.stringContaining("Anthropic Auth Configuration"));
         expect(note).toHaveBeenCalledWith(expect.stringContaining("sticky"), "General");
+        expect(note).toHaveBeenCalledWith(expect.stringContaining(DEFAULT_SIGNATURE_PROFILE_ID), "General");
         expect(note).toHaveBeenCalledWith(expect.stringContaining("3600s"), "General");
         expect(note).toHaveBeenCalledWith(expect.stringContaining("off"), "General");
     });
@@ -1616,6 +1677,38 @@ describe("cmdStrategy", () => {
         expect(code).toBe(0);
 
         expect(log.success).toHaveBeenCalledWith(expect.stringContaining("round-robin"));
+    });
+});
+
+// ---------------------------------------------------------------------------
+// cmdProfile
+// ---------------------------------------------------------------------------
+
+describe("cmdProfile", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it("shows current profile when called without args", async () => {
+        const code = await cmdProfile();
+        expect(code).toBe(0);
+
+        expect(log.info).toHaveBeenCalledWith(expect.stringContaining("Signature Profile"));
+        expect(log.message).toHaveBeenCalledWith(expect.stringContaining(DEFAULT_SIGNATURE_PROFILE_ID));
+    });
+
+    it("changes profile when given a valid arg", async () => {
+        const code = await cmdProfile(TOOL_SEARCH_SIGNATURE_PROFILE_ID);
+        expect(code).toBe(0);
+
+        expect(log.success).toHaveBeenCalledWith(expect.stringContaining(TOOL_SEARCH_SIGNATURE_PROFILE_ID));
+    });
+
+    it("rejects invalid profile name", async () => {
+        const code = await cmdProfile("cc-does-not-exist");
+        expect(code).toBe(1);
+
+        expect(log.error).toHaveBeenCalledWith(expect.stringContaining("Unknown signature profile"));
     });
 });
 
@@ -1743,6 +1836,18 @@ describe("main routing", () => {
         const code = await main(["cfg"]);
         expect(code).toBe(0);
         expect(log.info).toHaveBeenCalledWith(expect.stringContaining("Anthropic Auth Configuration"));
+    });
+
+    it("routes 'profile' to signature profile command", async () => {
+        const code = await main(["profile"]);
+        expect(code).toBe(0);
+        expect(clackText()).toContain(DEFAULT_SIGNATURE_PROFILE_ID);
+    });
+
+    it("routes 'config profile <name>' to signature profile setter", async () => {
+        const code = await main(["config", "profile", TOOL_SEARCH_SIGNATURE_PROFILE_ID]);
+        expect(code).toBe(0);
+        expect(clackText()).toContain(TOOL_SEARCH_SIGNATURE_PROFILE_ID);
     });
 
     it("returns error for unknown command", async () => {
@@ -2138,7 +2243,11 @@ describe("cmdManage", () => {
     });
 
     it("returns 1 when accounts array is empty", async () => {
-        mockLoadAccounts.mockResolvedValue({ version: 1, accounts: [], activeIndex: 0 });
+        mockLoadAccounts.mockResolvedValue({
+            version: 1,
+            accounts: [],
+            activeIndex: 0,
+        });
         const code = await cmdManage();
         expect(code).toBe(1);
         expect(output.text()).toContain("No accounts configured");
@@ -2244,7 +2353,7 @@ describe("cmdManage", () => {
             expect(code).toBe(0);
             const saved = mockSaveAccounts.mock.calls[0][0];
             expect(saved.accounts).toHaveLength(2);
-            expect(saved.accounts.find((a) => a.refreshToken === "refresh-bob")).toBeUndefined();
+            expect(saved.accounts.find((a: AccountMetadata) => a.refreshToken === "refresh-bob")).toBeUndefined();
         } finally {
             restoreTTY();
         }
@@ -2254,7 +2363,9 @@ describe("cmdManage", () => {
         const storage = makeStorage();
         storage.accounts[0].consecutiveFailures = 5;
         storage.accounts[0].lastFailureTime = Date.now();
-        storage.accounts[0].rateLimitResetTimes = { anthropic: Date.now() + 60_000 };
+        storage.accounts[0].rateLimitResetTimes = {
+            anthropic: Date.now() + 60_000,
+        };
         mockLoadAccounts.mockResolvedValue(storage);
         const restoreTTY = setStdinTTY(true);
         mockSelect
