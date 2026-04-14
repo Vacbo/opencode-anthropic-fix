@@ -81,7 +81,7 @@ function checkExisting(path: string) {
     }
     const stat = lstatSync(path);
     const isSymlink = stat.isSymbolicLink();
-    let target = null;
+    let target: string | null = null;
     if (isSymlink) {
         try {
             target = readlinkSync(path);
@@ -136,7 +136,7 @@ async function ensureSymlink(target: string, linkPath: string, label: string) {
  */
 async function removePath(path: string, label: string) {
     // Use lstatSync to detect broken symlinks (existsSync returns false for them)
-    let stat;
+    let stat: ReturnType<typeof lstatSync>;
     try {
         stat = lstatSync(path);
     } catch {
@@ -198,7 +198,7 @@ async function cmdLink() {
 
 /**
  * Copy bundled plugin and CLI for stable deployment.
- * Requires `npm run build` first (install:copy runs it automatically).
+ * Requires `bun run build` first (install:copy runs it automatically).
  */
 async function cmdCopy() {
     console.log(bold("Copying opencode-anthropic-auth...\n"));
@@ -207,7 +207,7 @@ async function cmdCopy() {
     const cliSrc = join(DIST_DIR, "opencode-anthropic-auth-cli.mjs");
 
     if (!existsSync(pluginSrc) || !existsSync(cliSrc)) {
-        console.error(red("dist/ not found. Run `npm run build` first."));
+        console.error(red("dist/ not found. Run `bun run build` first."));
         process.exit(1);
     }
 
@@ -276,9 +276,9 @@ async function cmdUninstall() {
     const cliBin = join(binDir, CLI_BIN_NAME);
     if (await removePath(cliBin, "CLI")) removed = true;
 
-    // Also clean up any old npm link global install
+    // Also clean up any old global install path
     const npmGlobal = join("/opt/homebrew/bin", "anthropic-auth");
-    if (await removePath(npmGlobal, "CLI (old npm link)")) removed = true;
+    if (await removePath(npmGlobal, "CLI (legacy install)")) removed = true;
 
     if (!removed) {
         console.log(dim("Nothing to remove. Not installed."));

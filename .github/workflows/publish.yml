@@ -9,7 +9,7 @@ on:
                 default: ""
 
 # OIDC: id-token enables npm trusted publishing — no NPM_TOKEN secret needed.
-# setup-node@v4 automatically exchanges the OIDC token for a short-lived npm token.
+# setup-node is kept only for the npm trusted-publishing/auth path.
 permissions:
     id-token: write
     contents: write
@@ -28,7 +28,7 @@ jobs:
               with:
                   fetch-depth: 0
 
-            # OIDC: this step acquires a short-lived npm token via GitHub's OIDC endpoint.
+            # OIDC: this step prepares npm trusted publishing via GitHub's OIDC endpoint.
             # The id-token: write permission above enables this automatically.
             # No NPM_TOKEN secret is needed — trusted publishing handles auth.
             - uses: actions/setup-node@v5
@@ -40,13 +40,13 @@ jobs:
               with:
                   bun-version: latest
 
-            - run: npm ci
+            - run: bun install --frozen-lockfile
 
             - name: Build
-              run: npm run build
+              run: bun run build
 
             - name: Test
-              run: npm test
+              run: bun run test
 
             - name: Version bump
               if: ${{ github.event.inputs.bump != '' }}
@@ -55,7 +55,7 @@ jobs:
               run: |
                   git config user.name "github-actions[bot]"
                   git config user.email "github-actions[bot]@users.noreply.github.com"
-                  npm version "$BUMP_TYPE" -m "chore(release): v%s"
+                  bun pm version "$BUMP_TYPE" -m "chore(release): v%s"
                   git push --follow-tags origin HEAD:master
 
             # OIDC: NODE_AUTH_TOKEN is not set. setup-node handles authentication via OIDC

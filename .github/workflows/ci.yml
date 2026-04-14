@@ -14,24 +14,62 @@ jobs:
         steps:
             - uses: actions/checkout@v5
 
-            - uses: actions/setup-node@v5
+            - uses: oven-sh/setup-bun@v2
               with:
-                  node-version: "24"
+                  bun-version: latest
+
+            - run: bun install --frozen-lockfile
+
+            - name: Lint
+              run: bun run lint
+
+            - name: Format check
+              run: bun run format:check
+
+            - name: Typecheck
+              run: bun run typecheck
+
+            - name: Test
+              run: bun run test
+
+            - name: Build
+              run: bun run build
+
+    cli-binary-smoke:
+        name: CLI binary smoke (${{ matrix.name }})
+        runs-on: ${{ matrix.runsOn }}
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - name: macos-x64
+                      runsOn: macos-15-intel
+                      smokeTargets: darwin-x64
+                    - name: macos-arm64
+                      runsOn: macos-14
+                      smokeTargets: darwin-arm64
+                    - name: linux-x64
+                      runsOn: ubuntu-24.04
+                      smokeTargets: linux-x64,linux-x64-baseline,linux-x64-modern,linux-x64-musl
+                    - name: linux-arm64
+                      runsOn: ubuntu-24.04-arm
+                      smokeTargets: linux-arm64,linux-arm64-musl
+                    - name: windows-x64
+                      runsOn: windows-2022
+                      smokeTargets: windows-x64,windows-x64-baseline,windows-x64-modern
+        env:
+            HUSKY: 0
+        steps:
+            - uses: actions/checkout@v5
 
             - uses: oven-sh/setup-bun@v2
               with:
                   bun-version: latest
 
-            - run: npm ci
+            - run: bun install --frozen-lockfile
 
-            - name: Lint
-              run: npm run lint
+            - name: Build CLI binaries
+              run: bun run build:cli -- --targets=${{ matrix.smokeTargets }}
 
-            - name: Format check
-              run: npm run format:check
-
-            - name: Test
-              run: npm test
-
-            - name: Build
-              run: npm run build
+            - name: Smoke test --help
+              run: bun scripts/cli-binary-smoke.ts --targets=${{ matrix.smokeTargets }}

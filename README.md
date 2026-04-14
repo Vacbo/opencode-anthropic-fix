@@ -14,16 +14,16 @@ This fork continues that work and extends it with deeper research into how the o
 
 ## Quick Start
 
-**Prerequisites:** [OpenCode](https://github.com/anomalyco/opencode) installed, a Claude Pro or Max subscription, Node.js 18+.
+**Prerequisites:** [OpenCode](https://github.com/anomalyco/opencode) installed, a Claude Pro or Max subscription, and Bun.
 
 ```bash
 # 1. Clone and install
-git clone https://github.com/marco-jardim/opencode-anthropic-fix.git
+git clone https://github.com/Vacbo/opencode-anthropic-fix.git
 cd opencode-anthropic-fix
-npm install
+bun install
 
 # 2. Install the plugin + CLI
-npm run install:link
+bun run install:link
 
 # 3. Start OpenCode and connect
 opencode
@@ -143,20 +143,20 @@ OpenCode will install and load the plugin automatically on next start.
 Best for active development. Edits to source files take effect immediately.
 
 ```bash
-npm run install:link
+bun run install:link
 ```
 
 This creates:
 
-- **Plugin:** `~/.config/opencode/plugin/opencode-anthropic-auth-plugin.js` &rarr; `./index.mjs`
-- **CLI:** `~/.local/bin/opencode-anthropic-auth` &rarr; `./cli.mjs`
+- **Plugin:** `~/.config/opencode/plugin/opencode-anthropic-auth-plugin.js` &rarr; `./src/index.ts`
+- **CLI:** `~/.local/bin/opencode-anthropic-auth` &rarr; `./src/cli.ts`
 
 ### Stable (copy)
 
 Bundles the plugin and CLI into self-contained single files (via esbuild) and copies them. No symlinks, no `node_modules` needed at the destination.
 
 ```bash
-npm run install:copy
+bun run install:copy
 ```
 
 This creates:
@@ -167,7 +167,7 @@ This creates:
 ### Uninstall
 
 ```bash
-npm run uninstall
+bun run uninstall
 ```
 
 ### PATH Setup

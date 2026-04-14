@@ -1,0 +1,76 @@
+{
+    "$schema": "./node_modules/oxlint/configuration_schema.json",
+    "plugins": ["typescript"],
+    "globals": {
+        "console": "readonly",
+        "process": "readonly",
+        "setTimeout": "readonly",
+        "clearTimeout": "readonly",
+        "setInterval": "readonly",
+        "clearInterval": "readonly",
+        "URL": "readonly",
+        "URLSearchParams": "readonly",
+        "AbortController": "readonly",
+        "AbortSignal": "readonly",
+        "fetch": "readonly",
+        "Request": "readonly",
+        "Response": "readonly",
+        "Headers": "readonly",
+        "ReadableStream": "readonly",
+        "TextDecoder": "readonly",
+        "TextEncoder": "readonly",
+        "globalThis": "readonly",
+        "structuredClone": "readonly",
+        "btoa": "readonly",
+        "atob": "readonly",
+        "crypto": "readonly",
+        "Buffer": "readonly",
+        "Blob": "readonly",
+        "FormData": "readonly",
+        "File": "readonly"
+    },
+    "categories": {
+        "correctness": "error"
+    },
+    "rules": {
+        "no-console": "warn",
+        "no-constant-condition": ["error", { "checkLoops": false }],
+        "no-var": "error",
+        "eqeqeq": ["error", "smart"],
+        "eslint/prefer-const": "error",
+        "typescript/no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+        "typescript/no-explicit-any": "warn",
+        "typescript/consistent-type-imports": "warn"
+    },
+    "overrides": [
+        {
+            "files": ["src/**"],
+            "rules": {
+                "typescript/no-explicit-any": "error"
+            }
+        },
+        {
+            "files": ["src/cli.ts", "src/cli/**", "src/commands/**"],
+            "rules": {
+                "no-console": "off"
+            }
+        },
+        {
+            "files": ["**/*.test.ts", "tests/**"],
+            "rules": {
+                "no-console": "off",
+                "typescript/no-explicit-any": "error",
+                "typescript/no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }]
+            }
+        },
+        {
+            "files": ["script/**", "scripts/**", ".opencode/skills/**/scripts/**/*.mjs"],
+            "rules": {
+                "no-console": "off",
+                "typescript/no-explicit-any": "warn",
+                "typescript/no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }]
+            }
+        }
+    ],
+    "ignorePatterns": ["dist/**", "node_modules/**", ".mitm/**", ".omc/**"]
+}

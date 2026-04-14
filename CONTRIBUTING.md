@@ -5,64 +5,68 @@ This document covers the architecture, implementation details, and development w
 ## Development Setup
 
 ```bash
-git clone https://github.com/actualyze-ai/opencode-anthropic-auth.git
-cd opencode-anthropic-auth
-npm install
-npm run install:link   # Symlink plugin + CLI for live development
-npm test               # Run all tests (~2s)
+git clone https://github.com/Vacbo/opencode-anthropic-fix.git
+cd opencode-anthropic-fix
+bun install
+bun run install:link   # Symlink plugin + CLI for live development
+bun run test           # Run all tests (~2s)
 ```
 
 ### Running Tests
 
 ```bash
-npm test               # Single run
-npm run test:watch     # Watch mode
+bun run test           # Single run
+bun run test:watch     # Watch mode
 ```
 
-Tests use [vitest](https://vitest.dev/). All modules are tested in isolation with mocked dependencies.
+Tests use [vitest](https://vitest.dev/). `index.test.ts` and `cli.test.ts` stay at the repo root, and the rest of the suite lives under `tests/`.
 
 ### Linting and Formatting
 
 ```bash
-npm run lint           # Check for lint errors
-npm run lint:fix       # Fix auto-fixable lint errors
-npm run format         # Format all files with Prettier
-npm run format:check   # Check formatting without writing
+bun run lint           # Check for lint errors
+bun run lint:fix       # Fix auto-fixable lint errors
+bun run format         # Format all files with oxfmt
+bun run format:check   # Check formatting without writing
+bun run typecheck      # Run strict TypeScript checks
 ```
 
 Git hooks enforce quality automatically:
 
-- **Pre-commit:** `lint-staged` runs Prettier and ESLint on staged `.mjs` files, Prettier on `.json`/`.md` files
-- **Pre-push:** full test suite + Prettier format check
+- **Pre-commit:** `lint-staged` runs `oxfmt` on staged files and `oxlint --fix` on staged JS/TS files
+- **Pre-push:** full test suite + `oxfmt --check` + `oxlint` + `tsc --noEmit`
 
 ## Project Structure
 
 ```
-opencode-anthropic-auth/
-  index.mjs              Plugin entry point (OAuth flow, fetch interceptor, retry loop, slash commands)
-  index.test.mjs         Plugin integration tests (lifecycle, fetch, transforms, slash commands)
-  cli.mjs                Standalone CLI (17 subcommands, auth flows, live usage quotas)
-  cli.test.mjs           CLI command tests (auth + account management + IO capture)
-  package.json           Dependencies: @openauthjs/openauth (prod), esbuild + vitest + eslint + prettier (dev)
-  eslint.config.mjs      ESLint flat config
-  .prettierrc            Prettier config
-  .prettierignore        Prettier ignore patterns
-  .husky/                Git hooks (pre-commit: lint-staged, pre-push: test + format check)
-  lib/
-    oauth.mjs            Shared OAuth helpers (authorize, exchange, revoke) — used by both plugin and CLI
-    accounts.mjs         AccountManager class (pool management, selection, persistence)
-    accounts.test.mjs    AccountManager tests
-    rotation.mjs         HealthScoreTracker, TokenBucketTracker, selectAccount()
-    rotation.test.mjs    Selection algorithm tests
-    backoff.mjs          Rate limit parsing, backoff calculation
-    backoff.test.mjs     Backoff calculation tests
-    config.mjs           Config loader/saver, validation, env overrides
-    config.test.mjs      Config loading/validation tests
-    storage.mjs          Account persistence (atomic writes, deduplication)
-    storage.test.mjs     Storage persistence tests
+opencode-anthropic-fix/
+  src/
+    index.ts             Plugin entry point and provider integration
+    cli.ts               Standalone CLI entry point
+    commands/            Slash-command routing and handlers
+    request/             Request transformation and metadata helpers
+    response/            Response stream transformation helpers
+    headers/             Header-building logic
+    system-prompt/       Claude Code prompt shaping helpers
+    transport/           Network/proxy transport helpers
+    profiles/            Account profile support
+  tests/
+    unit/                Unit tests for src/ modules
+    integration/         Integration and script coverage
+    regression/          Fingerprint and header regression coverage
+    smoke/               Small end-to-end behavior checks
+    helpers/             Shared test support files
+  index.test.ts          Top-level plugin regression tests
+  cli.test.ts            Top-level CLI regression tests
   scripts/
-    build.mjs            esbuild bundler (produces dist/)
-    install.mjs          Unified installer (link/copy/uninstall)
+    build.ts             esbuild bundler (produces dist/)
+    install.ts           Unified installer (link/copy/uninstall)
+    drift-checker/       Claude Code version drift checks
+  package.json           Scripts, dependencies, lint-staged, and publish metadata
+  tsconfig.json          Strict TypeScript configuration (`noEmit: true`)
+  .oxlintrc.json         Oxlint config
+  .oxfmtrc.json          Oxfmt config + ignore patterns
+  .husky/                Git hooks (pre-commit: lint-staged, pre-push: test + format + lint + typecheck)
   dist/                  Build output (gitignored)
     opencode-anthropic-auth-plugin.js   Bundled plugin (self-contained)
     opencode-anthropic-auth-cli.mjs     Bundled CLI (self-contained)
@@ -504,8 +508,8 @@ import { cmdList } from "./cli.mjs";
 ### Running Specific Tests
 
 ```bash
-npx vitest run backoff          # Run backoff tests only
-npx vitest run --reporter=verbose  # Verbose output
+bunx vitest run backoff             # Run backoff tests only
+bunx vitest run --reporter=verbose  # Verbose output
 ```
 
 ## Dependencies
@@ -516,10 +520,9 @@ npx vitest run --reporter=verbose  # Verbose output
 | `@opencode-ai/plugin`  | Dev        | Plugin API type definitions (used via JSDoc)              |
 | `esbuild`              | Dev        | Bundles plugin + CLI into single files                    |
 | `vitest`               | Dev        | Test runner                                               |
-| `eslint`               | Dev        | Linter (flat config)                                      |
-| `@eslint/js`           | Dev        | ESLint recommended rules                                  |
-| `prettier`             | Dev        | Code formatter                                            |
+| `oxlint`               | Dev        | Linter                                                    |
+| `oxfmt`                | Dev        | Code formatter                                            |
 | `husky`                | Dev        | Git hooks (pre-commit: lint-staged, pre-push: test + fmt) |
-| `lint-staged`          | Dev        | Runs prettier + eslint on staged files                    |
+| `lint-staged`          | Dev        | Runs oxfmt + oxlint on staged files                       |
 
-The plugin has **one production dependency** (`@openauthjs/openauth`), which is bundled into the dist output by esbuild. The bundled files have zero external dependencies beyond Node.js built-ins.
+The plugin has **one production dependency** (`@openauthjs/openauth`), which is bundled into the dist output by esbuild. The bundled files are self-contained and do not require packages from `node_modules` at runtime.

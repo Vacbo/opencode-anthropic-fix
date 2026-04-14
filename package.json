@@ -1,10 +1,17 @@
 {
     "name": "@vacbo/opencode-anthropic-fix",
     "version": "0.1.9",
-    "main": "dist/opencode-anthropic-auth-plugin.js",
+    "homepage": "https://github.com/Vacbo/opencode-anthropic-fix#readme",
+    "bugs": {
+        "url": "https://github.com/Vacbo/opencode-anthropic-fix/issues"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/Vacbo/opencode-anthropic-fix"
+    },
     "bin": {
-        "opencode-anthropic-auth": "dist/opencode-anthropic-auth-cli.mjs",
-        "oaa": "dist/opencode-anthropic-auth-cli.mjs"
+        "oaa": "dist/opencode-anthropic-auth-cli.mjs",
+        "opencode-anthropic-auth": "dist/opencode-anthropic-auth-cli.mjs"
     },
     "files": [
         "dist/**",
@@ -12,59 +19,51 @@
         "README.md",
         "LICENSE"
     ],
+    "main": "dist/opencode-anthropic-auth-plugin.js",
     "publishConfig": {
         "access": "public",
         "registry": "https://registry.npmjs.org/"
     },
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/Vacbo/opencode-anthropic-fix"
-    },
-    "homepage": "https://github.com/Vacbo/opencode-anthropic-fix#readme",
-    "bugs": {
-        "url": "https://github.com/Vacbo/opencode-anthropic-fix/issues"
-    },
     "scripts": {
         "build": "bun scripts/build.ts",
-        "prepublishOnly": "npm run build && npm test",
+        "build:cli": "bun scripts/build.ts --cli-binaries",
+        "prepublishOnly": "bun run build && bun run test",
         "test": "vitest run",
         "check:cch-drift": "bun scripts/drift-checker/check-cch-constants.ts --fail-on-drift",
         "check:cch-drift:npm": "bun scripts/drift-checker/check-cch-constants.ts --npm-version latest --fail-on-drift",
         "test:watch": "vitest",
-        "lint": "eslint .",
-        "lint:fix": "eslint --fix .",
-        "format": "prettier --write .",
-        "format:check": "prettier --check .",
+        "lint": "oxlint .",
+        "lint:fix": "oxlint --fix .",
+        "format": "oxfmt",
+        "format:check": "oxfmt --check",
+        "typecheck": "tsc -p tsconfig.check.json --noEmit",
         "install:link": "bun scripts/install.ts link",
-        "install:copy": "npm run build && bun scripts/install.ts copy",
+        "install:copy": "bun run build && bun scripts/install.ts copy",
         "uninstall": "bun scripts/install.ts uninstall",
         "prepare": "husky"
     },
-    "lint-staged": {
-        "*.ts": [
-            "prettier --write",
-            "eslint --fix"
-        ],
-        "*.{json,md}": [
-            "prettier --write"
-        ]
+    "dependencies": {
+        "@clack/prompts": "^1.2.0"
     },
     "devDependencies": {
-        "@eslint/js": "^10.0.1",
         "@opencode-ai/plugin": "^0.4.45",
         "@types/node": "^25.6.0",
         "bun-types": "^1.3.12",
         "esbuild": "^0.27.7",
-        "eslint": "^10.2.0",
         "husky": "^9.1.7",
         "jiti": "^2.6.1",
         "lint-staged": "^16.4.0",
-        "prettier": "^3.8.2",
+        "oxfmt": "^0.45.0",
+        "oxlint": "^1.60.0",
         "typescript": "^5.9.3",
-        "typescript-eslint": "^8.58.1",
         "vitest": "^4.1.4"
     },
-    "dependencies": {
-        "@clack/prompts": "^1.2.0"
+    "lint-staged": {
+        "*": [
+            "oxfmt --no-error-on-unmatched-pattern"
+        ],
+        "*.{js,mjs,cjs,jsx,ts,mts,cts,tsx}": [
+            "oxlint --fix"
+        ]
     }
 }
