@@ -22,8 +22,20 @@ function createFixture(version: string, cliContents: string) {
     return { dir, cliPath, packageJsonPath };
 }
 
+function resolveScriptRuntime(): string {
+    const bunPath = typeof Bun !== "undefined" ? Bun.which("bun") : null;
+    if (bunPath) return bunPath;
+
+    const nodePath = typeof Bun !== "undefined" ? Bun.which("node") : null;
+    if (nodePath) return nodePath;
+
+    if (existsSync(process.execPath)) return process.execPath;
+
+    throw new Error("No executable JavaScript runtime found for tracker script tests");
+}
+
 function runNodeScript(scriptPath: string, args: string[]) {
-    return execFileSync(process.execPath, [scriptPath, ...args], {
+    return execFileSync(resolveScriptRuntime(), [scriptPath, ...args], {
         cwd: projectRoot,
         encoding: "utf8",
     });
