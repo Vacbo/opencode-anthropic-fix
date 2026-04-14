@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { DEFAULT_SIGNATURE_PROFILE_ID, isKnownSignatureProfile } from "./profiles/index.js";
 
 export type AccountSelectionStrategy = "sticky" | "round-robin" | "hybrid";
 
@@ -53,7 +54,10 @@ export interface HeaderConfig {
 }
 
 export interface AnthropicAuthConfig {
+    [key: string]: unknown;
     account_selection_strategy: AccountSelectionStrategy;
+    signature_profile: string;
+    relocate_third_party_prompts?: boolean;
     failure_ttl_seconds: number;
     debug: boolean;
     signature_emulation: {
@@ -78,6 +82,7 @@ export interface AnthropicAuthConfig {
 
 export const DEFAULT_CONFIG: AnthropicAuthConfig = {
     account_selection_strategy: "sticky",
+    signature_profile: DEFAULT_SIGNATURE_PROFILE_ID,
     failure_ttl_seconds: 3600,
     debug: false,
     signature_emulation: {
@@ -175,6 +180,10 @@ function validateConfig(raw: Record<string, unknown>): AnthropicAuthConfig {
         VALID_STRATEGIES.includes(raw.account_selection_strategy as AccountSelectionStrategy)
     ) {
         config.account_selection_strategy = raw.account_selection_strategy as AccountSelectionStrategy;
+    }
+
+    if (typeof raw.signature_profile === "string" && isKnownSignatureProfile(raw.signature_profile)) {
+        config.signature_profile = raw.signature_profile;
     }
 
     config.failure_ttl_seconds = clampNumber(raw.failure_ttl_seconds, 60, 7200, DEFAULT_CONFIG.failure_ttl_seconds);

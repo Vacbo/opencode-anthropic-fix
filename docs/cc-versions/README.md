@@ -6,12 +6,13 @@ Use the `cc-version-tracker` or `cc-mimicry-auditor` skills to automate extracti
 
 ## Current baseline
 
-- [2.1.81.md](2.1.81.md) — Current alignment target (2026-03-21)
+- [2.1.107.md](2.1.107.md) — Current alignment target (2026-04-14)
+- [2.1.81.md](2.1.81.md) — Older documented baseline (2026-03-21)
 - [2.1.80.md](2.1.80.md) — Previous version (2026-03-20)
 
 ## Shared across versions (stable since 2.1.79)
 
-These values have NOT changed between 2.1.79 and 2.1.81:
+These values have remained stable across the tracked fingerprints in this repo, including the verified `2.1.98 -> 2.1.107` comparison:
 
 - **Production client ID**: `9d1c250a-e61b-44d9-88ed-5944d1962f5e`
 - **Staging client ID**: `22422756-60c9-4084-8eb7-27705fd5cf9a`

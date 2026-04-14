@@ -12,8 +12,7 @@ type RefreshInFlightEntry = {
 
 export interface RefreshDeps {
     client: OpenCodeClient;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- plugin config accepts forward-compatible arbitrary keys
-    config: AnthropicAuthConfig & Record<string, any>;
+    config: AnthropicAuthConfig;
     getAccountManager: () => AccountManager | null;
     debugLog: (...args: unknown[]) => void;
 }

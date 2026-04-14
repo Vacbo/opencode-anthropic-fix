@@ -6,10 +6,19 @@ import { FOREGROUND_EXPIRY_BUFFER_MS } from "./constants.js";
 import { logTransformedSystemPrompt } from "./env.js";
 import { buildRequestHeaders } from "./headers/builder.js";
 import type { PluginHelpers } from "./plugin-helpers.js";
+import { resolveSignatureProfile } from "./profiles/index.js";
 import { cloneBodyForRetry, transformRequestBody } from "./request/body.js";
 import { extractFileIds, getAccountIdentifier } from "./request/metadata.js";
 import { fetchWithRetry } from "./request/retry.js";
 import { transformRequestUrl } from "./request/url.js";
+import {
+    buildCodeSessionPayload,
+    extractOrganizationUuidFromResponse,
+    buildSessionSidecarHeaders,
+    extractOrganizationUuidFromBody,
+    extractSessionTitleFromBody,
+    type SessionSidecarState,
+} from "./session-sidecar.js";
 import type { RefreshHelpers } from "./refresh-helpers.js";
 import { isEventStreamResponse, stripMcpPrefixFromJsonBody, transformResponse } from "./response/index.js";
 import { StreamTruncatedError } from "./response/streaming.js";
@@ -43,8 +52,7 @@ type FinalizeResponseAccountErrorDetails = {
 };
 
 export interface RequestOrchestrationDeps {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- plugin config accepts forward-compatible arbitrary keys
-    config: AnthropicAuthConfig & Record<string, any>;
+    config: AnthropicAuthConfig;
     debugLog: (...args: unknown[]) => void;
     toast: ToastFn;
     getAccountManager: () => AccountManager | null;
@@ -53,14 +61,14 @@ export interface RequestOrchestrationDeps {
     getLastToastedIndex: () => number;
     setLastToastedIndex: (index: number) => void;
     fileAccountMap: Map<string, number>;
-    fetchWithTransport: (input: string | URL | Request, init: RequestInit) => Promise<Response>;
+    forwardRequest: (input: string | URL | Request, init: RequestInit) => Promise<Response>;
     parseRefreshFailure: ParseRefreshFailureFn;
     refreshAccountTokenSingleFlight: RefreshAccountTokenSingleFlightFn;
     maybeRefreshIdleAccounts: MaybeRefreshIdleAccountsFn;
     signatureEmulationEnabled: boolean;
     promptCompactionMode: PromptCompactionMode;
     signatureSanitizeSystemPrompt: boolean;
-    signatureSessionId: string;
+    getSignatureSessionId: () => string;
     signatureUserId: string;
 }
 
@@ -238,7 +246,9 @@ async function resolveAccessToken(
             }
 
             try {
-                return { accessToken: await deps.refreshAccountTokenSingleFlight(account) };
+                return {
+                    accessToken: await deps.refreshAccountTokenSingleFlight(account),
+                };
             } catch (retryErr) {
                 finalError = retryErr;
                 details = deps.parseRefreshFailure(retryErr);
@@ -275,6 +285,7 @@ async function resolveAccessToken(
 function buildAttemptBody(
     account: ManagedAccount,
     requestContext: RequestContext,
+    signatureSessionId: string,
     deps: Pick<
         RequestOrchestrationDeps,
         | "config"
@@ -283,7 +294,6 @@ function buildAttemptBody(
         | "signatureEmulationEnabled"
         | "promptCompactionMode"
         | "signatureSanitizeSystemPrompt"
-        | "signatureSessionId"
         | "signatureUserId"
     >,
 ): string | undefined {
@@ -297,7 +307,7 @@ function buildAttemptBody(
         },
         {
             persistentUserId: deps.signatureUserId,
-            sessionId: deps.signatureSessionId,
+            sessionId: signatureSessionId,
             accountId: getAccountIdentifier(account),
         },
         deps.config.relocate_third_party_prompts,
@@ -376,7 +386,7 @@ async function retryServiceWideResponse(params: {
     requestHeaders: Headers;
     requestInit: RequestInit;
     requestContext: RequestContext;
-    fetchWithTransport: RequestOrchestrationDeps["fetchWithTransport"];
+    forwardRequest: RequestOrchestrationDeps["forwardRequest"];
 }): Promise<Response> {
     let retryCount = 0;
     return fetchWithRetry(
@@ -396,7 +406,7 @@ async function retryServiceWideResponse(params: {
                     ? undefined
                     : cloneBodyForRetry(params.requestContext.preparedBody);
 
-            return params.fetchWithTransport(
+            return params.forwardRequest(
                 retryUrl,
                 buildTransportRequestInit(params.requestInit, headersForRetry, retryBody, forceFreshConnection),
             );
@@ -445,6 +455,161 @@ function buildFinalizeCallbacks(
 }
 
 export function createRequestOrchestrationHelpers(deps: RequestOrchestrationDeps) {
+    const sessionStateByKey = new Map<string, SessionSidecarState>();
+
+    function getSessionStateKey(account: ManagedAccount, signatureSessionId: string): string {
+        return `${account.id}:${signatureSessionId}`;
+    }
+
+    function getSessionState(account: ManagedAccount, signatureSessionId: string): SessionSidecarState {
+        const key = getSessionStateKey(account, signatureSessionId);
+        const existing = sessionStateByKey.get(key);
+        if (existing) return existing;
+        const created: SessionSidecarState = {};
+        sessionStateByKey.set(key, created);
+        return created;
+    }
+
+    async function ensureCodeSession(params: {
+        account: ManagedAccount;
+        accessToken: string;
+        body: string | undefined;
+        state: SessionSidecarState;
+        signatureSessionId: string;
+    }): Promise<void> {
+        const { account, accessToken, body, state, signatureSessionId } = params;
+        if (state.codeSessionId || state.createPromise) {
+            return state.createPromise;
+        }
+
+        state.createPromise = (async () => {
+            try {
+                const response = await deps.forwardRequest("https://api.anthropic.com/v1/code/sessions", {
+                    method: "POST",
+                    headers: buildSessionSidecarHeaders(accessToken),
+                    body: JSON.stringify(buildCodeSessionPayload(body, signatureSessionId)),
+                    keepalive: false,
+                });
+
+                if (!response.ok) {
+                    deps.debugLog("code session create failed", {
+                        accountIndex: account.index,
+                        status: response.status,
+                    });
+                    return;
+                }
+
+                const json = (await response.json()) as { session?: { id?: string } };
+                if (typeof json.session?.id === "string" && json.session.id) {
+                    state.codeSessionId = json.session.id;
+                }
+            } catch (error) {
+                deps.debugLog("code session create threw", {
+                    accountIndex: account.index,
+                    message: error instanceof Error ? error.message : String(error),
+                });
+            } finally {
+                state.createPromise = undefined;
+            }
+        })();
+
+        return state.createPromise;
+    }
+
+    async function maybePatchRemoteSessionTitle(params: {
+        account: ManagedAccount;
+        accessToken: string;
+        body: string | undefined;
+        state: SessionSidecarState;
+    }): Promise<void> {
+        const { account, accessToken, body, state } = params;
+        const remoteSessionId = process.env.CLAUDE_CODE_REMOTE_SESSION_ID?.trim();
+        if (!remoteSessionId || state.patchPromise) {
+            return state.patchPromise;
+        }
+
+        const title = extractSessionTitleFromBody(body);
+        if (!title || title === state.lastPatchedTitle) {
+            return;
+        }
+
+        const organizationUuid = state.organizationUuid || extractOrganizationUuidFromBody(body);
+        if (!organizationUuid) {
+            return;
+        }
+        state.organizationUuid = organizationUuid;
+
+        state.patchPromise = (async () => {
+            try {
+                const response = await deps.forwardRequest(`https://api.anthropic.com/v1/sessions/${remoteSessionId}`, {
+                    method: "PATCH",
+                    headers: buildSessionSidecarHeaders(accessToken, organizationUuid, true),
+                    body: JSON.stringify({ title }),
+                    keepalive: false,
+                });
+
+                if (!response.ok) {
+                    deps.debugLog("remote session title patch failed", {
+                        accountIndex: account.index,
+                        remoteSessionId,
+                        status: response.status,
+                    });
+                    return;
+                }
+
+                state.lastPatchedTitle = title;
+            } catch (error) {
+                deps.debugLog("remote session title patch threw", {
+                    accountIndex: account.index,
+                    remoteSessionId,
+                    message: error instanceof Error ? error.message : String(error),
+                });
+            } finally {
+                state.patchPromise = undefined;
+            }
+        })();
+
+        return state.patchPromise;
+    }
+
+    function triggerSessionSideEffects(params: {
+        account: ManagedAccount;
+        accessToken: string;
+        requestUrl: URL | null;
+        requestMethod: string;
+        body: string | undefined;
+        response: Response;
+    }): void {
+        const remoteSessionId = process.env.CLAUDE_CODE_REMOTE_SESSION_ID?.trim();
+        if (!remoteSessionId) {
+            return;
+        }
+
+        if (params.requestMethod !== "POST" || params.requestUrl?.pathname !== "/v1/messages") {
+            return;
+        }
+
+        const signatureSessionId = deps.getSignatureSessionId();
+        const state = getSessionState(params.account, signatureSessionId);
+        state.organizationUuid ||= extractOrganizationUuidFromResponse(params.response);
+        state.organizationUuid ||= extractOrganizationUuidFromBody(params.body);
+
+        void ensureCodeSession({
+            account: params.account,
+            accessToken: params.accessToken,
+            body: params.body,
+            state,
+            signatureSessionId,
+        });
+
+        void maybePatchRemoteSessionTitle({
+            account: params.account,
+            accessToken: params.accessToken,
+            body: params.body,
+            state,
+        });
+    }
+
     async function executeOAuthFetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
         const preparedRequest = await prepareRequest(input, init);
         const transientRefreshSkips = new Set<number>();
@@ -512,7 +677,8 @@ export function createRequestOrchestrationHelpers(deps: RequestOrchestrationDeps
 
             deps.maybeRefreshIdleAccounts(account);
 
-            const body = buildAttemptBody(account, preparedRequest.requestContext, deps);
+            const signatureSessionId = deps.getSignatureSessionId();
+            const body = buildAttemptBody(account, preparedRequest.requestContext, signatureSessionId, deps);
             logTransformedSystemPrompt(body);
 
             const requestHeaders = buildRequestHeaders(
@@ -525,6 +691,8 @@ export function createRequestOrchestrationHelpers(deps: RequestOrchestrationDeps
                     enabled: deps.signatureEmulationEnabled,
                     claudeCliVersion: deps.getClaudeCliVersion(),
                     promptCompactionMode: deps.promptCompactionMode,
+                    profile: resolveSignatureProfile(deps.config.signature_profile),
+                    sessionId: signatureSessionId,
                     sanitizeSystemPrompt: deps.signatureSanitizeSystemPrompt,
                     customBetas: deps.config.custom_betas,
                     strategy: deps.config.account_selection_strategy,
@@ -537,7 +705,7 @@ export function createRequestOrchestrationHelpers(deps: RequestOrchestrationDeps
             try {
                 response = await fetchWithRetry(
                     async ({ forceFreshConnection }) =>
-                        deps.fetchWithTransport(
+                        deps.forwardRequest(
                             fetchInput,
                             buildTransportRequestInit(
                                 preparedRequest.requestInit,
@@ -598,14 +766,16 @@ export function createRequestOrchestrationHelpers(deps: RequestOrchestrationDeps
                 }
 
                 if (response.status === 500 || response.status === 503 || response.status === 529) {
-                    deps.debugLog("service-wide response error, attempting retry", { status: response.status });
+                    deps.debugLog("service-wide response error, attempting retry", {
+                        status: response.status,
+                    });
                     const retried = await retryServiceWideResponse({
                         response,
                         fetchInput,
                         requestHeaders,
                         requestInit: preparedRequest.requestInit,
                         requestContext: preparedRequest.requestContext,
-                        fetchWithTransport: deps.fetchWithTransport,
+                        forwardRequest: deps.forwardRequest,
                     });
                     if (!retried.ok) {
                         return finalizeResponse(retried);
@@ -622,6 +792,14 @@ export function createRequestOrchestrationHelpers(deps: RequestOrchestrationDeps
 
             if (response.ok) {
                 accountManager.markSuccess(account);
+                triggerSessionSideEffects({
+                    account,
+                    accessToken,
+                    requestUrl: preparedRequest.requestUrl,
+                    requestMethod: preparedRequest.requestMethod,
+                    body,
+                    response,
+                });
             }
 
             const finalizeCallbacks = buildFinalizeCallbacks(response, account, accountManager, deps.debugLog);

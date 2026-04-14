@@ -9,6 +9,7 @@ import type { ManagedAccount } from "../token-refresh.js";
 import { handleBetasCommand } from "./handlers/betas.js";
 import { handleConfigCommand, handleSetCommand } from "./handlers/config.js";
 import { handleFilesCommand } from "./handlers/files.js";
+import { handleProfileCommand } from "./handlers/profile.js";
 import { completeSlashOAuth, startSlashOAuth, type OAuthFlowDeps, type PendingOAuthEntry } from "./oauth-flow.js";
 
 // Re-export files utilities so existing imports from "./router.js" continue to work
@@ -176,6 +177,11 @@ export async function handleAnthropicSlashCommand(
 
     if (primary === "betas") {
         await handleBetasCommand(input.sessionID, args, { sendCommandMessage, config, initialAccountPinned });
+        return;
+    }
+
+    if (primary === "profile") {
+        await handleProfileCommand(input.sessionID, args, { sendCommandMessage, config });
         return;
     }
 

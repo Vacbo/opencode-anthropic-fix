@@ -21,20 +21,78 @@ export function stripMcpPrefixFromSSE(text: string): string {
     });
 }
 
+function stripMcpPrefix(value: string): string | null {
+    return value.startsWith("mcp_") ? value.slice(4) : null;
+}
+
+function stripMcpPrefixFromToolNameField(block: Record<string, unknown>, field: "name" | "tool_name"): boolean {
+    if (typeof block[field] !== "string") {
+        return false;
+    }
+
+    const strippedName = stripMcpPrefix(block[field]);
+    if (!strippedName) {
+        return false;
+    }
+
+    block[field] = strippedName;
+    return true;
+}
+
 function stripMcpPrefixFromToolUseBlock(block: unknown): boolean {
     if (!block || typeof block !== "object") return false;
 
     const parsedBlock = block as Record<string, unknown>;
-    if (parsedBlock.type !== "tool_use" || typeof parsedBlock.name !== "string") {
+    if (parsedBlock.type !== "tool_use" && parsedBlock.type !== "server_tool_use") {
         return false;
     }
 
-    if (!parsedBlock.name.startsWith("mcp_")) {
+    return stripMcpPrefixFromToolNameField(parsedBlock, "name");
+}
+
+function stripMcpPrefixFromToolReferenceBlock(block: unknown): boolean {
+    if (!block || typeof block !== "object") return false;
+
+    const parsedBlock = block as Record<string, unknown>;
+    if (parsedBlock.type !== "tool_reference") {
         return false;
     }
 
-    parsedBlock.name = parsedBlock.name.slice(4);
-    return true;
+    return stripMcpPrefixFromToolNameField(parsedBlock, "tool_name");
+}
+
+function stripMcpPrefixFromToolSearchToolResultBlock(block: unknown): boolean {
+    if (!block || typeof block !== "object") return false;
+
+    const parsedBlock = block as Record<string, unknown>;
+    if (parsedBlock.type !== "tool_search_tool_result") {
+        return false;
+    }
+
+    const content = parsedBlock.content;
+    if (!content || typeof content !== "object") {
+        return false;
+    }
+
+    const toolReferences = (content as Record<string, unknown>).tool_references;
+    if (!Array.isArray(toolReferences)) {
+        return false;
+    }
+
+    let modified = false;
+    for (const toolReference of toolReferences) {
+        modified = stripMcpPrefixFromToolReferenceBlock(toolReference) || modified;
+    }
+
+    return modified;
+}
+
+function stripMcpPrefixFromContentBlock(block: unknown): boolean {
+    return (
+        stripMcpPrefixFromToolUseBlock(block) ||
+        stripMcpPrefixFromToolReferenceBlock(block) ||
+        stripMcpPrefixFromToolSearchToolResultBlock(block)
+    );
 }
 
 function stripMcpPrefixFromContentBlocks(content: unknown): boolean {
@@ -42,7 +100,7 @@ function stripMcpPrefixFromContentBlocks(content: unknown): boolean {
 
     let modified = false;
     for (const block of content) {
-        modified = stripMcpPrefixFromToolUseBlock(block) || modified;
+        modified = stripMcpPrefixFromContentBlock(block) || modified;
     }
 
     return modified;
@@ -70,8 +128,8 @@ export function stripMcpPrefixFromParsedEvent(parsed: unknown): boolean {
     const p = parsed as Record<string, unknown>;
     let modified = false;
 
-    // content_block_start: { content_block: { type: "tool_use", name: "mcp_..." } }
-    modified = stripMcpPrefixFromToolUseBlock(p.content_block) || modified;
+    // content_block_start: { content_block: { type: "tool_use" | "server_tool_use" | ... } }
+    modified = stripMcpPrefixFromContentBlock(p.content_block) || modified;
 
     // message_start: { message: { content: [{ type: "tool_use", name: "mcp_..." }] } }
     if (p.message && typeof p.message === "object") {

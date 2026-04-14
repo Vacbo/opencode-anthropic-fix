@@ -191,16 +191,17 @@ async function main(): Promise<void> {
 
     const inputBody = buildInputBody(args.prompt, args.model);
 
-    const signature: SignatureConfig = {
-        enabled: true,
-        claudeCliVersion: args.ccVersion,
-        promptCompactionMode: "minimal",
-    };
-
     const runtime: RuntimeContext = {
         persistentUserId: process.env.OPENCODE_ANTHROPIC_SIGNATURE_USER_ID ?? "0".repeat(64),
         sessionId: randomUUID(),
         accountId: account.id,
+    };
+
+    const signature: SignatureConfig = {
+        enabled: true,
+        claudeCliVersion: args.ccVersion,
+        promptCompactionMode: "minimal",
+        sessionId: runtime.sessionId,
     };
 
     const transformedBody = transformRequestBody(inputBody, signature, runtime);

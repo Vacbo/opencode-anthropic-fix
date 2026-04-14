@@ -16,7 +16,37 @@ import {
     supportsThinking,
     supportsWebSearch,
 } from "./models.js";
+import type { SignatureProfile } from "./profiles/index.js";
 import type { AccountSelectionStrategy, Provider } from "./types.js";
+
+function applyProfileBetaOverrides(betas: string[], profile: SignatureProfile | undefined): string[] {
+    if (!profile?.betaOverrides) {
+        return betas;
+    }
+
+    let nextBetas = [...betas];
+    if (Array.isArray(profile.betaOverrides.add)) {
+        nextBetas.push(...profile.betaOverrides.add.filter(Boolean));
+    }
+    if (Array.isArray(profile.betaOverrides.remove) && profile.betaOverrides.remove.length > 0) {
+        const removals = new Set(profile.betaOverrides.remove);
+        nextBetas = nextBetas.filter((beta) => !removals.has(beta));
+    }
+
+    return nextBetas;
+}
+
+function profileEnablesToolSearch(profile: SignatureProfile | undefined, model: string): boolean {
+    return profile?.toolConfig?.toolSearch?.enabled === true && !isHaikuModel(model);
+}
+
+function getToolSearchBeta(profile: SignatureProfile | undefined, model: string): string | undefined {
+    if (!profileEnablesToolSearch(profile, model)) {
+        return undefined;
+    }
+
+    return profile?.toolConfig?.toolSearch?.beta;
+}
 
 export function buildAnthropicBetaHeader(
     incomingBeta: string,
@@ -27,6 +57,8 @@ export function buildAnthropicBetaHeader(
     strategy: AccountSelectionStrategy | undefined,
     requestPath: string | undefined,
     hasFileReferences: boolean,
+    profile?: SignatureProfile,
+    hasDeferredToolLoading = false,
 ): string {
     const incomingBetasList = incomingBeta
         .split(",")
@@ -57,6 +89,11 @@ export function buildAnthropicBetaHeader(
         betas.push(CLAUDE_CODE_BETA_FLAG);
     }
 
+    const toolSearchBeta = getToolSearchBeta(profile, model);
+    if (toolSearchBeta && hasDeferredToolLoading) {
+        betas.push(toolSearchBeta);
+    }
+
     // Files API beta is endpoint/content-scoped instead of globally applied.
     if ((isFilesEndpoint || hasFileReferences) && !disableExperimentalBetas) {
         betas.push("files-api-2025-04-14");
@@ -66,12 +103,13 @@ export function buildAnthropicBetaHeader(
     // intentionally NOT auto-included here — OpenCode users benefit from seeing
     // thinking blocks. Available via /anthropic betas add redact-thinking-2026-02-12.
 
-    // CC 2.1.98 Proxyman capture shows these are NOT in the actual request headers
+    // CC 2.1.107 capture still does not send these base-profile betas automatically
     // even though they're in the source. Only include when explicitly requested.
     // advanced-tool-use and fast-mode were causing fingerprint mismatch.
 
-    // Advisor tool — CC 2.1.98 always includes this.
-    betas.push("advisor-tool-2026-03-01");
+    // advisor-tool and managed-agents appear in the extracted 2.1.107 bundle, but
+    // live Claude /v1/messages captures do not send them on standard message requests.
+    // Keep them opt-in until we see a request-path-specific capture that requires them.
 
     if (isAdaptiveThinkingModel(model)) {
         // Adaptive thinking models (Opus 4.6, Sonnet 4.6) use effort-based thinking controls.
@@ -125,7 +163,9 @@ export function buildAnthropicBetaHeader(
         betas.push(...customBetas.filter(Boolean));
     }
 
-    let mergedBetas = [...new Set([...betas, ...incomingBetasList])];
+    const profileBetas = applyProfileBetaOverrides(betas, profile);
+
+    let mergedBetas = [...new Set([...profileBetas, ...incomingBetasList])];
     if (disableExperimentalBetas) {
         mergedBetas = mergedBetas.filter((beta) => !EXPERIMENTAL_BETA_FLAGS.has(beta));
     }

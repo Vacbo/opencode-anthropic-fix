@@ -2,7 +2,7 @@
 // Shared constants extracted from index.mjs
 // ---------------------------------------------------------------------------
 
-export const FALLBACK_CLAUDE_CLI_VERSION = "2.1.98";
+export const FALLBACK_CLAUDE_CLI_VERSION = "2.1.107";
 export const CLAUDE_CODE_NPM_LATEST_URL = "https://registry.npmjs.org/@anthropic-ai/claude-code/latest";
 export const CLAUDE_CODE_BETA_FLAG = "claude-code-20250219";
 export const EFFORT_BETA_FLAG = "effort-2025-11-24";
@@ -41,6 +41,7 @@ export const EXPERIMENTAL_BETA_FLAGS = new Set([
     "fine-grained-tool-streaming-2025-05-14",
     "interleaved-thinking-2025-05-14",
     "mcp-client-2025-11-20",
+    "managed-agents-2026-04-01",
     "prompt-caching-scope-2026-01-05",
     "redact-thinking-2026-02-12",
     "skills-2025-10-02",

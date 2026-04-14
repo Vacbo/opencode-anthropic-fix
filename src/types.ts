@@ -2,6 +2,8 @@
 // Shared TypeScript types used across the plugin modules
 // ---------------------------------------------------------------------------
 
+import type { SignatureProfile } from "./profiles/index.js";
+
 export type ThinkingEffort = "low" | "medium" | "high";
 
 export type Provider = "anthropic" | "bedrock" | "vertex" | "foundry";
@@ -27,6 +29,8 @@ export interface SignatureConfig {
     enabled: boolean;
     claudeCliVersion: string;
     promptCompactionMode: PromptCompactionMode;
+    profile?: SignatureProfile;
+    sessionId?: string;
     /**
      * When true, runs the legacy regex-based sanitization on system prompt text
      * (rewrites OpenCode/Sisyphus/Morph identifiers). Defaults to false because
@@ -50,10 +54,10 @@ export interface RequestBodyMetadata {
     tools: unknown[];
     messages: unknown[];
     hasFileReferences: boolean;
+    hasDeferredToolLoading: boolean;
 }
 
 export interface RequestMetadata {
     user_id: string;
-    organization_uuid?: string;
     user_email?: string;
 }

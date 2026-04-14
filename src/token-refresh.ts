@@ -94,11 +94,31 @@ export interface OpenCodeClient {
             };
         }): Promise<unknown>;
     };
+    session?: {
+        prompt(params: {
+            path: { id: string };
+            body: {
+                noReply: boolean;
+                parts: Array<{ type: "text"; text: string; ignored?: boolean }>;
+            };
+        }): Promise<unknown>;
+    };
+    tui?: {
+        showToast(params: {
+            body: {
+                message: string;
+                variant: "info" | "success" | "warning" | "error";
+            };
+        }): Promise<unknown>;
+    };
 }
 
 function claudeBinaryPath(): string | null {
     try {
-        return execSync("which claude", { encoding: "utf-8", timeout: 5000 }).trim();
+        return execSync("which claude", {
+            encoding: "utf-8",
+            timeout: 5000,
+        }).trim();
     } catch {
         return null;
     }

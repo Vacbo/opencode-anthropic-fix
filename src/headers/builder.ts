@@ -38,9 +38,10 @@ function parseRequestBodyMetadata(body: string | undefined): {
     tools: unknown[];
     messages: unknown[];
     hasFileReferences: boolean;
+    hasDeferredToolLoading: boolean;
 } {
     if (!body || typeof body !== "string") {
-        return { model: "", tools: [], messages: [], hasFileReferences: false };
+        return { model: "", tools: [], messages: [], hasFileReferences: false, hasDeferredToolLoading: false };
     }
 
     try {
@@ -50,9 +51,12 @@ function parseRequestBodyMetadata(body: string | undefined): {
         const messages = Array.isArray(parsed?.messages) ? parsed.messages : [];
         // hasFileReferences: check if any message content references files
         const hasFileReferences = hasFileIds(parsed);
-        return { model, tools, messages, hasFileReferences };
+        const hasDeferredToolLoading = tools.some(
+            (tool) => tool && typeof tool === "object" && (tool as { defer_loading?: unknown }).defer_loading === true,
+        );
+        return { model, tools, messages, hasFileReferences, hasDeferredToolLoading };
     } catch {
-        return { model: "", tools: [], messages: [], hasFileReferences: false };
+        return { model: "", tools: [], messages: [], hasFileReferences: false, hasDeferredToolLoading: false };
     }
 }
 
@@ -98,7 +102,7 @@ export function buildRequestHeaders(
 
     // Preserve all incoming beta headers while ensuring OAuth requirements
     const incomingBeta = requestHeaders.get("anthropic-beta") || "";
-    const { model, tools, messages, hasFileReferences } = parseRequestBodyMetadata(requestBody);
+    const { model, tools, messages, hasFileReferences, hasDeferredToolLoading } = parseRequestBodyMetadata(requestBody);
     const provider = detectProvider(requestUrl);
     const mergedBetas = buildAnthropicBetaHeader(
         incomingBeta,
@@ -109,6 +113,8 @@ export function buildRequestHeaders(
         signature.strategy,
         requestUrl?.pathname,
         hasFileReferences,
+        signature.profile,
+        hasDeferredToolLoading,
     );
 
     const authTokenOverride = process.env.ANTHROPIC_AUTH_TOKEN?.trim();
@@ -155,7 +161,10 @@ export function buildRequestHeaders(
         if (isTruthyEnv(process.env.CLAUDE_CODE_ADDITIONAL_PROTECTION)) {
             requestHeaders.set("x-anthropic-additional-protection", "true");
         }
-        // CC 2.1.98 sends a per-request UUID
+        if (signature.sessionId) {
+            requestHeaders.set("X-Claude-Code-Session-Id", signature.sessionId);
+        }
+        // CC 2.1.107 sends a per-request UUID
         requestHeaders.set("x-client-request-id", randomUUID());
     }
     requestHeaders.delete("x-api-key");

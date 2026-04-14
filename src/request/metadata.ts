@@ -43,7 +43,7 @@ export function parseRequestBodyMetadata(
     debugLog?: (...args: unknown[]) => void,
 ): RequestBodyMetadata {
     if (!body || typeof body !== "string") {
-        return { model: "", tools: [], messages: [], hasFileReferences: false };
+        return { model: "", tools: [], messages: [], hasFileReferences: false, hasDeferredToolLoading: false };
     }
 
     try {
@@ -52,10 +52,14 @@ export function parseRequestBodyMetadata(
         const tools = Array.isArray(parsed?.tools) ? parsed.tools : [];
         const messages = Array.isArray(parsed?.messages) ? parsed.messages : [];
         const hasFileReferences = extractFileIds(parsed).length > 0;
-        return { model, tools, messages, hasFileReferences };
+        const hasDeferredToolLoading = tools.some(
+            (tool: unknown) =>
+                tool && typeof tool === "object" && (tool as { defer_loading?: unknown }).defer_loading === true,
+        );
+        return { model, tools, messages, hasFileReferences, hasDeferredToolLoading };
     } catch (err) {
         debugLog?.("extractFileIds failed:", (err as Error).message);
-        return { model: "", tools: [], messages: [], hasFileReferences: false };
+        return { model: "", tools: [], messages: [], hasFileReferences: false, hasDeferredToolLoading: false };
     }
 }
 
@@ -85,8 +89,6 @@ export function buildRequestMetadata(input: {
         }),
     };
 
-    const orgUuid = process.env.CLAUDE_CODE_ORGANIZATION_UUID?.trim();
-    if (orgUuid) metadata.organization_uuid = orgUuid;
     const userEmail = process.env.CLAUDE_CODE_USER_EMAIL?.trim();
     if (userEmail) metadata.user_email = userEmail;
 

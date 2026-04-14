@@ -78,7 +78,7 @@ export function buildSystemPromptBlocks(
         blocks.push({ type: "text", text: billingHeader });
     }
 
-    // CC 2.1.98 sends only {"type":"ephemeral"} — no scope or ttl fields.
+    // CC 2.1.107 sends only {"type":"ephemeral"} — no scope or ttl fields.
     blocks.push({
         type: "text",
         text: CLAUDE_CODE_IDENTITY_STRING,

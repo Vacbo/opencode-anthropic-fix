@@ -6,6 +6,7 @@ import {
     saveConfig,
     VALID_STRATEGIES,
 } from "../../config.js";
+import { DEFAULT_SIGNATURE_PROFILE_ID, listSignatureProfiles, resolveSignatureProfile } from "../../profiles/index.js";
 import { createDefaultStats, getStoragePath, loadAccounts, saveAccounts, type AccountMetadata } from "../../storage.js";
 import { c, pad, shortPath } from "../formatting.js";
 import { cmdStats } from "./auth.js";
@@ -41,10 +42,12 @@ ${c.bold("Config Commands")}
 
   ${pad(c.cyan("show"), 20)}Show current configuration and file paths (alias: cfg)
   ${pad(c.cyan("strategy") + " [name]", 20)}Show or change selection strategy (alias: strat)
+  ${pad(c.cyan("profile") + " [name]", 20)}Show or change the signature profile
 
 ${c.dim("Examples:")}
   ${bin} config show
   ${bin} config strategy round-robin
+  ${bin} config profile cc-2.1.107-live-default-2026-04-14
 `);
             return 0;
         case "manage":
@@ -102,6 +105,7 @@ export async function cmdConfig() {
 
     const generalLines = [
         `Strategy:          ${c.cyan(config.account_selection_strategy)}`,
+        `Profile:           ${c.cyan(config.signature_profile)}`,
         `Failure TTL:       ${config.failure_ttl_seconds}s`,
         `Debug:             ${config.debug ? c.yellow("on") : "off"}`,
     ];
@@ -197,6 +201,41 @@ export async function cmdStrategy(arg?: string) {
     }
 
     return 0;
+}
+
+export async function cmdProfile(arg?: string) {
+    const config = loadConfig();
+
+    if (!arg) {
+        log.info(c.bold("Signature Profile"));
+
+        const lines = listSignatureProfiles().map((profile) => {
+            const current = profile.id === config.signature_profile;
+            const marker = current ? c.green("▸ ") : "  ";
+            const name = current ? c.bold(c.cyan(profile.id)) : c.dim(profile.id);
+            const description = current ? profile.description : c.dim(profile.description);
+            return `${marker}${pad(name, 46)}${description}`;
+        });
+        log.message(lines.join("\n"));
+        log.message(c.dim("Change with: opencode-anthropic-auth profile <profile-id>"));
+        return 0;
+    }
+
+    try {
+        const profileId = resolveSignatureProfile(arg.trim()).id;
+        if (profileId === config.signature_profile) {
+            log.message(c.dim(`Profile is already '${profileId}'.`));
+            return 0;
+        }
+
+        saveConfig({ signature_profile: profileId });
+        log.success(`Profile changed to '${profileId}'.`);
+        return 0;
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        log.error(message);
+        return 1;
+    }
 }
 
 export async function cmdStatus() {
@@ -447,6 +486,7 @@ ${c.dim("Usage Commands:")}
 ${c.dim("Config Commands:")}
   ${pad(c.cyan("config"), 22)}Show configuration and file paths (alias: cfg)
   ${pad(c.cyan("strategy") + " [name]", 22)}Show or change selection strategy (alias: strat)
+  ${pad(c.cyan("profile") + " [name]", 22)}Show or change the signature profile
 
 ${c.dim("Manage Commands:")}
   ${pad(c.cyan("manage"), 22)}Interactive account management menu (alias: mg)
@@ -475,6 +515,8 @@ ${c.dim("Examples:")}
   ${bin} account switch 2  ${c.dim("# Same as above (group format)")}
   ${bin} stats             ${c.dim("# Show token usage per account")}
   ${bin} usage stats       ${c.dim("# Same as above (group format)")}
+  ${bin} profile           ${c.dim("# Show signature profiles")}
+  ${bin} config profile ${DEFAULT_SIGNATURE_PROFILE_ID} ${c.dim("# Switch profile")}
 
 ${c.dim("Files:")}
   Config:   ${shortPath(getConfigPath())}
@@ -517,6 +559,8 @@ export async function dispatchConfigCommands(args: string[]) {
         case "strategy":
         case "strat":
             return cmdStrategy(arg);
+        case "profile":
+            return cmdProfile(arg);
         case "help":
         case "-h":
         case "--help":

@@ -12,10 +12,8 @@ import type { OpenCodeClient } from "./token-refresh.js";
 const DEBOUNCE_TOAST_MAP_MAX_SIZE = 50;
 
 export interface PluginHelperDeps {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- OpenCode plugin client API boundary; accepts arbitrary extension methods
-    client: OpenCodeClient & Record<string, any>;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- plugin config accepts forward-compatible arbitrary keys
-    config: AnthropicAuthConfig & Record<string, any>;
+    client: OpenCodeClient;
+    config: AnthropicAuthConfig;
     debugLog: (...args: unknown[]) => void;
     getAccountManager: () => AccountManager | null;
     setAccountManager: (accountManager: AccountManager | null) => void;

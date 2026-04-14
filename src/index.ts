@@ -2,7 +2,6 @@
 // Plugin entry point — slim factory that wires all extracted modules.
 // ---------------------------------------------------------------------------
 
-import { randomUUID } from "node:crypto";
 import type { ManagedAccount } from "./accounts.js";
 import { AccountManager } from "./accounts.js";
 import type { PendingOAuthEntry } from "./commands/oauth-flow.js";
@@ -24,23 +23,81 @@ import {
 } from "./account-identity.js";
 import { clearAccounts, loadAccounts } from "./storage.js";
 import type { OpenCodeClient } from "./token-refresh.js";
-import { createBunFetch } from "./bun-fetch.js";
 import { createPluginHelpers } from "./plugin-helpers.js";
 import { createRefreshHelpers } from "./refresh-helpers.js";
 import { createRequestOrchestrationHelpers } from "./request-orchestration-helpers.js";
+import { createSessionScopeTracker } from "./session-scope.js";
+import { forwardAnthropicRequest } from "./transport/forward.js";
+
+type OpenCodeCommandDescriptor = {
+    template: string;
+    description: string;
+};
+
+type OpenCodeTransformInput = {
+    model?: {
+        providerID?: string;
+    };
+};
+
+type OpenCodeTransformOutput = {
+    system: string[];
+};
+
+type OpenCodeConfigHookInput = {
+    command?: Record<string, OpenCodeCommandDescriptor>;
+};
+
+type OpenCodeCommandExecuteBeforeInput = {
+    command?: unknown;
+    arguments?: unknown;
+    sessionID: string;
+};
+
+type OpenCodeAuthState = {
+    type?: string;
+    refresh?: string;
+    access?: string;
+    expires?: number;
+};
+
+type OAuthAuthState = {
+    type: "oauth";
+    refresh: string;
+    access?: string;
+    expires?: number;
+};
+
+type OpenCodeProviderModel = {
+    id: string;
+    cost?: {
+        input?: number;
+        output?: number;
+        cache?: {
+            read?: number;
+            write?: number;
+        };
+    };
+    limit?: {
+        context?: number;
+        output?: number;
+    };
+};
+
+type OpenCodeProvider = {
+    models: Record<string, OpenCodeProviderModel>;
+};
+
+function isOAuthAuthState(auth: OpenCodeAuthState): auth is OAuthAuthState {
+    return auth.type === "oauth" && typeof auth.refresh === "string" && auth.refresh.length > 0;
+}
 
 // ---------------------------------------------------------------------------
 // Plugin factory
 // ---------------------------------------------------------------------------
 
-export async function AnthropicAuthPlugin({
-    client,
-}: {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- OpenCode plugin client API boundary; accepts arbitrary extension methods
-    client: OpenCodeClient & Record<string, any>;
-}) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- plugin config accepts forward-compatible arbitrary keys
-    const config: AnthropicAuthConfig & Record<string, any> = loadConfig();
+export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient }) {
+    const config: AnthropicAuthConfig = loadConfig();
     const signatureEmulationEnabled = config.signature_emulation.enabled;
     const promptCompactionMode =
         config.signature_emulation.prompt_compaction === "off" ? ("off" as const) : ("minimal" as const);
@@ -82,27 +139,32 @@ export async function AnthropicAuthPlugin({
         getAccountManager: () => accountManager,
         debugLog,
     });
-    const bunFetchInstance = createBunFetch({
-        debug: config.debug,
-        onProxyStatus: (status) => {
-            debugLog("bun fetch status", status);
-        },
-    });
 
     const fetchWithTransport = async (input: string | URL | Request, init: RequestInit): Promise<Response> => {
-        const activeFetch = globalThis.fetch as typeof globalThis.fetch & { mock?: unknown };
+        const activeFetch = globalThis.fetch as typeof globalThis.fetch & {
+            mock?: unknown;
+        };
         if (typeof activeFetch === "function" && activeFetch.mock) {
             return activeFetch(input, init);
         }
 
-        return bunFetchInstance.fetch(input, init);
+        try {
+            return await forwardAnthropicRequest(input, init);
+        } catch (error) {
+            if (error instanceof Error && error.message === "forwardAnthropicRequest requires Bun.fetch") {
+                debugLog("Bun.fetch unavailable; falling back to native fetch");
+                return fetch(input, init);
+            }
+
+            throw error;
+        }
     };
 
     // -- Version resolution ----------------------------------------------------
 
     let claudeCliVersion = FALLBACK_CLAUDE_CLI_VERSION;
-    const signatureSessionId = randomUUID();
     const signatureUserId = getOrCreateSignatureUserId();
+    const sessionScopeTracker = createSessionScopeTracker();
     if (shouldFetchClaudeCodeVersion) {
         fetchLatestClaudeCodeVersion()
             .then((version) => {
@@ -125,14 +187,14 @@ export async function AnthropicAuthPlugin({
             lastToastedIndex = index;
         },
         fileAccountMap,
-        fetchWithTransport,
+        forwardRequest: fetchWithTransport,
         parseRefreshFailure,
         refreshAccountTokenSingleFlight,
         maybeRefreshIdleAccounts,
         signatureEmulationEnabled,
         promptCompactionMode,
         signatureSanitizeSystemPrompt,
-        signatureSessionId,
+        getSignatureSessionId: () => sessionScopeTracker.getCurrentSignatureSessionId(),
         signatureUserId,
     });
 
@@ -159,11 +221,11 @@ export async function AnthropicAuthPlugin({
 
     return {
         dispose: async () => {
-            await bunFetchInstance.shutdown();
+            // No-op: proxy infrastructure removed, native fetch requires no cleanup
         },
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- OpenCode plugin hook API boundary
-        "experimental.chat.system.transform": (input: Record<string, any>, output: Record<string, any>) => {
+        "experimental.chat.system.transform": (input: OpenCodeTransformInput, output: OpenCodeTransformOutput) => {
+            sessionScopeTracker.observeHookInput(input);
             const prefix = CLAUDE_CODE_IDENTITY_STRING;
             if (!signatureEmulationEnabled && input.model?.providerID === "anthropic") {
                 output.system.unshift(prefix);
@@ -171,17 +233,17 @@ export async function AnthropicAuthPlugin({
             }
         },
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- OpenCode plugin hook API boundary
-        config: async (input: Record<string, any>) => {
+        config: async (input: OpenCodeConfigHookInput) => {
             input.command ??= {};
             input.command["anthropic"] = {
                 template: "/anthropic",
-                description: "Manage Anthropic auth, config, and betas (usage, login, config, set, betas, switch)",
+                description:
+                    "Manage Anthropic auth, config, profiles, and betas (usage, login, config, profile, set, betas, switch)",
             };
         },
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- OpenCode plugin hook API boundary
-        "command.execute.before": async (input: Record<string, any>) => {
+        "command.execute.before": async (input: OpenCodeCommandExecuteBeforeInput) => {
+            sessionScopeTracker.observeHookInput(input);
             if (input.command !== "anthropic") return;
             try {
                 const slashInput = {
@@ -199,17 +261,11 @@ export async function AnthropicAuthPlugin({
 
         auth: {
             provider: "anthropic",
-            async loader(
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any -- OpenCode auth loader API boundary
-                getAuth: () => Promise<Record<string, any>>,
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any -- OpenCode auth loader API boundary
-                provider: Record<string, any>,
-            ) {
+            async loader(getAuth: () => Promise<OpenCodeAuthState>, provider: OpenCodeProvider) {
                 const auth = await getAuth();
-                if (auth.type === "oauth") {
+                if (isOAuthAuthState(auth)) {
                     // Zero out cost for max plan and optionally override context limits.
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- model objects carry provider-specific metadata
-                    for (const model of Object.values(provider.models) as Record<string, any>[]) {
+                    for (const model of Object.values(provider.models)) {
                         model.cost = { input: 0, output: 0, cache: { read: 0, write: 0 } };
                         if (
                             config.override_model_limits.enabled &&
@@ -276,12 +332,7 @@ export async function AnthropicAuthPlugin({
 
                     return {
                         apiKey: "",
-                        async fetch(
-                            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- fetch input varies (string | URL | Request) across call sites
-                            input: any,
-                            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- fetch init is OpenCode-shaped RequestInit-plus
-                            init: any,
-                        ) {
+                        async fetch(input: string | URL | Request, init?: RequestInit) {
                             const currentAuth = await getAuth();
                             if (currentAuth.type !== "oauth") return fetch(input, init);
                             return executeOAuthFetch(input, init);

@@ -13,7 +13,7 @@ Primary code references:
 - `lib/config.mjs`
 - `lib/oauth.mjs`
 
-**Validated against**: Claude Code 2.1.80 npm package (`cli.js`, 15,646 lines minified).
+**Validated against**: Claude Code 2.1.107 npm package (`cli.js`) plus the repo's pinned runtime baseline.
 
 ## 1) Control switch (on/off)
 
@@ -47,7 +47,7 @@ When `signature_emulation.enabled=false`, the plugin falls back to legacy system
 
 In `AnthropicAuthPlugin`:
 
-- initial fallback version: `2.1.80`
+- initial fallback version: `2.1.107`
 - if `fetch_claude_code_version_on_startup=true`, it performs GET on:
     - `https://registry.npmjs.org/@anthropic-ai/claude-code/latest`
 - short timeout (AbortController); failures are silent and fallback remains active
@@ -57,7 +57,7 @@ This version is used by:
 - `user-agent` (API requests)
 - `x-anthropic-billing-header` generation in `system`
 
-**Important**: `x-stainless-package-version` is set to the Anthropic SDK version (`0.74.0`), NOT the CC CLI version. See section 4.2.
+**Important**: `x-stainless-package-version` is set to the Anthropic SDK version (`0.81.0`), NOT the CC CLI version. See section 4.2.
 
 ## 3) Request flow where mimicry is applied
 
@@ -133,11 +133,13 @@ With `signature.enabled=true`, it adds:
 - `x-stainless-arch: <x64|arm64|...>`
 - `x-stainless-lang: js`
 - `x-stainless-os: <MacOS|Windows|Linux|...>`
-- `x-stainless-package-version: 0.74.0` (Anthropic SDK version, NOT CLI version)
+- `x-stainless-package-version: 0.81.0` (Anthropic SDK version, NOT CLI version)
 - `x-stainless-runtime: node`
 - `x-stainless-runtime-version: <process.version>`
 - `x-stainless-helper-method: stream`
 - `x-stainless-timeout: 600` (CC's default 600-second SDK timeout)
+- `X-Claude-Code-Session-Id: <session UUID>`
+    - sourced from the plugin's per-session `signatureSessionId`
 - `x-stainless-retry-count`
     - preserves incoming value when present and not explicitly falsy
     - otherwise sets `0`
@@ -152,6 +154,16 @@ It also injects optional env-driven headers:
     - each valid line is converted into a header
 - `CLAUDE_CODE_CONTAINER_ID` => `x-claude-remote-container-id`
 - `CLAUDE_CODE_REMOTE_SESSION_ID` => `x-claude-remote-session-id`
+    - also enables the session sidecar sync for:
+        - `POST /v1/code/sessions`
+        - `PATCH /v1/sessions/{session_*}` title updates
+    - expected value is the `session_*` id shown by Claude remote control, e.g. `https://claude.ai/code/session_...`
+
+Per-chat compatibility note:
+
+- the plugin now scopes its local `X-Claude-Code-Session-Id` and code-session sidecar state per OpenCode chat when a hook input exposes `sessionID`/`sessionId`
+- the mapping is learned from OpenCode hook inputs such as `experimental.chat.system.transform` and reused by the subsequent `/v1/messages` request path
+- if no OpenCode chat identifier is visible, the plugin falls back to a process-local signature session UUID
 - `CLAUDE_AGENT_SDK_CLIENT_APP` => `x-client-app`
 - `CLAUDE_CODE_ADDITIONAL_PROTECTION=1/true/yes` => `x-anthropic-additional-protection: true`
 
@@ -168,7 +180,7 @@ Header sent:
 
 - `User-Agent: axios/1.13.6`
 
-### 4.4 OAuth scopes (CC 2.1.80)
+### 4.4 OAuth scopes (CC 2.1.107)
 
 Claude Code defines two scope arrays merged for authorization:
 
@@ -295,13 +307,18 @@ Automatically enabled by Claude Code (functional reference):
 - `oauth-2025-04-20`
 - `token-counting-2024-11-01` (preflight `/v1/messages/count_tokens`)
 
-Now auto-included by the plugin:
+Now auto-included by the plugin on standard `/v1/messages` requests:
 
 - `advanced-tool-use-2025-11-20` (upstream 2.1.79+ base profile)
 - `fast-mode-2026-02-01` (upstream 2.1.79+ base profile)
 - `files-api-2025-04-14` (only `/v1/files` and Messages requests that reference `file_id`)
 - `effort-2025-11-24` (Opus 4.6)
 - `token-counting-2024-11-01` (preflight `/v1/messages/count_tokens`)
+
+Present in the extracted 2.1.107 bundle but **not** auto-sent on the live `/v1/messages` capture used for parity validation:
+
+- `advisor-tool-2026-03-01`
+- `managed-agents-2026-04-01`
 
 Available via `/anthropic betas add` or `ANTHROPIC_BETAS`:
 
@@ -432,10 +449,11 @@ To audit whether mimicry is active at runtime:
 
 1. confirm `signature_emulation.enabled=true` (config or env)
 2. inspect request headers and verify `x-stainless-*`, `x-app`, `anthropic-version`
-3. verify `x-stainless-package-version` is `0.74.0` (SDK version, not CLI version)
+3. verify `x-stainless-package-version` is `0.81.0` (SDK version, not CLI version)
 4. verify `x-stainless-timeout` is `600`
 5. verify `anthropic-beta` includes expected flags for model/provider
-6. inspect body and confirm:
+6. verify `X-Claude-Code-Session-Id` is present and stable for the plugin session
+7. inspect body and confirm:
     - `system[0..]` includes identity block (and billing block unless disabled)
     - billing header has a native-style xxHash64 `cch` value and `cc_version` includes hash suffix
     - `metadata.user_id` follows composed format

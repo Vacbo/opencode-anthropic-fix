@@ -30,6 +30,7 @@ import {
 import {
     cmdHelp,
     cmdManage,
+    cmdProfile,
     cmdResetStats,
     cmdStrategy,
     dispatchConfigCommands,
@@ -56,7 +57,7 @@ export {
     cmdStatus,
     cmdSwitch,
 } from "./cli/commands/auth.js";
-export { cmdConfig, cmdHelp, cmdManage, cmdResetStats, cmdStrategy } from "./cli/commands/config.js";
+export { cmdConfig, cmdHelp, cmdManage, cmdProfile, cmdResetStats, cmdStrategy } from "./cli/commands/config.js";
 
 // ---------------------------------------------------------------------------
 // IO context — routes console.log/error through AsyncLocalStorage for testing
@@ -247,6 +248,8 @@ async function dispatch(argv: string[]) {
         case "strategy":
         case "strat":
             return cmdStrategy(remainingArgs[0]);
+        case "profile":
+            return cmdProfile(remainingArgs[0]);
         case "cfg":
             return dispatchConfigCommands(["show"]);
 
@@ -282,13 +285,26 @@ export async function main(argv: string[], options: { io?: IoStore } = {}) {
 // Direct execution detection
 // ---------------------------------------------------------------------------
 
-async function detectMain() {
-    if (!process.argv[1]) return false;
-    if (import.meta.url === pathToFileURL(process.argv[1]).href) return true;
+export async function detectMain(
+    options: {
+        argv1?: string;
+        importMetaMain?: boolean;
+        importMetaUrl?: string;
+    } = {},
+) {
+    if (options.importMetaMain ?? import.meta.main) {
+        return true;
+    }
+
+    const argv1 = options.argv1 ?? process.argv[1];
+    const importMetaUrl = options.importMetaUrl ?? import.meta.url;
+
+    if (!argv1) return false;
+    if (importMetaUrl === pathToFileURL(argv1).href) return true;
     try {
         const { realpath } = await import("node:fs/promises");
-        const resolved = await realpath(process.argv[1]);
-        return import.meta.url === pathToFileURL(resolved).href;
+        const resolved = await realpath(argv1);
+        return importMetaUrl === pathToFileURL(resolved).href;
     } catch {
         return false;
     }

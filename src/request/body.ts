@@ -4,6 +4,7 @@
 
 import { CLAUDE_CODE_IDENTITY_STRING, KNOWN_IDENTITY_STRINGS } from "../constants.js";
 import { replaceNativeStyleCch } from "../headers/cch.js";
+import { isHaikuModel } from "../models.js";
 import { buildSystemPromptBlocks } from "../system-prompt/builder.js";
 import { normalizeSystemTextBlocks } from "../system-prompt/normalize.js";
 import { normalizeThinkingBlock } from "../thinking.js";
@@ -11,6 +12,8 @@ import type { RuntimeContext, SignatureConfig } from "../types.js";
 import { buildRequestMetadata } from "./metadata.js";
 
 const TOOL_PREFIX = "mcp_";
+const TOOL_SEARCH_REGEX_TOOL_TYPE = "tool_search_tool_regex_20251119";
+const TOOL_SEARCH_REGEX_TOOL_NAME = "tool_search_tool_regex";
 
 /**
  * Wrap third-party system-prompt content into a user-message <system-instructions>
@@ -146,6 +149,37 @@ function prefixToolUseName(
 
     debugLog?.("prevented double-prefix drift for tool_use block", { name });
     return name;
+}
+
+function profileEnablesToolSearch(signature: SignatureConfig, model: string): boolean {
+    return signature.profile?.toolConfig?.toolSearch?.enabled === true && !isHaikuModel(model);
+}
+
+function isToolSearchServerTool(tool: Record<string, unknown>): boolean {
+    return tool.type === TOOL_SEARCH_REGEX_TOOL_TYPE || tool.name === TOOL_SEARCH_REGEX_TOOL_NAME;
+}
+
+function injectDeferredToolLoading(tools: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+    const normalizedTools = tools.map((tool) =>
+        isToolSearchServerTool(tool)
+            ? tool
+            : {
+                  ...tool,
+                  defer_loading: true,
+              },
+    );
+
+    if (normalizedTools.some(isToolSearchServerTool)) {
+        return normalizedTools;
+    }
+
+    return [
+        {
+            type: TOOL_SEARCH_REGEX_TOOL_TYPE,
+            name: TOOL_SEARCH_REGEX_TOOL_NAME,
+        },
+        ...normalizedTools,
+    ];
 }
 
 export function transformRequestBody(
@@ -296,9 +330,12 @@ export function transformRequestBody(
             };
         }
 
+        const toolSearchEnabled = profileEnablesToolSearch(signature, parsed.model || "");
+
         // Add prefix to tools definitions
         if (parsed.tools && Array.isArray(parsed.tools)) {
-            parsed.tools = parsed.tools.map((tool: Record<string, unknown>) => ({
+            const tools = toolSearchEnabled ? injectDeferredToolLoading(parsed.tools) : parsed.tools;
+            parsed.tools = tools.map((tool: Record<string, unknown>) => ({
                 ...tool,
                 name: prefixToolDefinitionName(tool.name),
             }));

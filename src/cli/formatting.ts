@@ -175,7 +175,16 @@ export const QUOTA_BUCKETS = [
     { key: "seven_day_opus", label: "Opus 7d" },
     { key: "seven_day_oauth_apps", label: "OAuth Apps 7d" },
     { key: "seven_day_cowork", label: "Cowork 7d" },
-];
+] as const;
+
+type UsageBucket = {
+    utilization?: number | null;
+    resets_at?: string | null;
+};
+
+type UsageBucketKey = (typeof QUOTA_BUCKETS)[number]["key"];
+
+export type UsageSummary = Partial<Record<UsageBucketKey, UsageBucket | null | undefined>> & Record<string, unknown>;
 
 export const USAGE_INDENT = "       ";
 export const USAGE_LABEL_WIDTH = 13;
@@ -183,20 +192,20 @@ export const USAGE_LABEL_WIDTH = 13;
 /**
  * Render usage quota lines for an account.
  * Returns an array of pre-formatted strings (one per non-null bucket).
- * @param {Record<string, any>} usage
+ * @param {UsageSummary} usage
  * @returns {string[]}
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- upstream Anthropic usage API response has unstable bucket shapes
-export function renderUsageLines(usage: Record<string, any>): string[] {
+export function renderUsageLines(usage: UsageSummary): string[] {
     const lines = [];
     for (const { key, label } of QUOTA_BUCKETS) {
         const bucket = usage[key];
-        if (!bucket || bucket.utilization == null) continue;
+        if (!bucket || typeof bucket.utilization !== "number") continue;
 
         const pct = bucket.utilization;
         const bar = renderBar(pct);
         const pctStr = pad(String(Math.round(pct)) + "%", 4);
-        const reset = bucket.resets_at ? c.dim(`resets in ${formatResetTime(bucket.resets_at)}`) : "";
+        const reset =
+            typeof bucket.resets_at === "string" ? c.dim(`resets in ${formatResetTime(bucket.resets_at)}`) : "";
 
         lines.push(`${USAGE_INDENT}${pad(label, USAGE_LABEL_WIDTH)} ${bar} ${pctStr}${reset ? ` ${reset}` : ""}`);
     }

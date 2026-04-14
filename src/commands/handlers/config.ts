@@ -20,6 +20,7 @@ export async function handleConfigCommand(sessionID: string, deps: ConfigHandler
         "▣ Anthropic Config",
         "",
         `strategy: ${fresh.account_selection_strategy}`,
+        `profile: ${fresh.signature_profile}`,
         `emulation: ${fresh.signature_emulation.enabled ? "on" : "off"}`,
         `compaction: ${fresh.signature_emulation.prompt_compaction}`,
         `1m-context: ${fresh.override_model_limits.enabled ? "on" : "off"}`,
