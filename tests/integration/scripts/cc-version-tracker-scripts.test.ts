@@ -2,7 +2,6 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import process from "node:process";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -22,20 +21,8 @@ function createFixture(version: string, cliContents: string) {
     return { dir, cliPath, packageJsonPath };
 }
 
-function resolveScriptRuntime(): string {
-    if (typeof Bun !== "undefined") {
-        return "bun";
-    }
-
-    if (existsSync(process.execPath)) {
-        return process.execPath;
-    }
-
-    return "node";
-}
-
 function runNodeScript(scriptPath: string, args: string[]) {
-    return execFileSync(resolveScriptRuntime(), [scriptPath, ...args], {
+    return execFileSync("bun", [scriptPath, ...args], {
         cwd: projectRoot,
         encoding: "utf8",
     });
