@@ -27,6 +27,7 @@ interface ParsedArgs {
     candidatePath: string;
     verifiedDir: string;
     verifiedBy?: string;
+    onlyPaths: Set<string>;
     help: boolean;
 }
 
@@ -50,8 +51,17 @@ Options:
   --verified-dir <path>      Verified manifest directory
                             Default: manifests/verified/claude-code
   --verified-by <label>      Override report.verifiedBy in the output manifest
+  --only-field <path[,path]> Promote only the selected verified field path(s)
+                            Repeat the flag or pass comma-separated values
   --help                     Show this help message
 `);
+}
+
+function splitFieldPaths(value: string): string[] {
+    return value
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter(Boolean);
 }
 
 export function parseArgs(args: string[]): ParsedArgs {
@@ -61,6 +71,7 @@ export function parseArgs(args: string[]): ParsedArgs {
     let verifiedDir = DEFAULT_VERIFIED_DIR;
     let verifiedBy: string | undefined;
     let help = false;
+    const onlyPaths = new Set<string>();
 
     for (let index = 0; index < args.length; index += 1) {
         const arg = args[index];
@@ -93,6 +104,13 @@ export function parseArgs(args: string[]): ParsedArgs {
             index += 1;
             continue;
         }
+        if (arg === "--only-field" && index + 1 < args.length) {
+            for (const path of splitFieldPaths(args[index + 1] ?? "")) {
+                onlyPaths.add(path);
+            }
+            index += 1;
+            continue;
+        }
     }
 
     if (!help && !version.trim()) {
@@ -108,6 +126,7 @@ export function parseArgs(args: string[]): ParsedArgs {
         candidatePath: candidatePath || resolve(DEFAULT_CANDIDATE_DIR, `${version}.json`),
         verifiedDir,
         verifiedBy: verifiedBy?.trim() || undefined,
+        onlyPaths,
         help,
     };
 }
@@ -209,10 +228,14 @@ export function buildFieldDecision(
     report: VerificationReport,
     verifiedBy: string,
     evidenceRef: string,
+    options?: {
+        onlyPaths?: ReadonlySet<string>;
+    },
 ): FieldDecision {
     const candidateFields = flattenCandidateFields(candidate);
     const promoted: VerifiedField[] = [];
     const rejected: RejectedField[] = [];
+    const onlyPaths = options?.onlyPaths;
 
     for (const [path, candidateField] of candidateFields.entries()) {
         const observations = report.scenarioResults.flatMap((scenarioResult) =>
@@ -274,6 +297,10 @@ export function buildFieldDecision(
                     actual: candidateField.value,
                 })),
             });
+            continue;
+        }
+
+        if (onlyPaths && onlyPaths.size > 0 && !onlyPaths.has(path)) {
             continue;
         }
 
@@ -389,14 +416,16 @@ async function main(): Promise<void> {
         : args.reportPath;
     const verifiedManifestPath = resolve(args.verifiedDir, `${args.version}.json`);
     const existing = readExistingVerifiedManifest(verifiedManifestPath);
-    const decision = buildFieldDecision(candidate, report, verifiedBy, relativeEvidenceRef);
+    const filteredDecision = buildFieldDecision(candidate, report, verifiedBy, relativeEvidenceRef, {
+        onlyPaths: args.onlyPaths,
+    });
     const mergedManifest = mergeVerifiedManifest(existing, {
         version: args.version,
         verifiedAt: report.verifiedAt,
         verifiedBy,
         scenarioIds: report.scenarioResults.map((scenarioResult) => scenarioResult.scenarioId),
-        promotedFields: decision.promoted,
-        rejectedCandidateFields: decision.rejected,
+        promotedFields: filteredDecision.promoted,
+        rejectedCandidateFields: filteredDecision.rejected,
         evidenceArtifacts: [relativeEvidenceRef],
     });
 
@@ -413,8 +442,11 @@ async function main(): Promise<void> {
         JSON.stringify(
             {
                 version: args.version,
-                promotedFields: decision.promoted.map((field) => field.path),
-                rejectedFields: decision.rejected.map((field) => ({ path: field.path, reason: field.rejectionReason })),
+                promotedFields: filteredDecision.promoted.map((field) => field.path),
+                rejectedFields: filteredDecision.rejected.map((field) => ({
+                    path: field.path,
+                    reason: field.rejectionReason,
+                })),
                 verifiedManifestPath,
                 indexPath,
             },

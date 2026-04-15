@@ -205,4 +205,57 @@ describe("promote-verified", () => {
             }),
         ]);
     });
+
+    it("can limit promotion output to an approved field subset", () => {
+        const report: VerificationReport = {
+            version: "2.1.109",
+            verifiedAt: "2026-04-15T17:32:35.000Z",
+            verifiedBy: "trusted-local-verifier",
+            scenarioResults: [
+                {
+                    scenarioId: "minimal-hi",
+                    passed: true,
+                    ogCapture: null,
+                    pluginCapture: null,
+                    fieldResults: [
+                        {
+                            path: "headers.userAgent",
+                            ogValue: "claude-cli/2.1.109",
+                            pluginValue: "claude-cli/2.1.109",
+                            match: true,
+                            severity: "critical",
+                        },
+                        {
+                            path: "headers.xApp",
+                            ogValue: "cli",
+                            pluginValue: "cli",
+                            match: true,
+                            severity: "critical",
+                        },
+                    ],
+                },
+            ],
+            summary: {
+                totalScenarios: 1,
+                passedScenarios: 1,
+                failedScenarios: 0,
+                totalFields: 2,
+                matchingFields: 2,
+                mismatchedFields: 0,
+            },
+        };
+
+        const decision = buildFieldDecision(
+            candidateManifest,
+            report,
+            "trusted-local-verifier",
+            "artifacts/report.json",
+            {
+                onlyPaths: new Set(["headers.userAgent"]),
+            },
+        );
+
+        expect(decision.promoted.map((field) => field.path)).toEqual(["headers.userAgent"]);
+        expect(decision.rejected).toEqual([]);
+    });
 });
