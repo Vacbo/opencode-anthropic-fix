@@ -1,0 +1,223 @@
+name: Fingerprint candidate manifest
+
+on:
+    workflow_dispatch:
+    schedule:
+        - cron: "23 8 * * *"
+
+permissions:
+    contents: write
+    pull-requests: write
+
+concurrency:
+    group: fingerprint-candidate
+    cancel-in-progress: false
+
+jobs:
+    fingerprint-candidate:
+        runs-on: ubuntu-latest
+        env:
+            HUSKY: 0
+        steps:
+            - uses: actions/checkout@v5
+              with:
+                  fetch-depth: 0
+
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: latest
+
+            - name: Install dependencies
+              run: bun install --frozen-lockfile
+
+            - name: Resolve latest Claude Code release
+              id: release
+              run: |
+                  bun -e 'const response = await fetch("https://registry.npmjs.org/@anthropic-ai/claude-code");
+                  if (!response.ok) {
+                    throw new Error(`Failed to fetch registry metadata: ${response.status} ${response.statusText}`);
+                  }
+                  const metadata = await response.json();
+                  const version = metadata["dist-tags"]?.latest;
+                  const tarballUrl = metadata.versions?.[version]?.dist?.tarball;
+                  if (!version || !tarballUrl) {
+                    throw new Error("Missing latest version or tarball URL in registry metadata");
+                  }
+                  console.log(`version=${version}`);
+                  console.log(`tarball_url=${tarballUrl}`);' >> "$GITHUB_OUTPUT"
+
+            - name: Select baseline manifest
+              id: baseline
+              run: |
+                  version="${{ steps.release.outputs.version }}"
+                  candidate_dir="manifests/candidate/claude-code"
+                  baseline_source=""
+
+                  if [ -f "$candidate_dir/$version.json" ]; then
+                    baseline_source="$candidate_dir/$version.json"
+                  elif [ -f "$candidate_dir/index.json" ]; then
+                    latest=$(bun -e 'const index = JSON.parse(await Bun.file("manifests/candidate/claude-code/index.json").text()); if (typeof index.latest === "string" && index.latest.length > 0) { console.log(index.latest); }')
+                    if [ -n "$latest" ] && [ -f "$candidate_dir/$latest.json" ]; then
+                      baseline_source="$candidate_dir/$latest.json"
+                    fi
+                  fi
+
+                  if [ -n "$baseline_source" ]; then
+                    cp "$baseline_source" "$RUNNER_TEMP/baseline-manifest.json"
+                    echo "baseline_source=$baseline_source" >> "$GITHUB_OUTPUT"
+                    echo "baseline_copy=$RUNNER_TEMP/baseline-manifest.json" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "baseline_source=" >> "$GITHUB_OUTPUT"
+                    echo "baseline_copy=" >> "$GITHUB_OUTPUT"
+                  fi
+
+            - name: Download tarball and compute SHA256
+              id: tarball
+              run: |
+                  tarball_path="$RUNNER_TEMP/claude-code-${{ steps.release.outputs.version }}.tgz"
+                  curl -fsSL "${{ steps.release.outputs.tarball_url }}" -o "$tarball_path"
+                  tarball_hash=$(shasum -a 256 "$tarball_path" | cut -d' ' -f1)
+                  echo "tarball_path=$tarball_path" >> "$GITHUB_OUTPUT"
+                  echo "tarball_hash=$tarball_hash" >> "$GITHUB_OUTPUT"
+
+            - name: Extract npm bundle
+              run: bun scripts/analysis/extract-cc-bundle.ts "${{ steps.release.outputs.version }}" --output "$RUNNER_TEMP/extracted"
+
+            - name: Extract bundle fingerprint
+              run: |
+                  bun scripts/analysis/extract-fingerprint.ts "$RUNNER_TEMP/extracted/cli-${{ steps.release.outputs.version }}.js" --version "${{ steps.release.outputs.version }}" --json > "$RUNNER_TEMP/fingerprint.json"
+
+            - name: Build candidate manifest
+              run: |
+                  bun scripts/analysis/build-candidate-manifest.ts "$RUNNER_TEMP/fingerprint.json" --version "${{ steps.release.outputs.version }}" --output "$RUNNER_TEMP/generated-manifests" --tarball-hash "${{ steps.tarball.outputs.tarball_hash }}" > "$RUNNER_TEMP/build-result.json"
+
+            - name: Diff candidate manifests
+              id: diff
+              run: |
+                  set +e
+                  if [ -n "${{ steps.baseline.outputs.baseline_copy }}" ]; then
+                    bun scripts/analysis/diff-manifests.ts "${{ steps.baseline.outputs.baseline_copy }}" "$RUNNER_TEMP/generated-manifests/${{ steps.release.outputs.version }}.json" --json-output "$RUNNER_TEMP/manifest-diff.json" --markdown-output "$RUNNER_TEMP/manifest-diff.md"
+                    status=$?
+                  else
+                    bun -e 'const report = {
+                      generatedAt: new Date().toISOString(),
+                      oldManifestPath: null,
+                      newManifestPath: process.argv[2],
+                      oldVersion: null,
+                      newVersion: process.argv[3],
+                      changes: [],
+                      summary: { total: 0, critical: 0, sensitive: 0, lowRisk: 0 },
+                    };
+                    console.log(JSON.stringify(report, null, 2));' -- "$RUNNER_TEMP/generated-manifests/${{ steps.release.outputs.version }}.json" "${{ steps.release.outputs.version }}" > "$RUNNER_TEMP/manifest-diff.json"
+                    printf '# Candidate Manifest Diff: initial candidate\n\n_No baseline candidate manifest was available. Generated the first candidate manifest for Claude Code %s._\n' "${{ steps.release.outputs.version }}" > "$RUNNER_TEMP/manifest-diff.md"
+                    status=0
+                  fi
+                  set -e
+
+                  if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
+                    exit "$status"
+                  fi
+
+                  echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+                  total_changes=$(bun -e 'const report = JSON.parse(await Bun.file(process.argv[2]).text()); console.log(String(report.summary?.total ?? 0));' -- "$RUNNER_TEMP/manifest-diff.json")
+                  echo "total_changes=$total_changes" >> "$GITHUB_OUTPUT"
+                  if [ "$total_changes" -gt 0 ]; then
+                    echo "has_changes=true" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "has_changes=false" >> "$GITHUB_OUTPUT"
+                  fi
+                  if [ "$status" -eq 2 ]; then
+                    echo "critical_changes=true" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "critical_changes=false" >> "$GITHUB_OUTPUT"
+                  fi
+
+            - name: Sync generated manifests into repository
+              id: sync
+              run: |
+                  version="${{ steps.release.outputs.version }}"
+                  candidate_dir="manifests/candidate/claude-code"
+                  generated_manifest="$RUNNER_TEMP/generated-manifests/$version.json"
+                  generated_index="$RUNNER_TEMP/generated-manifests/index.json"
+                  target_manifest="$candidate_dir/$version.json"
+                  target_index="$candidate_dir/index.json"
+
+                  mkdir -p "$candidate_dir"
+
+                  should_sync=false
+                  if [ ! -f "$target_manifest" ]; then
+                    should_sync=true
+                  elif [ "${{ steps.diff.outputs.has_changes }}" = "true" ]; then
+                    should_sync=true
+                  fi
+
+                  if [ "$should_sync" = true ]; then
+                    cp "$generated_manifest" "$target_manifest"
+                    cp "$generated_index" "$target_index"
+                    echo "changed=true" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "changed=false" >> "$GITHUB_OUTPUT"
+                  fi
+
+            - name: Write job summary
+              run: |
+                  {
+                    echo "## Fingerprint candidate manifest"
+                    echo ""
+                    echo "- Claude Code version: `${{ steps.release.outputs.version }}`"
+                    if [ -n "${{ steps.baseline.outputs.baseline_source }}" ]; then
+                      echo "- Baseline manifest: `${{ steps.baseline.outputs.baseline_source }}`"
+                    else
+                      echo "- Baseline manifest: _none_"
+                    fi
+                    echo "- Critical changes detected: `${{ steps.diff.outputs.critical_changes }}`"
+                    echo ""
+                    cat "$RUNNER_TEMP/manifest-diff.md"
+                  } >> "$GITHUB_STEP_SUMMARY"
+
+            - name: Build PR body
+              run: |
+                  {
+                    echo "## Summary"
+                    echo "- Generated candidate manifest for Claude Code `${{ steps.release.outputs.version }}`."
+                    if [ -n "${{ steps.baseline.outputs.baseline_source }}" ]; then
+                      echo "- Compared against `${{ steps.baseline.outputs.baseline_source }}`."
+                    else
+                      echo "- No prior candidate manifest was available; this PR seeds the first manifest."
+                    fi
+                    echo "- Critical changes detected: `${{ steps.diff.outputs.critical_changes }}`."
+                    echo "- Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    echo ""
+                    cat "$RUNNER_TEMP/manifest-diff.md"
+                  } > "$RUNNER_TEMP/pr-body.md"
+
+            - name: Upload candidate artifacts
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: fingerprint-candidate-${{ steps.release.outputs.version }}
+                  path: |
+                      ${{ runner.temp }}/fingerprint.json
+                      ${{ runner.temp }}/build-result.json
+                      ${{ runner.temp }}/manifest-diff.json
+                      ${{ runner.temp }}/manifest-diff.md
+                      ${{ runner.temp }}/generated-manifests/${{ steps.release.outputs.version }}.json
+                      ${{ runner.temp }}/generated-manifests/index.json
+                      manifests/candidate/claude-code/${{ steps.release.outputs.version }}.json
+                      manifests/candidate/claude-code/index.json
+
+            - name: Open candidate manifest PR
+              if: ${{ steps.sync.outputs.changed == 'true' }}
+              uses: peter-evans/create-pull-request@v7
+              with:
+                  branch: automation/fingerprint-candidate
+                  delete-branch: true
+                  title: "chore(fingerprint): update candidate manifest for Claude Code ${{ steps.release.outputs.version }}"
+                  commit-message: "chore(fingerprint): update candidate manifest for Claude Code ${{ steps.release.outputs.version }}"
+                  body-path: ${{ runner.temp }}/pr-body.md
+                  labels: |
+                      automation
+                      fingerprint
+                  add-paths: |
+                      manifests/candidate/claude-code/${{ steps.release.outputs.version }}.json
+                      manifests/candidate/claude-code/index.json
