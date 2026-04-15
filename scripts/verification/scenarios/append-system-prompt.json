@@ -1,0 +1,16 @@
+{
+    "id": "append-system-prompt",
+    "name": "Append System Prompt",
+    "description": "Checks that the system block structure remains Claude Code-shaped when the calling environment adds system text.",
+    "prompt": "Explain how system prompts work.",
+    "expectedBehavior": "The request keeps the billing block and identity string in the expected placement while preserving metadata semantics.",
+    "requiredFields": [
+        "prompt.identityString",
+        "prompt.billingBlockPlacement",
+        "prompt.appendMode",
+        "prompt.cacheControlBehavior",
+        "metadata.userIdShape"
+    ],
+    "runnerMode": "prompt",
+    "requestPathContains": "/v1/messages"
+}

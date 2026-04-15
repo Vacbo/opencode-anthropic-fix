@@ -1,0 +1,10 @@
+{
+    "id": "tool-search",
+    "name": "Tool Search",
+    "description": "Prompt that should exercise tool registration and deferred-loading metadata in the request body.",
+    "prompt": "Search for files matching *.ts in the current directory.",
+    "expectedBehavior": "The captured request includes tool definitions plus the expected Stainless/tool betas.",
+    "requiredFields": ["body.toolsKey", "betas.optionalBetas", "headers.xStainlessHeaders"],
+    "runnerMode": "prompt",
+    "requestPathContains": "/v1/messages"
+}

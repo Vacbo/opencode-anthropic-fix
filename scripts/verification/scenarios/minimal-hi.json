@@ -1,0 +1,18 @@
+{
+    "id": "minimal-hi",
+    "name": "Minimal Greeting",
+    "description": "Basic greeting request to verify the default request shape over /v1/messages.",
+    "prompt": "hi",
+    "expectedBehavior": "Both OG Claude Code and the plugin emit the same baseline message request fields.",
+    "requiredFields": [
+        "transport.pathStyle",
+        "transport.defaultHeaders",
+        "headers.userAgent",
+        "headers.xApp",
+        "betas.requiredBaseBetas",
+        "body.defaultStream",
+        "body.defaultMaxTokens"
+    ],
+    "runnerMode": "prompt",
+    "requestPathContains": "/v1/messages"
+}

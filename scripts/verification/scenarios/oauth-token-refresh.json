@@ -1,0 +1,19 @@
+{
+    "id": "oauth-token-refresh",
+    "name": "OAuth Token Refresh",
+    "description": "Reserved manual scenario for validating live /v1/oauth/token refresh behavior when credentials are intentionally forced to refresh.",
+    "prompt": "",
+    "expectedBehavior": "The flow produces a refresh request with the expected OAuth beta composition, entrypoint, and auth header mode.",
+    "requiredFields": [
+        "transport.authHeaderMode",
+        "betas.authModeBetas",
+        "billing.ccEntrypoint",
+        "billing.cchStrategy"
+    ],
+    "runnerMode": "manual",
+    "requestPathContains": "/v1/oauth/token",
+    "notes": [
+        "Trigger a real credential refresh with explicit command templates or a manual wrapper before promoting this scenario.",
+        "The default prompt-based runner skips this scenario unless it is selected explicitly."
+    ]
+}

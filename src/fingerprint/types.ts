@@ -320,7 +320,7 @@ export interface ScenarioResult {
         ogValue: unknown;
         pluginValue: unknown;
         match: boolean;
-        severity: "critical" | "warning" | "info";
+        severity: FieldRisk;
     }>;
     /** Error message if scenario failed */
     error?: string;
