@@ -6,6 +6,7 @@ import {
     EXPERIMENTAL_BETA_FLAGS,
     TOKEN_COUNTING_BETA_FLAG,
 } from "./constants.js";
+import type { RequestProfile } from "./fingerprint/types.ts";
 import { isTruthyEnv } from "./env.js";
 import {
     hasOneMillionContext,
@@ -17,6 +18,7 @@ import {
     supportsWebSearch,
 } from "./models.js";
 import type { SignatureProfile } from "./profiles/index.js";
+import { getRequestProfile } from "./request/profile-resolver.js";
 import type { AccountSelectionStrategy, Provider } from "./types.js";
 
 function applyProfileBetaOverrides(betas: string[], profile: SignatureProfile | undefined): string[] {
@@ -59,13 +61,26 @@ export function buildAnthropicBetaHeader(
     hasFileReferences: boolean,
     profile?: SignatureProfile,
     hasDeferredToolLoading = false,
+    claudeCliVersion?: string,
+    requestProfile?: RequestProfile,
 ): string {
+    const resolvedRequestProfile = requestProfile ?? getRequestProfile({ version: claudeCliVersion });
     const incomingBetasList = incomingBeta
         .split(",")
         .map((b) => b.trim())
         .filter(Boolean);
 
-    const betas: string[] = ["oauth-2025-04-20"];
+    const requiredBaseBetas = resolvedRequestProfile.betas.requiredBaseBetas.value.filter(Boolean);
+    const manifestOptionalBetas =
+        resolvedRequestProfile.manifestSource === "fallback"
+            ? []
+            : resolvedRequestProfile.betas.optionalBetas.value.filter(Boolean);
+    const authModeBetas =
+        resolvedRequestProfile.manifestSource === "fallback"
+            ? []
+            : resolvedRequestProfile.betas.authModeBetas.value.filter(Boolean);
+
+    const betas: string[] = requiredBaseBetas.length > 0 ? [...requiredBaseBetas] : ["oauth-2025-04-20"];
     const disableExperimentalBetas = isTruthyEnv(process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS);
     const isMessagesCountTokensPath = requestPath === "/v1/messages/count_tokens";
     const isFilesEndpoint = requestPath?.startsWith("/v1/files") ?? false;
@@ -85,9 +100,13 @@ export function buildAnthropicBetaHeader(
     const haiku = isHaikuModel(model);
     const isRoundRobin = strategy === "round-robin";
 
+    betas.push(...authModeBetas);
+
     if (!haiku) {
         betas.push(CLAUDE_CODE_BETA_FLAG);
     }
+
+    betas.push(...manifestOptionalBetas);
 
     const toolSearchBeta = getToolSearchBeta(profile, model);
     if (toolSearchBeta && hasDeferredToolLoading) {

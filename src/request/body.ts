@@ -5,6 +5,7 @@
 import { CLAUDE_CODE_IDENTITY_STRING, KNOWN_IDENTITY_STRINGS } from "../constants.js";
 import { replaceNativeStyleCch } from "../headers/cch.js";
 import { isHaikuModel } from "../models.js";
+import { getRequestProfile } from "./profile-resolver.js";
 import { buildSystemPromptBlocks } from "../system-prompt/builder.js";
 import { normalizeSystemTextBlocks } from "../system-prompt/normalize.js";
 import { normalizeThinkingBlock } from "../thinking.js";
@@ -201,6 +202,11 @@ export function transformRequestBody(
             metadata?: Record<string, unknown>;
             system?: unknown[] | undefined;
         };
+        const requestProfile = getRequestProfile({ version: signature.claudeCliVersion });
+        const resolvedSignature: SignatureConfig = {
+            ...signature,
+            claudeCliVersion: requestProfile.billing.ccVersion.value,
+        };
         const parsedMessages = Array.isArray(parsed.messages) ? parsed.messages : [];
         const literalToolNames = new Set<string>(
             Array.isArray(parsed.tools)
@@ -230,7 +236,7 @@ export function transformRequestBody(
         // Sanitize system prompt and inject Claude Code identity/billing blocks.
         const allSystemBlocks = buildSystemPromptBlocks(
             normalizeSystemTextBlocks(parsed.system),
-            signature,
+            resolvedSignature,
             parsedMessages,
         );
 

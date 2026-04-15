@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { buildAnthropicBetaHeader } from "../betas.js";
 import { isFalsyEnv, isTruthyEnv } from "../env.js";
+import { getRequestProfile } from "../request/profile-resolver.js";
 import type { SignatureConfig } from "../types.js";
 import { buildStainlessHelperHeader, getStainlessArch, getStainlessOs } from "./stainless.js";
 import { buildUserAgent } from "./user-agent.js";
@@ -65,6 +66,18 @@ function hasFileIds(parsed: Record<string, unknown>): boolean {
     return /file[-_][a-zA-Z0-9]{2,}/.test(str);
 }
 
+function resolveUserAgent(profileUserAgent: string, claudeCliVersion: string): string {
+    if (
+        process.env.CLAUDE_CODE_ENTRYPOINT ||
+        process.env.CLAUDE_AGENT_SDK_VERSION ||
+        process.env.CLAUDE_AGENT_SDK_CLIENT_APP
+    ) {
+        return buildUserAgent(claudeCliVersion);
+    }
+
+    return profileUserAgent;
+}
+
 export function buildRequestHeaders(
     input: Request | string | URL,
     requestInit: Record<string, unknown>,
@@ -74,6 +87,8 @@ export function buildRequestHeaders(
     signature: SignatureConfig,
 ): Headers {
     const requestHeaders = new Headers();
+    const requestProfile = getRequestProfile({ version: signature.claudeCliVersion });
+
     if (input instanceof Request) {
         input.headers.forEach((value, key) => {
             requestHeaders.set(key, value);
@@ -100,6 +115,12 @@ export function buildRequestHeaders(
         }
     }
 
+    for (const [key, value] of Object.entries(requestProfile.transport.defaultHeaders.value)) {
+        if (!requestHeaders.has(key)) {
+            requestHeaders.set(key, value);
+        }
+    }
+
     // Preserve all incoming beta headers while ensuring OAuth requirements
     const incomingBeta = requestHeaders.get("anthropic-beta") || "";
     const { model, tools, messages, hasFileReferences, hasDeferredToolLoading } = parseRequestBodyMetadata(requestBody);
@@ -115,18 +136,25 @@ export function buildRequestHeaders(
         hasFileReferences,
         signature.profile,
         hasDeferredToolLoading,
+        requestProfile.billing.ccVersion.value,
+        requestProfile,
     );
 
     const authTokenOverride = process.env.ANTHROPIC_AUTH_TOKEN?.trim();
     const bearerToken = authTokenOverride || accessToken;
+    const authHeaderMode = requestProfile.transport.authHeaderMode.value.toLowerCase();
+    const authorizationScheme = authHeaderMode === "bearer" ? "Bearer" : "Bearer";
 
-    requestHeaders.set("authorization", `Bearer ${bearerToken}`);
+    requestHeaders.set("authorization", `${authorizationScheme} ${bearerToken}`);
     requestHeaders.set("anthropic-beta", mergedBetas);
-    requestHeaders.set("user-agent", buildUserAgent(signature.claudeCliVersion));
+    requestHeaders.set(
+        "user-agent",
+        resolveUserAgent(requestProfile.headers.userAgent.value, requestProfile.billing.ccVersion.value),
+    );
     if (signature.enabled) {
         requestHeaders.set("anthropic-version", "2023-06-01");
         requestHeaders.set("anthropic-dangerous-direct-browser-access", "true");
-        requestHeaders.set("x-app", "cli");
+        requestHeaders.set("x-app", requestProfile.headers.xApp.value);
         requestHeaders.set("x-stainless-arch", getStainlessArch(process.arch));
         requestHeaders.set("x-stainless-lang", "js");
         requestHeaders.set("x-stainless-os", getStainlessOs(process.platform));
@@ -146,6 +174,10 @@ export function buildRequestHeaders(
             requestHeaders.set("x-stainless-helper", stainlessHelpers);
         }
 
+        for (const [key, value] of Object.entries(requestProfile.headers.xStainlessHeaders.value)) {
+            requestHeaders.set(key, value);
+        }
+
         for (const [key, value] of Object.entries(parseAnthropicCustomHeaders())) {
             requestHeaders.set(key, value);
         }
@@ -162,10 +194,10 @@ export function buildRequestHeaders(
             requestHeaders.set("x-anthropic-additional-protection", "true");
         }
         if (signature.sessionId) {
-            requestHeaders.set("X-Claude-Code-Session-Id", signature.sessionId);
+            requestHeaders.set(requestProfile.headers.xClaudeCodeSessionId.value, signature.sessionId);
         }
         // CC 2.1.107 sends a per-request UUID
-        requestHeaders.set("x-client-request-id", randomUUID());
+        requestHeaders.set(requestProfile.headers.xClientRequestId.value, randomUUID());
     }
     requestHeaders.delete("x-api-key");
 
