@@ -1,11 +1,13 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-const projectRoot = "/Users/vacbo/Documents/Projects/opencode-anthropic-fix";
+const currentFilePath = fileURLToPath(import.meta.url);
+const projectRoot = resolve(dirname(currentFilePath), "..", "..", "..");
 const trackerScriptsDir = join(projectRoot, ".opencode", "skills", "cc-version-tracker", "scripts");
 const extractScriptPath = join(trackerScriptsDir, "extract-fingerprint.mjs");
 const compareScriptPath = join(trackerScriptsDir, "compare-versions.mjs");
