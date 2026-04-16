@@ -56,9 +56,7 @@ function parseCCCredentialWithMeta(raw: string, meta: CredentialParseMeta): CCCr
             ? wrapped
             : isValidCredentialShape(parsed)
               ? parsed
-              : parsed.mcpOAuth !== undefined && parsed.accessToken === undefined
-                ? null
-                : null;
+              : null;
 
         if (!candidate) return null;
 

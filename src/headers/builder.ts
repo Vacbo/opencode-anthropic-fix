@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { buildAnthropicBetaHeader } from "../betas.js";
 import { isFalsyEnv, isTruthyEnv } from "../env.js";
+import { parseRequestBodyMetadata } from "../request/metadata.js";
 import { getRequestProfile } from "../request/profile-resolver.js";
 import type { SignatureConfig } from "../types.js";
 import { buildStainlessHelperHeader, getStainlessArch, getStainlessOs } from "./stainless.js";
@@ -34,36 +35,8 @@ function detectProvider(requestUrl: URL | null) {
     return "anthropic" as const;
 }
 
-function parseRequestBodyMetadata(body: string | undefined): {
-    model: string;
-    tools: unknown[];
-    messages: unknown[];
-    hasFileReferences: boolean;
-    hasDeferredToolLoading: boolean;
-} {
-    if (!body || typeof body !== "string") {
-        return { model: "", tools: [], messages: [], hasFileReferences: false, hasDeferredToolLoading: false };
-    }
-
-    try {
-        const parsed = JSON.parse(body) as Record<string, unknown>;
-        const model = typeof parsed?.model === "string" ? parsed.model : "";
-        const tools = Array.isArray(parsed?.tools) ? parsed.tools : [];
-        const messages = Array.isArray(parsed?.messages) ? parsed.messages : [];
-        // hasFileReferences: check if any message content references files
-        const hasFileReferences = hasFileIds(parsed);
-        const hasDeferredToolLoading = tools.some(
-            (tool) => tool && typeof tool === "object" && (tool as { defer_loading?: unknown }).defer_loading === true,
-        );
-        return { model, tools, messages, hasFileReferences, hasDeferredToolLoading };
-    } catch {
-        return { model: "", tools: [], messages: [], hasFileReferences: false, hasDeferredToolLoading: false };
-    }
-}
-
-function hasFileIds(parsed: Record<string, unknown>): boolean {
-    const str = JSON.stringify(parsed);
-    return /file[-_][a-zA-Z0-9]{2,}/.test(str);
+function isClaudeFirstPartyProvider(provider: ReturnType<typeof detectProvider>): boolean {
+    return provider === "anthropic" || provider === "foundry";
 }
 
 function resolveUserAgent(profileUserAgent: string, claudeCliVersion: string): string {
@@ -121,10 +94,12 @@ export function buildRequestHeaders(
         }
     }
 
-    // Preserve all incoming beta headers while ensuring OAuth requirements
+    // Capture any incoming beta header for context; signature emulation decides
+    // which values, if any, should survive into the final request.
     const incomingBeta = requestHeaders.get("anthropic-beta") || "";
     const { model, tools, messages, hasFileReferences, hasDeferredToolLoading } = parseRequestBodyMetadata(requestBody);
     const provider = detectProvider(requestUrl);
+    const firstPartyProvider = isClaudeFirstPartyProvider(provider);
     const mergedBetas = buildAnthropicBetaHeader(
         incomingBeta,
         signature.enabled,
@@ -140,18 +115,17 @@ export function buildRequestHeaders(
         requestProfile,
     );
 
-    const authTokenOverride = process.env.ANTHROPIC_AUTH_TOKEN?.trim();
-    const bearerToken = authTokenOverride || accessToken;
-    const authHeaderMode = requestProfile.transport.authHeaderMode.value.toLowerCase();
-    const authorizationScheme = authHeaderMode === "bearer" ? "Bearer" : "Bearer";
-
-    requestHeaders.set("authorization", `${authorizationScheme} ${bearerToken}`);
+    requestHeaders.set("authorization", `Bearer ${accessToken}`);
     requestHeaders.set("anthropic-beta", mergedBetas);
     requestHeaders.set(
         "user-agent",
         resolveUserAgent(requestProfile.headers.userAgent.value, requestProfile.billing.ccVersion.value),
     );
     if (signature.enabled) {
+        if (firstPartyProvider) {
+            requestHeaders.set("accept", "application/json");
+            requestHeaders.delete("x-session-affinity");
+        }
         requestHeaders.set("anthropic-version", "2023-06-01");
         requestHeaders.set("anthropic-dangerous-direct-browser-access", "true");
         requestHeaders.set("x-app", requestProfile.headers.xApp.value);
@@ -196,7 +170,7 @@ export function buildRequestHeaders(
         if (signature.sessionId) {
             requestHeaders.set(requestProfile.headers.xClaudeCodeSessionId.value, signature.sessionId);
         }
-        // CC 2.1.107 sends a per-request UUID
+        // Claude Code sends a per-request UUID
         requestHeaders.set(requestProfile.headers.xClientRequestId.value, randomUUID());
     }
     requestHeaders.delete("x-api-key");

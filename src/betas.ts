@@ -22,7 +22,8 @@ import {
 import type { SignatureProfile } from "./profiles/index.js";
 import { getRequestProfile } from "./request/profile-resolver.js";
 import { getLongContextExclusions } from "./request/long-context-retry.js";
-import type { AccountSelectionStrategy, Provider } from "./types.js";
+import type { AccountSelectionStrategy } from "./config.js";
+import type { Provider } from "./types.js";
 
 const ADVISOR_TOOL_BETA_FLAG = "advisor-tool-2026-03-01";
 const CONTEXT_1M_BETA_FLAG = "context-1m-2025-08-07";

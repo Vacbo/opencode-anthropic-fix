@@ -9,9 +9,9 @@ This document explains, at implementation level, how the plugin mimics Claude Co
 
 Primary code references:
 
-- `index.mjs`
-- `lib/config.mjs`
-- `lib/oauth.mjs`
+- `src/index.ts`
+- `src/config.ts`
+- `src/oauth.ts`
 
 **Validated against**: Claude Code 2.1.107 npm package (`cli.js`) plus the repo's pinned runtime baseline.
 
@@ -29,7 +29,7 @@ Mimicry is controlled by `signature_emulation`:
 }
 ```
 
-Environment overrides (in `lib/config.mjs`):
+Environment overrides (in `src/config.ts`):
 
 - `OPENCODE_ANTHROPIC_EMULATE_CLAUDE_CODE_SIGNATURE`
     - `1/true` => enabled
@@ -112,9 +112,7 @@ sequenceDiagram
 
 `buildRequestHeaders(...)` always ensures:
 
-- `authorization: Bearer <token>`
-    - default token: account OAuth access token
-    - optional override: `ANTHROPIC_AUTH_TOKEN` (if set, takes precedence)
+- `authorization: Bearer <token>` — always the account's OAuth access token. Raw API key overrides are intentionally not supported; this plugin is OAuth-only.
 - `anthropic-beta: <final beta list>`
 - `user-agent: claude-cli/<version> (external, <entrypoint>[, agent-sdk/<v>][, client-app/<app>])`
     - `entrypoint`: `CLAUDE_CODE_ENTRYPOINT` or `cli`
@@ -471,3 +469,27 @@ When analyzing Claude Code's bundled `cli.js`, these patterns appear but are NOT
 | `22422756-60c9-4084-8eb7-27705fd5cf9a` | CC staging config              | Only used with `console.staging.ant.dev` |
 | `create_api_key` endpoint              | CC post-auth feature           | Separate from core OAuth login flow      |
 | `roles` endpoint                       | CC post-auth feature           | Separate from core OAuth login flow      |
+
+## 12) Deferred wire-tool optimizations
+
+The plugin now uses a name-only compatibility layer for tool exposure. This is intentionally the minimum viable change that restored quota-compatible request acceptance and end-to-end tool invocation.
+
+### Current policy
+
+- native-equivalent tools are exposed with Claude-compatible wire names (`Bash`, `Read`, `Glob`, `Grep`, `Edit`, `Write`, `Skill`)
+- non-native tools are exposed under native-looking aliases on the wire
+- schemas and descriptions are preserved by default; they should only be rewritten if a failing experiment proves they are unsafe
+
+### Deferred follow-up work
+
+These are intentionally postponed because live experiments proved the current layer is accepted on the real wire:
+
+1. **Non-native naming policy hardening**
+   - decide whether to keep plain PascalCase aliases or move to a namespaced third-party style for non-native tools
+   - this is now an ergonomics/collision decision, not a quota-eligibility blocker
+
+2. **Alias collision handling**
+   - multiple internal tools may collapse to the same wire-visible PascalCase name
+   - future work should add deterministic conflict resolution and collision tests before expanding the compatibility layer further
+
+These are optimization tasks, not blocking parity work.

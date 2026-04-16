@@ -1,9 +1,11 @@
 import { exec } from "node:child_process";
 import { findByIdentity, resolveIdentityFromOAuthExchange } from "../../account-identity.js";
-import { CLIENT_ID, loadConfig } from "../../config.js";
-import { authorize, exchange, revoke } from "../../oauth.js";
-import { createDefaultStats, getStoragePath, loadAccounts, saveAccounts, type AccountMetadata } from "../../storage.js";
-import { loadAccountsWithRepair } from "../../accounts/repair.js";
+import { AccountManager } from "../../accounts.js";
+import type { OAuthProfilePayload } from "../status-api.js";
+import { fetchProfile, fetchUsage } from "../status-api.js";
+import { loadConfig } from "../../config.js";
+import { authorize, exchange, refreshToken, revoke } from "../../oauth.js";
+import { createDefaultStats, getStoragePath, loadAccounts, saveAccounts } from "../../storage.js";
 import { confirm, intro, isCancel, log, spinner, text } from "@clack/prompts";
 import {
     c,
@@ -17,60 +19,41 @@ import {
     USAGE_INDENT,
 } from "../formatting.js";
 
-type RefreshableAccount = Pick<AccountMetadata, "refreshToken" | "access" | "expires" | "token_updated_at">;
-type UsageAccount = Pick<AccountMetadata, "refreshToken" | "access" | "expires" | "enabled" | "token_updated_at">;
+type RefreshableAccount = {
+    refreshToken: string;
+    access?: string;
+    expires?: number;
+    token_updated_at?: number;
+    tokenUpdatedAt?: number;
+};
+type UsageAccount = RefreshableAccount & {
+    enabled: boolean;
+};
+type UsageFetchResult = {
+    usage: Record<string, unknown> | null;
+    error: string | null;
+    profile: OAuthProfilePayload | null;
+    profileError: string | null;
+};
 type LogoutOptions = { force?: boolean; all?: boolean };
 type RemoveOptions = { force?: boolean };
 
-/**
- * Refresh an account's OAuth access token.
- * Mutates the account object in-place and returns the new access token.
- */
 export async function refreshAccessToken(account: RefreshableAccount) {
     try {
-        const resp = await fetch("https://platform.claude.com/v1/oauth/token", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                grant_type: "refresh_token",
-                refresh_token: account.refreshToken,
-                client_id: CLIENT_ID,
-            }),
+        const json = await refreshToken(account.refreshToken, {
             signal: AbortSignal.timeout(5000),
         });
-        if (!resp.ok) return null;
-
-        const json = (await resp.json()) as {
-            access_token: string;
-            expires_in: number;
-            refresh_token?: string;
-        };
 
         account.access = json.access_token;
         account.expires = Date.now() + json.expires_in * 1000;
         if (json.refresh_token) account.refreshToken = json.refresh_token;
-        account.token_updated_at = Date.now();
+        if ("tokenUpdatedAt" in account) {
+            account.tokenUpdatedAt = Date.now();
+        }
+        if ("token_updated_at" in account) {
+            account.token_updated_at = Date.now();
+        }
         return json.access_token;
-    } catch {
-        return null;
-    }
-}
-
-/**
- * Fetch usage quotas from the Anthropic OAuth usage endpoint.
- */
-export async function fetchUsage(accessToken: string) {
-    try {
-        const resp = await fetch("https://api.anthropic.com/api/oauth/usage", {
-            headers: {
-                authorization: `Bearer ${accessToken}`,
-                "anthropic-beta": "oauth-2025-04-20",
-                accept: "application/json",
-            },
-            signal: AbortSignal.timeout(5000),
-        });
-        if (!resp.ok) return null;
-        return resp.json() as Promise<Record<string, unknown>>;
     } catch {
         return null;
     }
@@ -80,7 +63,9 @@ export async function fetchUsage(accessToken: string) {
  * Ensure an account has a valid access token and fetch its usage data.
  */
 export async function ensureTokenAndFetchUsage(account: UsageAccount) {
-    if (!account.enabled) return { usage: null, tokenRefreshed: false };
+    if (!account.enabled) {
+        return { usage: null, error: null, profile: null, profileError: null, tokenRefreshed: false };
+    }
 
     let token: string | undefined = account.access;
     let tokenRefreshed = false;
@@ -88,12 +73,26 @@ export async function ensureTokenAndFetchUsage(account: UsageAccount) {
     if (!token || !account.expires || account.expires < Date.now()) {
         const refreshedToken = await refreshAccessToken(account);
         tokenRefreshed = !!refreshedToken;
-        if (!refreshedToken) return { usage: null, tokenRefreshed: false };
+        if (!refreshedToken) {
+            return {
+                usage: null,
+                error: "token refresh failed",
+                profile: null,
+                profileError: null,
+                tokenRefreshed: false,
+            };
+        }
         token = refreshedToken;
     }
 
-    const usage = await fetchUsage(token);
-    return { usage, tokenRefreshed };
+    const [usageResult, profileResult] = await Promise.all([fetchUsage(token), fetchProfile(token)]);
+    return {
+        usage: usageResult.data,
+        error: usageResult.error,
+        profile: profileResult.data,
+        profileError: profileResult.error,
+        tokenRefreshed,
+    };
 }
 
 /**
@@ -163,6 +162,8 @@ async function runOAuthFlow() {
         access: credentials.access,
         expires: credentials.expires,
         email: credentials.email,
+        accountUuid: credentials.accountUuid,
+        organizationUuid: credentials.organizationUuid,
     };
 }
 
@@ -194,6 +195,8 @@ export async function cmdLogin() {
         existing.refreshToken = credentials.refresh;
         existing.access = credentials.access;
         existing.expires = credentials.expires;
+        existing.accountUuid = credentials.accountUuid ?? existing.accountUuid;
+        existing.organizationUuid = credentials.organizationUuid ?? existing.organizationUuid;
         existing.token_updated_at = Date.now();
         existing.enabled = true;
         if (!existingIsCC) {
@@ -221,6 +224,8 @@ export async function cmdLogin() {
         refreshToken: credentials.refresh,
         access: credentials.access,
         expires: credentials.expires,
+        accountUuid: credentials.accountUuid,
+        organizationUuid: credentials.organizationUuid,
         token_updated_at: now,
         addedAt: now,
         lastUsed: 0,
@@ -387,6 +392,8 @@ export async function cmdReauth(arg: string) {
     existing.refreshToken = credentials.refresh;
     existing.access = credentials.access;
     existing.expires = credentials.expires;
+    existing.accountUuid = credentials.accountUuid ?? existing.accountUuid;
+    existing.organizationUuid = credentials.organizationUuid ?? existing.organizationUuid;
     existing.token_updated_at = Date.now();
     existing.enabled = true;
     existing.consecutiveFailures = 0;
@@ -468,20 +475,22 @@ export async function cmdRefresh(arg: string) {
  * List all accounts with full status table and live usage quotas.
  */
 export async function cmdList() {
-    const stored = await loadAccountsWithRepair();
-    if (!stored || stored.accounts.length === 0) {
+    const config = loadConfig();
+    const accountManager = await AccountManager.load(config, null);
+    const accounts = accountManager.getManagedAccounts();
+    if (accounts.length === 0) {
         log.warn("No accounts configured.");
         log.info(`Storage: ${shortPath(getStoragePath())}`);
         log.info("Run 'opencode auth login' and select 'Claude Pro/Max' to add accounts.");
         return 1;
     }
 
-    const config = loadConfig();
     const now = Date.now();
+    const activeIndex = accountManager.getCurrentIndex();
 
     const s = spinner();
     s.start("Fetching usage quotas...");
-    const usageResults = await Promise.allSettled(stored.accounts.map((account) => ensureTokenAndFetchUsage(account)));
+    const usageResults = await Promise.allSettled(accounts.map((account) => ensureTokenAndFetchUsage(account)));
     s.stop("Usage quotas fetched.");
 
     let anyRefreshed = false;
@@ -492,7 +501,7 @@ export async function cmdList() {
     }
 
     if (anyRefreshed) {
-        await saveAccounts(stored).catch((error) => {
+        await accountManager.saveToDisk().catch((error) => {
             console.error("[opencode-anthropic-auth] failed to persist refreshed tokens:", error);
         });
     }
@@ -508,10 +517,18 @@ export async function cmdList() {
     );
     log.message(c.dim("  " + "─".repeat(62)));
 
-    for (let i = 0; i < stored.accounts.length; i++) {
-        const account = stored.accounts[i];
-        const isActive = i === stored.activeIndex;
-        const label = account.email || `Account ${i + 1}`;
+    for (let i = 0; i < accounts.length; i++) {
+        const account = accounts[i]!;
+        const isActive = account.index === activeIndex;
+        const result = usageResults[i];
+        const profile = result?.status === "fulfilled" ? result.value.profile : null;
+        const label =
+            account.email ||
+            profile?.account?.email ||
+            profile?.account?.display_name ||
+            profile?.account?.full_name ||
+            account.label ||
+            `Account ${i + 1}`;
         const status = !account.enabled ? c.gray("○ disabled") : isActive ? c.green("● active") : c.cyan("● ready");
         const failures = !account.enabled
             ? c.dim("—")
@@ -532,30 +549,32 @@ export async function cmdList() {
         );
 
         if (account.enabled) {
-            const result = usageResults[i];
             const usage = result.status === "fulfilled" ? result.value.usage : null;
+            const usageError = result.status === "fulfilled" ? result.value.error : "request failed";
             if (usage) {
                 const lines = renderUsageLines(usage);
                 for (const line of lines) {
                     log.message(line);
                 }
             } else {
-                log.message(c.dim(`${USAGE_INDENT}quotas: unavailable`));
+                log.message(
+                    c.dim(`${USAGE_INDENT}quotas: ${usageError ? `unavailable (${usageError})` : "unavailable"}`),
+                );
             }
         }
 
-        if (i < stored.accounts.length - 1) {
+        if (i < accounts.length - 1) {
             log.message("");
         }
     }
 
     log.message("");
 
-    const enabled = stored.accounts.filter((account) => account.enabled).length;
-    const disabled = stored.accounts.length - enabled;
+    const enabled = accounts.filter((account) => account.enabled).length;
+    const disabled = accounts.length - enabled;
     const parts = [
         `Strategy: ${c.cyan(config.account_selection_strategy)}`,
-        `${c.bold(String(enabled))} of ${stored.accounts.length} enabled`,
+        `${c.bold(String(enabled))} of ${accounts.length} enabled`,
     ];
     if (disabled > 0) {
         parts.push(`${c.yellow(String(disabled))} disabled`);
@@ -570,19 +589,20 @@ export async function cmdList() {
  * Show compact one-liner status.
  */
 export async function cmdStatus() {
-    const stored = await loadAccountsWithRepair();
-    if (!stored || stored.accounts.length === 0) {
+    const config = loadConfig();
+    const accountManager = await AccountManager.load(config, null);
+    const accounts = accountManager.getManagedAccounts();
+    if (accounts.length === 0) {
         console.log("anthropic: no accounts configured");
         return 1;
     }
 
-    const config = loadConfig();
-    const total = stored.accounts.length;
-    const enabled = stored.accounts.filter((account) => account.enabled).length;
+    const total = accounts.length;
+    const enabled = accounts.filter((account) => account.enabled).length;
     const now = Date.now();
 
     let rateLimited = 0;
-    for (const account of stored.accounts) {
+    for (const account of accounts) {
         if (!account.enabled) continue;
         const maxReset = Math.max(0, ...Object.values(account.rateLimitResetTimes || {}));
         if (maxReset > now) rateLimited++;
@@ -590,7 +610,7 @@ export async function cmdStatus() {
 
     let line = `anthropic: ${total} account${total !== 1 ? "s" : ""} (${enabled} active)`;
     line += `, strategy: ${config.account_selection_strategy}`;
-    line += `, next: #${stored.activeIndex + 1}`;
+    line += `, next: #${accountManager.getCurrentIndex() + 1}`;
     if (rateLimited > 0) {
         line += `, ${rateLimited} rate-limited`;
     }

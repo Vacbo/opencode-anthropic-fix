@@ -124,8 +124,12 @@ function claudeBinaryPath(): string | null {
     }
 }
 
-function isFreshCCCredential(credential: CCCredential | null): boolean {
-    return Boolean(credential && credential.expiresAt > Date.now() + FOREGROUND_EXPIRY_BUFFER_MS);
+function hasFreshExpiry(credential: CCCredential): boolean {
+    return credential.expiresAt > Date.now() + FOREGROUND_EXPIRY_BUFFER_MS;
+}
+
+function isFreshCCCredential(credential: CCCredential | null): credential is CCCredential {
+    return credential !== null && hasFreshExpiry(credential);
 }
 
 function selectCCCredential(
@@ -164,10 +168,10 @@ function readCredentialForAccount(account: ManagedAccount, preferredLabel?: stri
 }
 
 async function refreshCCAccount(account: ManagedAccount): Promise<string | null> {
-    const initialCredential = readCredentialForAccount(account);
+    const initialCredential: CCCredential | null = readCredentialForAccount(account);
     if (!initialCredential) return null;
 
-    if (isFreshCCCredential(initialCredential)) {
+    if (hasFreshExpiry(initialCredential)) {
         account.access = initialCredential.accessToken;
         account.refreshToken = initialCredential.refreshToken;
         account.expires = initialCredential.expiresAt;
@@ -189,7 +193,6 @@ async function refreshCCAccount(account: ManagedAccount): Promise<string | null>
 
     const refreshedCredential = readCredentialForAccount(account, initialCredential.label);
     if (!isFreshCCCredential(refreshedCredential)) return null;
-    if (!refreshedCredential) return null;
 
     account.access = refreshedCredential.accessToken;
     account.refreshToken = refreshedCredential.refreshToken;

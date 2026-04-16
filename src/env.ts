@@ -1,12 +1,12 @@
 // ---------------------------------------------------------------------------
-// Environment variable helpers extracted from index.mjs
+// Environment variable helpers extracted from src/index.ts
 // ---------------------------------------------------------------------------
 
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getConfigDir } from "./config.js";
-import { BETA_SHORTCUTS, DEBUG_SYSTEM_PROMPT_ENV, USER_ID_STORAGE_FILE } from "./constants.ts";
+import { DEBUG_SYSTEM_PROMPT_ENV, USER_ID_STORAGE_FILE } from "./constants.ts";
 
 export function isTruthyEnv(value: string | undefined): boolean {
     if (!value) return false;
@@ -26,14 +26,7 @@ export function isNonInteractiveMode(): boolean {
 }
 
 export function getClaudeEntrypoint(): string {
-    return process.env.CLAUDE_CODE_ENTRYPOINT || "cli";
-}
-
-export function resolveBetaShortcut(value: string | undefined): string {
-    if (!value) return "";
-    const trimmed = value.trim();
-    const mapped = BETA_SHORTCUTS.get(trimmed.toLowerCase());
-    return mapped || trimmed;
+    return process.env.CLAUDE_CODE_ENTRYPOINT || "sdk-cli";
 }
 
 export function parseAnthropicCustomHeaders(): Record<string, string> {

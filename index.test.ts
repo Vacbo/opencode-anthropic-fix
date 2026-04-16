@@ -1,7 +1,7 @@
 /**
  * Integration tests for the plugin lifecycle.
  *
- * These test the wiring in index.mjs — the ordering of authorize → callback → loader,
+ * These test the wiring in src/index.ts — the ordering of authorize → callback → loader,
  * the accountManager initialization, and the fetch interceptor retry loop.
  *
  * We mock external dependencies (fetch, PKCE, readline, storage fs) but exercise
@@ -185,7 +185,6 @@ beforeEach(() => {
     delete process.env.TENGU_SCARF_COFFEE;
     delete process.env.ANTHROPIC_BETAS;
     delete process.env.ANTHROPIC_CUSTOM_HEADERS;
-    delete process.env.ANTHROPIC_AUTH_TOKEN;
     delete process.env.CLAUDE_CODE_ENTRYPOINT;
     delete process.env.CLAUDE_CODE_ATTRIBUTION_HEADER;
     delete process.env.CLAUDE_AGENT_SDK_VERSION;
@@ -809,7 +808,6 @@ describe("fetch interceptor", () => {
         delete process.env.TENGU_SCARF_COFFEE;
         delete process.env.ANTHROPIC_BETAS;
         delete process.env.ANTHROPIC_CUSTOM_HEADERS;
-        delete process.env.ANTHROPIC_AUTH_TOKEN;
         delete process.env.CLAUDE_CODE_ENTRYPOINT;
         delete process.env.CLAUDE_CODE_ATTRIBUTION_HEADER;
         delete process.env.CLAUDE_AGENT_SDK_VERSION;
@@ -3911,20 +3909,6 @@ describe("header handling", () => {
         expect(parsed.betas).toBeUndefined();
     });
 
-    it("uses ANTHROPIC_AUTH_TOKEN when provided", async () => {
-        process.env.ANTHROPIC_AUTH_TOKEN = "manual-override-token";
-        mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
-
-        await fetchFn("https://api.anthropic.com/v1/messages", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ messages: [] }),
-        });
-
-        const [, init] = mockFetch.mock.calls[0];
-        expect(init.headers.get("authorization")).toBe("Bearer manual-override-token");
-    });
-
     it("builds user-agent with agent sdk suffixes", async () => {
         process.env.CLAUDE_CODE_ENTRYPOINT = "cli";
         process.env.CLAUDE_AGENT_SDK_VERSION = "1.2.3";
@@ -4297,7 +4281,7 @@ describe("markSuccess wiring", () => {
         // and check what was persisted. The markSuccess resets consecutiveFailures
         // and lastFailureTime, which will be reflected in the next save.
         // For now, just verify the response came back successfully — the unit tests
-        // in accounts.test.mjs verify markSuccess behavior directly.
+// in tests/unit/accounts.test.ts verify markSuccess behavior directly.
         expect(mockFetch).toHaveBeenCalledTimes(1);
     });
 

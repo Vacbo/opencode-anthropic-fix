@@ -26,7 +26,8 @@ import {
     type SessionSidecarState,
 } from "./session-sidecar.js";
 import type { RefreshHelpers } from "./refresh-helpers.js";
-import { isEventStreamResponse, stripMcpPrefixFromJsonBody, transformResponse } from "./response/index.js";
+import { stripMcpPrefixFromJsonBody } from "./response/mcp.js";
+import { isEventStreamResponse, transformResponse } from "./response/streaming.js";
 import { StreamTruncatedError } from "./response/streaming.js";
 import { formatSwitchReason, markTokenStateUpdated, readDiskAccountAuth } from "./token-refresh.js";
 import type { UsageStats } from "./types.js";

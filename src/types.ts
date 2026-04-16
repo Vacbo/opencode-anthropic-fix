@@ -2,6 +2,7 @@
 // Shared TypeScript types used across the plugin modules
 // ---------------------------------------------------------------------------
 
+import type { AccountSelectionStrategy } from "./config.js";
 import type { SignatureProfile } from "./profiles/index.js";
 
 export type ThinkingEffort = "low" | "medium" | "high";
@@ -9,8 +10,6 @@ export type ThinkingEffort = "low" | "medium" | "high";
 export type Provider = "anthropic" | "bedrock" | "vertex" | "foundry";
 
 export type PromptCompactionMode = "minimal" | "off";
-
-export type AccountSelectionStrategy = "round-robin" | "sequential" | string;
 
 export interface UsageStats {
     inputTokens: number;
