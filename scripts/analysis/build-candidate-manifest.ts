@@ -7,7 +7,8 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { extname, join, resolve } from "node:path";
+import { createProgress } from "../lib/progress.ts";
 
 import { classifyRisk, validateCandidateManifest } from "../../src/fingerprint/schema.ts";
 import type {
@@ -18,6 +19,7 @@ import type {
     ManifestIndex,
     ManifestIndexEntry,
 } from "../../src/fingerprint/types.ts";
+import { extractFingerprint } from "./extract-fingerprint.ts";
 import type { Fingerprint } from "./types.ts";
 
 const DEFAULT_OUTPUT_DIR = resolve(process.cwd(), "manifests/candidate/claude-code");
@@ -93,6 +95,16 @@ function readJsonFile<T>(filePath: string): T {
         const message = error instanceof Error ? error.message : String(error);
         throw new Error(`Failed to read JSON from ${filePath}: ${message}`);
     }
+}
+
+function readFingerprintInput(filePath: string, versionOverride: string): Fingerprint {
+    if (extname(filePath).toLowerCase() === ".json") {
+        return readJsonFile<Fingerprint>(filePath);
+    }
+
+    const source = readFileSync(filePath, "utf8");
+    const inferredVersion = versionOverride || filePath.match(/cli-([0-9]+\.[0-9]+\.[0-9]+)\.js$/)?.[1] || "unknown";
+    return extractFingerprint(source, inferredVersion);
 }
 
 function uniqueStrings(values: Array<string | null | undefined>): string[] {
@@ -449,14 +461,24 @@ async function main(): Promise<void> {
         return;
     }
 
-    const fingerprint = readJsonFile<Fingerprint>(parsedArgs.fingerprintPath);
+    const progress = createProgress();
+
+    progress.startStep("read fingerprint", parsedArgs.fingerprintPath);
+    const fingerprint = readFingerprintInput(parsedArgs.fingerprintPath, parsedArgs.version);
     const version = parsedArgs.version || fingerprint.version;
     if (!version) {
+        progress.fail("version could not be determined");
         throw new Error("Unable to determine manifest version; pass --version or provide fingerprint.version");
     }
+    progress.finishStep(version);
 
+    progress.startStep("build candidate manifest");
     const manifest = buildCandidateManifest(fingerprint, version, parsedArgs.tarballHash);
+    progress.finishStep(
+        `${manifest.parserWarnings.length} warning(s), ${manifest.unknownFields.length} unknown field(s)`,
+    );
 
+    progress.startStep("write manifest");
     mkdirSync(parsedArgs.outputDir, { recursive: true });
     const manifestPath = join(parsedArgs.outputDir, `${version}.json`);
     const indexPath = join(parsedArgs.outputDir, "index.json");
@@ -468,6 +490,9 @@ async function main(): Promise<void> {
         new Date().toISOString(),
     );
     writeFileSync(indexPath, `${JSON.stringify(index, null, 2)}\n`, "utf8");
+    progress.finishStep(manifestPath);
+
+    progress.done();
 
     console.log(
         JSON.stringify(

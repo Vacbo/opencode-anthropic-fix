@@ -5,9 +5,10 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { createProgress } from "../lib/progress.ts";
 
 const REGISTRY_BASE = "https://registry.npmjs.org/@anthropic-ai/claude-code";
 
@@ -43,14 +44,43 @@ async function resolveVersion(version: string): Promise<string> {
     return version;
 }
 
-async function downloadTarball(version: string, destPath: string): Promise<void> {
+async function downloadTarball(
+    version: string,
+    destPath: string,
+    onProgress: (received: number, total: number | null) => void,
+): Promise<void> {
     const url = `${REGISTRY_BASE}/-/claude-code-${version}.tgz`;
     const resp = await fetch(url);
     if (!resp.ok) {
         throw new Error(`Failed to download tarball: ${resp.status} ${resp.statusText} (${url})`);
     }
-    const buffer = await resp.arrayBuffer();
-    await Bun.write(destPath, buffer);
+    const contentLength = resp.headers.get("content-length");
+    const total = contentLength ? Number(contentLength) : null;
+    if (!resp.body) {
+        const buffer = await resp.arrayBuffer();
+        writeFileSync(destPath, new Uint8Array(buffer));
+        onProgress(buffer.byteLength, total);
+        return;
+    }
+    const reader = resp.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let received = 0;
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+            chunks.push(value);
+            received += value.byteLength;
+            onProgress(received, total);
+        }
+    }
+    const merged = new Uint8Array(received);
+    let offset = 0;
+    for (const chunk of chunks) {
+        merged.set(chunk, offset);
+        offset += chunk.byteLength;
+    }
+    writeFileSync(destPath, merged);
 }
 
 function findCliJs(dir: string): string | null {
@@ -70,44 +100,52 @@ function findCliJs(dir: string): string | null {
 async function main() {
     const args = process.argv.slice(2);
     const { version: requestedVersion, outputDir } = parseArgs(args);
+    const progress = createProgress();
 
+    progress.startStep("resolve version", requestedVersion);
     const version = await resolveVersion(requestedVersion);
-    console.error(`Resolved version: ${version}`);
+    progress.finishStep(version);
 
-    // Create temp dir for download and extraction
     const tmpDir = join(tmpdir(), `cc-extract-${Date.now()}`);
     mkdirSync(tmpDir, { recursive: true });
 
     try {
-        // Download tarball
         const tarballPath = join(tmpDir, `claude-code-${version}.tgz`);
-        console.error(`Downloading tarball...`);
-        await downloadTarball(version, tarballPath);
+        progress.startStep("download tarball", version);
+        await downloadTarball(version, tarballPath, (received, total) => {
+            progress.setBytes(received, total ?? undefined);
+        });
+        progress.finishStep();
 
-        // Extract tarball using execFileSync (no shell injection risk)
+        progress.startStep("extract tarball");
         const extractDir = join(tmpDir, "extracted");
         mkdirSync(extractDir, { recursive: true });
         execFileSync("tar", ["xzf", tarballPath, "-C", extractDir], {
             stdio: "pipe",
         });
+        progress.finishStep();
 
-        // Find cli.js
+        progress.startStep("locate cli.js");
         const cliJsPath = findCliJs(extractDir);
         if (!cliJsPath) {
+            progress.fail("cli.js not found in extracted package");
             throw new Error("cli.js not found in extracted package");
         }
+        progress.finishStep();
 
-        // Copy to output dir
+        progress.startStep("copy to output");
         mkdirSync(outputDir, { recursive: true });
         const outputPath = join(outputDir, `cli-${version}.js`);
         copyFileSync(cliJsPath, outputPath);
-
         const size = statSync(outputPath).size;
+        progress.finishStep(`${(size / (1024 * 1024)).toFixed(2)}MB`);
 
-        // Print result as JSON to stdout
+        progress.done(`✓ extracted cli-${version}.js`);
         console.log(JSON.stringify({ version, path: outputPath, size }, null, 2));
+    } catch (err) {
+        progress.fail(err instanceof Error ? err.message : String(err));
+        throw err;
     } finally {
-        // Clean up temp dir
         if (existsSync(tmpDir)) {
             rmSync(tmpDir, { recursive: true, force: true });
         }

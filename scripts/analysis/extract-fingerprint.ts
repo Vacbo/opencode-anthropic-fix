@@ -8,6 +8,7 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { createProgress } from "../lib/progress.ts";
 import type {
     BetasFingerprint,
     BillingFingerprint,
@@ -47,6 +48,7 @@ const oauthBetaRe = /"(oauth-[0-9]{4}-[0-9]{2}-[0-9]{2})"/g;
 const cchRe = /[" ](cch=[0-9a-f]+)[";]/g;
 const hexSaltRe = /"([0-9a-f]{64})"/g;
 const hashPosRe = /\.slice\(([0-9]+),\s*([0-9]+)\)/g;
+const quotedLiteralRe = /["'`]([^"'`\r\n]{1,160})["'`]/g;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -58,10 +60,12 @@ function collectMatches(source: string, re: RegExp, group = 1): string[] {
     const results: string[] = [];
     re.lastIndex = 0;
     let m: RegExpExecArray | null;
-    while ((m = re.exec(source)) !== null) {
+    m = re.exec(source);
+    while (m !== null) {
         if (m[group] && !results.includes(m[group])) {
             results.push(m[group]);
         }
+        m = re.exec(source);
     }
     re.lastIndex = 0;
     return results;
@@ -72,6 +76,97 @@ function firstMatch(source: string, re: RegExp, group = 1): string | null {
     const m = re.exec(source);
     re.lastIndex = 0;
     return m ? (m[group] ?? null) : null;
+}
+
+function collectQuotedLiterals(source: string): string[] {
+    return collectMatches(source, quotedLiteralRe);
+}
+
+function isCodeLikeFragment(value: string): boolean {
+    return (
+        value.includes("${") ||
+        /\b(function|return|class|const|let|var|if)\b/.test(value) ||
+        /[{};$]/.test(value)
+    );
+}
+
+function isPlausibleUserAgentTemplate(value: string): boolean {
+    if (!value.startsWith("claude-cli/")) {
+        return false;
+    }
+
+    if (!/claude-cli\/\d+\.\d+\.\d+/.test(value)) {
+        return false;
+    }
+
+    if (value.length > 120 || /[\r\n]/.test(value) || isCodeLikeFragment(value)) {
+        return false;
+    }
+
+    return true;
+}
+
+function scoreUserAgentTemplate(value: string): number {
+    let score = 0;
+    if (value.includes("(external")) {
+        score += 3;
+    }
+    if (value.includes("sdk-cli") || value.includes("cli")) {
+        score += 2;
+    }
+    if (!/[${}]/.test(value)) {
+        score += 1;
+    }
+    return score;
+}
+
+function isPlausibleHeaderLiteral(value: string): boolean {
+    const trimmed = value.trim();
+    if (trimmed.length === 0 || trimmed.length > 120) {
+        return false;
+    }
+
+    if (trimmed.length === 1 && /[A-Za-z]/.test(trimmed)) {
+        return false;
+    }
+
+    if (isCodeLikeFragment(trimmed) || /[<>\r\n]/.test(trimmed)) {
+        return false;
+    }
+
+    if (/^x-[a-z0-9-]+$/.test(trimmed)) {
+        return false;
+    }
+
+    return /^[A-Za-z0-9][A-Za-z0-9._,/ :\-]*$/.test(trimmed);
+}
+
+function findNearestLiteralAfter(
+    source: string,
+    anchor: string,
+    predicate: (value: string) => boolean,
+    maxWindow = 300,
+    stopPattern?: RegExp,
+): string | null {
+    let searchStart = 0;
+
+    while (true) {
+        const idx = source.indexOf(anchor, searchStart);
+        if (idx === -1) {
+            return null;
+        }
+
+        const rawWindow = source.substring(idx + anchor.length, idx + anchor.length + maxWindow);
+        const stopIndex = stopPattern ? rawWindow.search(stopPattern) : -1;
+        const window = stopIndex >= 0 ? rawWindow.substring(0, stopIndex) : rawWindow;
+        const candidates = collectQuotedLiterals(window).filter((value) => value !== anchor);
+        const match = candidates.find(predicate);
+        if (match) {
+            return match;
+        }
+
+        searchStart = idx + anchor.length;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -110,7 +205,9 @@ export function extractOAuth(source: string): OAuthFingerprint {
 export function extractHeaders(source: string): HeadersFingerprint {
     // User-Agent
     const uaMatches = collectMatches(source, uaRe);
-    const uaTemplate = uaMatches[0] ?? undefined;
+    const uaTemplate = uaMatches
+        .filter(isPlausibleUserAgentTemplate)
+        .sort((left, right) => scoreUserAgentTemplate(right) - scoreUserAgentTemplate(left))[0];
     const hasExternal = uaMatches.length > 0;
 
     // SDK version — try specific pattern first, then general near "anthropic"
@@ -118,13 +215,15 @@ export function extractHeaders(source: string): HeadersFingerprint {
     if (!sdkVersion) {
         const generalPattern = new RegExp(sdkVersionGeneralRe.source, sdkVersionGeneralRe.flags);
         let m: RegExpExecArray | null;
-        while ((m = generalPattern.exec(source)) !== null) {
+        m = generalPattern.exec(source);
+        while (m !== null) {
             const idx = m.index;
             const context = source.substring(Math.max(0, idx - 200), idx + 200);
             if (/anthropic/i.test(context)) {
                 sdkVersion = m[1];
                 break;
             }
+            m = generalPattern.exec(source);
         }
     }
 
@@ -135,15 +234,7 @@ export function extractHeaders(source: string): HeadersFingerprint {
     const stainlessKeys = collectMatches(source, stainlessRe);
     const stainlessHeaders: Record<string, string | null> = {};
     for (const key of stainlessKeys) {
-        // Search for the header key and extract the next quoted string as value
-        const idx = source.indexOf(key);
-        if (idx !== -1) {
-            const after = source.substring(idx + key.length, idx + key.length + 200);
-            const valMatch = after.match(/["'][^"']*["'][^"']*["']([^"']*)["']/);
-            stainlessHeaders[key] = valMatch ? valMatch[1] : null;
-        } else {
-            stainlessHeaders[key] = null;
-        }
+        stainlessHeaders[key] = findNearestLiteralAfter(source, key, isPlausibleHeaderLiteral, 300, /["']x-stainless-/);
     }
 
     return {
@@ -198,13 +289,15 @@ export function extractBilling(source: string): BillingFingerprint {
     const hashPositions: Array<{ start: number; end: number }> = [];
     const posPattern = new RegExp(hashPosRe.source, hashPosRe.flags);
     let m: RegExpExecArray | null;
-    while ((m = posPattern.exec(source)) !== null) {
+    m = posPattern.exec(source);
+    while (m !== null) {
         const start = parseInt(m[1], 10);
         const end = parseInt(m[2], 10);
         const found = hashPositions.find((p) => p.start === start && p.end === end);
         if (!found) {
             hashPositions.push({ start, end });
         }
+        m = posPattern.exec(source);
     }
 
     // Try to reconstruct a billing template pattern
@@ -373,27 +466,37 @@ function parseArgs(args: string[]): {
 async function main() {
     const args = process.argv.slice(2);
     const { cliJsPath, version, json, markdown } = parseArgs(args);
+    const progress = createProgress();
 
+    progress.startStep("read bundle", cliJsPath);
     const source = readFileSync(cliJsPath, "utf-8");
-    console.error(`Read ${(source.length / 1024 / 1024).toFixed(1)} MB from ${cliJsPath}`);
+    const mb = (source.length / 1024 / 1024).toFixed(1);
+    progress.finishStep(`${mb}MB`);
 
+    progress.startStep("extract fingerprint", version);
     const fingerprint = extractFingerprint(source, version);
+    progress.finishStep();
 
     if (json) {
         console.log(JSON.stringify(fingerprint, null, 2));
     }
 
     if (markdown) {
+        progress.startStep("write markdown report");
         const md = toMarkdown(fingerprint);
         const docsDir = resolve(process.cwd(), "docs/cc-versions");
         mkdirSync(docsDir, { recursive: true });
         const mdPath = resolve(docsDir, `${version}.md`);
         writeFileSync(mdPath, md, "utf-8");
-        console.error(`Wrote markdown to ${mdPath}`);
+        progress.finishStep(mdPath);
     }
+
+    progress.done();
 }
 
-main().catch((err) => {
-    console.error(`Error: ${err.message}`);
-    process.exit(1);
-});
+if (import.meta.main) {
+    main().catch((err) => {
+        console.error(`Error: ${err.message}`);
+        process.exit(1);
+    });
+}
