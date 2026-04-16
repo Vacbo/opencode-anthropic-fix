@@ -1,8 +1,8 @@
 // ---------------------------------------------------------------------------
-// Shared constants extracted from index.mjs
+// Shared constants extracted from src/index.ts
 // ---------------------------------------------------------------------------
 
-export const FALLBACK_CLAUDE_CLI_VERSION = "2.1.107";
+export const FALLBACK_CLAUDE_CLI_VERSION = "2.1.111";
 export const CLAUDE_CODE_NPM_LATEST_URL = "https://registry.npmjs.org/@anthropic-ai/claude-code/latest";
 export const CLAUDE_CODE_BETA_FLAG = "claude-code-20250219";
 export const EFFORT_BETA_FLAG = "effort-2025-11-24";

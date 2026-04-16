@@ -1,0 +1,255 @@
+{
+  "version": "2.1.111",
+  "source": {
+    "npmPackage": "@anthropic-ai/claude-code",
+    "tarballUrl": "https://registry.npmjs.org/@anthropic-ai/claude-code/-claude-code-2.1.111.tgz",
+    "tarballHash": "unknown",
+    "extractionTimestamp": "2026-04-16T18:23:25.263Z"
+  },
+  "transport": {
+    "pathStyle": {
+      "value": "/v1/messages?beta=true",
+      "risk": "sensitive",
+      "origin": "bundle-heuristic",
+      "confidence": "medium",
+      "extractedAt": "2026-04-16T18:23:25.263Z"
+    },
+    "defaultHeaders": {
+      "value": {
+        "content-type": "application/json",
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      "risk": "sensitive",
+      "origin": "bundle-heuristic",
+      "confidence": "medium",
+      "extractedAt": "2026-04-16T18:23:25.263Z"
+    },
+    "authHeaderMode": {
+      "value": "bearer",
+      "risk": "critical",
+      "origin": "bundle-heuristic",
+      "confidence": "high",
+      "extractedAt": "2026-04-16T18:23:25.263Z"
+    }
+  },
+  "headers": {
+    "userAgent": {
+      "value": "claude-cli/2.1.111",
+      "risk": "critical",
+      "origin": "bundle-heuristic",
+      "confidence": "medium",
+      "extractedAt": "2026-04-16T18:23:25.263Z"
+    },
+    "xApp": {
+      "value": "cli",
+      "risk": "critical",
+      "origin": "bundle-heuristic",
+      "confidence": "medium",
+      "extractedAt": "2026-04-16T18:23:25.263Z"
+    },
+    "xStainlessHeaders": {
+      "value": {},
+      "risk": "sensitive",
+      "origin": "bundle-heuristic",
+      "confidence": "low",
+      "extractedAt": "2026-04-16T18:23:25.263Z"
+    },
+    "xClientRequestId": {
+      "value": "x-client-request-id",
+      "risk": "sensitive",
+      "origin": "bundle-heuristic",
+      "confidence": "medium",
+      "extractedAt": "2026-04-16T18:23:25.263Z"
+    },
+    "xClaudeCodeSessionId": {
+      "value": "X-Claude-Code-Session-Id",
+      "risk": "sensitive",
+      "origin": "bundle-heuristic",
+      "confidence": "medium",
+      "extractedAt": "2026-04-16T18:23:25.263Z"
+    }
+  },
+  "betas": {
+    "requiredBaseBetas": {
+      "value": [
+        "oauth-2025-04-20"
+      ],
+      "risk": "critical",
+      "origin": "bundle-string",
+      "confidence": "high",
+      "extractedAt": "2026-04-16T18:23:25.263Z"
+    },
+    "optionalBetas": {
+      "value": [
+        "files-api-2025-04-14",
+        "message-batches-2024-09-24",
+        "structured-outputs-2025-12-15",
+        "token-counting-2024-11-01",
+        "skills-2025-10-02",
+        "interleaved-thinking-2025-05-14",
+        "context-1m-2025-08-07",
+        "context-management-2025-06-27",
+        "web-search-2025-03-05",
+        "advanced-tool-use-2025-11-20",
+        "tool-search-tool-2025-10-19",
+        "effort-2025-11-24",
+        "task-budgets-2026-03-13",
+        "prompt-caching-scope-2026-01-05",
+        "fast-mode-2026-02-01",
+        "redact-thinking-2026-02-12",
+        "afk-mode-2026-01-31",
+        "advisor-tool-2026-03-01",
+        "bedrock-2023-05-31",
+        "vertex-2023-10-16",
+        "ccr-byoc-2025-07-29",
+        "mcp-servers-2025-12-04",
+        "ccr-triggers-2026-01-30",
+        "environments-2025-11-01",
+        "context-hint-2026-04-09",
+        "compact-2026-01-12",
+        "structured-outputs-2025-11-13",
+        "mcp-client-2025-11-20",
+        "managed-agents-2026-04-01"
+      ],
+      "risk": "sensitive",
+      "origin": "bundle-string",
+      "confidence": "high",
+      "extractedAt": "2026-04-16T18:23:25.263Z"
+    },
+    "authModeBetas": {
+      "value": [
+        "oauth-2025-04-20"
+      ],
+      "risk": "critical",
+      "origin": "bundle-string",
+      "confidence": "high",
+      "extractedAt": "2026-04-16T18:23:25.263Z"
+    }
+  },
+  "billing": {
+    "ccVersion": {
+      "value": "2.1.111",
+      "risk": "low-risk",
+      "origin": "bundle-heuristic",
+      "confidence": "high",
+      "extractedAt": "2026-04-16T18:23:25.263Z"
+    },
+    "ccEntrypoint": {
+      "value": "cli",
+      "risk": "critical",
+      "origin": "bundle-heuristic",
+      "confidence": "medium",
+      "extractedAt": "2026-04-16T18:23:25.263Z"
+    },
+    "cchStrategy": {
+      "value": "xxhash64-5hex",
+      "risk": "low-risk",
+      "origin": "bundle-string",
+      "confidence": "medium",
+      "extractedAt": "2026-04-16T18:23:25.263Z"
+    }
+  },
+  "body": {
+    "defaultStream": {
+      "value": true,
+      "risk": "critical",
+      "origin": "bundle-heuristic",
+      "confidence": "medium",
+      "extractedAt": "2026-04-16T18:23:25.263Z"
+    },
+    "defaultMaxTokens": {
+      "value": 4096,
+      "risk": "critical",
+      "origin": "bundle-heuristic",
+      "confidence": "medium",
+      "extractedAt": "2026-04-16T18:23:25.263Z"
+    },
+    "temperaturePresence": {
+      "value": false,
+      "risk": "low-risk",
+      "origin": "bundle-heuristic",
+      "confidence": "low",
+      "extractedAt": "2026-04-16T18:23:25.263Z"
+    },
+    "thinkingKey": {
+      "value": true,
+      "risk": "low-risk",
+      "origin": "bundle-heuristic",
+      "confidence": "low",
+      "extractedAt": "2026-04-16T18:23:25.263Z"
+    },
+    "contextManagementKey": {
+      "value": true,
+      "risk": "low-risk",
+      "origin": "bundle-heuristic",
+      "confidence": "low",
+      "extractedAt": "2026-04-16T18:23:25.263Z"
+    },
+    "toolsKey": {
+      "value": true,
+      "risk": "low-risk",
+      "origin": "bundle-heuristic",
+      "confidence": "low",
+      "extractedAt": "2026-04-16T18:23:25.263Z"
+    }
+  },
+  "prompt": {
+    "identityString": {
+      "value": "You are Claude Code, Anthropic's official CLI for Claude.",
+      "risk": "critical",
+      "origin": "bundle-heuristic",
+      "confidence": "medium",
+      "extractedAt": "2026-04-16T18:23:25.263Z"
+    },
+    "billingBlockPlacement": {
+      "value": "prepend",
+      "risk": "critical",
+      "origin": "bundle-heuristic",
+      "confidence": "medium",
+      "extractedAt": "2026-04-16T18:23:25.263Z"
+    },
+    "appendMode": {
+      "value": false,
+      "risk": "low-risk",
+      "origin": "bundle-heuristic",
+      "confidence": "low",
+      "extractedAt": "2026-04-16T18:23:25.263Z"
+    },
+    "cacheControlBehavior": {
+      "value": "ephemeral-identity-block",
+      "risk": "critical",
+      "origin": "bundle-heuristic",
+      "confidence": "low",
+      "extractedAt": "2026-04-16T18:23:25.263Z"
+    }
+  },
+  "metadata": {
+    "userIdShape": {
+      "value": "user_<persistentUserId>_account_<accountId>_session_<sessionId>",
+      "risk": "critical",
+      "origin": "bundle-heuristic",
+      "confidence": "low",
+      "extractedAt": "2026-04-16T18:23:25.263Z"
+    },
+    "deviceLinkage": {
+      "value": "persistentUserId",
+      "risk": "low-risk",
+      "origin": "bundle-heuristic",
+      "confidence": "low",
+      "extractedAt": "2026-04-16T18:23:25.263Z"
+    },
+    "accountLinkage": {
+      "value": "accountUuid-or-id",
+      "risk": "low-risk",
+      "origin": "bundle-heuristic",
+      "confidence": "low",
+      "extractedAt": "2026-04-16T18:23:25.263Z"
+    }
+  },
+  "parserWarnings": [
+    "tarballHash not provided; stored as 'unknown'.",
+    "No user-agent template was extracted; fell back to a version-based heuristic."
+  ],
+  "unknownFields": []
+}

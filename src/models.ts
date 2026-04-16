@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Model detection helpers extracted from index.mjs
+// Model detection helpers extracted from src/index.ts
 // ---------------------------------------------------------------------------
 
 import type { Provider } from "./types.ts";
@@ -14,37 +14,43 @@ export function supportsThinking(model: string): boolean {
 }
 
 /**
- * Detects claude-opus-4.6 / claude-opus-4-6 model IDs.
+ * Detects claude-opus-4.6 / claude-opus-4-6 / claude-opus-4-7 model IDs.
  * These models use adaptive thinking (effort parameter) instead of
  * manual budgetTokens.
+ *
+ * Matches standard IDs (claude-opus-4-6, claude-opus-4.7), Bedrock ARNs
+ * (arn:aws:bedrock:...anthropic.claude-opus-4-7-...), and bare fragments
+ * ("opus-4-6", "opus-4.7") for non-standard strings.
+ *
+ * Extend the `[67]` character class when a new adaptive Opus version ships.
  */
 export function isOpus46Model(model: string): boolean {
     if (!model) return false;
-    // Match standard IDs (claude-opus-4-6, claude-opus-4.6) and Bedrock ARNs
-    // (arn:aws:bedrock:...anthropic.claude-opus-4-6-...).
-    // Also match bare "opus-4-6" / "opus-4.6" fragments for non-standard strings.
-    return /claude-opus-4[._-]6|opus[._-]4[._-]6/i.test(model);
+    return /claude-opus-4[._-][67]|opus[._-]4[._-][67]/i.test(model);
 }
 
 /**
- * Detects claude-sonnet-4.6 / claude-sonnet-4-6 model IDs.
- * Like Opus 4.6, these models use adaptive thinking (effort parameter).
+ * Detects claude-sonnet-4.6 / claude-sonnet-4-6 / claude-sonnet-4-7 model IDs.
+ * Like Opus 4.6+, these models use adaptive thinking (effort parameter).
+ *
+ * Extend the `[67]` character class when a new adaptive Sonnet version ships.
  */
 export function isSonnet46Model(model: string): boolean {
     if (!model) return false;
-    return /claude-sonnet-4[._-]6|sonnet[._-]4[._-]6/i.test(model);
+    return /claude-sonnet-4[._-][67]|sonnet[._-]4[._-][67]/i.test(model);
 }
 
 /**
  * Detects models that use adaptive thinking (effort parameter).
- * This includes both Opus 4.6 and Sonnet 4.6.
+ * Covers Opus 4.6, Opus 4.7, Sonnet 4.6, Sonnet 4.7, and any other
+ * model covered by `isOpus46Model` / `isSonnet46Model`.
  */
 export function isAdaptiveThinkingModel(model: string): boolean {
     return isOpus46Model(model) || isSonnet46Model(model);
 }
 
 export function hasOneMillionContext(model: string): boolean {
-    // Models with explicit 1m suffix, or Opus 4.6 (1M by default since v2.1.75).
+    // Models with explicit 1m suffix, or Opus 4.6+ (1M by default since v2.1.75).
     return /(^|[-_ ])1m($|[-_ ])|context[-_]?1m/i.test(model) || isOpus46Model(model);
 }
 

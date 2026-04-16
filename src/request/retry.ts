@@ -76,6 +76,18 @@ export async function fetchWithRetry(
             continue;
         }
 
+        // `fetch` is contractually required to return a Response or throw.
+        // A nullish return is only possible when a test mock is misconfigured
+        // (e.g. `vi.fn()` without an implementation). Turn the resulting
+        // "Cannot read properties of undefined (reading 'ok')" into a
+        // diagnostic error so the harness points at its own gap instead
+        // of a deep crash inside retry logic.
+        if (response == null) {
+            throw new TypeError(
+                "fetchWithRetry: doFetch resolved to undefined. In production, fetch always returns a Response or throws. If you hit this in a test, configure your mockFetch with mockResolvedValue/mockImplementation before the call.",
+            );
+        }
+
         if (response.ok) {
             return response;
         }
