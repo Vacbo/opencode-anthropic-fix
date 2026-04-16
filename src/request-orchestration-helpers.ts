@@ -4,11 +4,17 @@ import { isAccountSpecificError, parseRateLimitReason, parseRetryAfterHeader } f
 import type { AnthropicAuthConfig } from "./config.js";
 import { FOREGROUND_EXPIRY_BUFFER_MS } from "./constants.js";
 import { logTransformedSystemPrompt } from "./env.js";
+import { fetchProfile } from "./cli/status-api.js";
 import { buildRequestHeaders } from "./headers/builder.js";
 import type { PluginHelpers } from "./plugin-helpers.js";
 import { resolveSignatureProfile } from "./profiles/index.js";
-import { cloneBodyForRetry, transformRequestBody } from "./request/body.js";
+import { cloneBodyForRetry, isTitleGeneratorRequestBody, transformRequestBody } from "./request/body.js";
 import { extractFileIds, getAccountIdentifier } from "./request/metadata.js";
+import {
+    isLongContextError,
+    nextLongContextExclusion,
+    recordLongContextExclusion,
+} from "./request/long-context-retry.js";
 import { fetchWithRetry } from "./request/retry.js";
 import { transformRequestUrl } from "./request/url.js";
 import {
@@ -45,6 +51,54 @@ type PreparedRequest = {
     showUsageToast: boolean;
     requestContext: RequestContext;
 };
+
+function deriveLocalTitle(requestBody: string | undefined): string {
+    if (typeof requestBody !== "string") {
+        return "New Chat";
+    }
+
+    try {
+        const parsed = JSON.parse(requestBody) as { messages?: Array<{ role?: string; content?: unknown }> };
+        const firstUser = parsed.messages?.find((message) => message?.role === "user");
+        const content = firstUser?.content;
+        const text =
+            typeof content === "string"
+                ? content
+                : Array.isArray(content)
+                  ? content
+                        .map((block) =>
+                            block && typeof block === "object" && typeof (block as { text?: unknown }).text === "string"
+                                ? (block as { text: string }).text
+                                : "",
+                        )
+                        .join(" ")
+                  : "";
+        const normalized = text.replace(/\s+/g, " ").replace(/["'`]/g, "").trim();
+        if (!normalized) {
+            return "New Chat";
+        }
+        return normalized.slice(0, 50);
+    } catch {
+        return "New Chat";
+    }
+}
+
+function buildSyntheticTitleGeneratorResponse(requestBody: string | undefined): Response {
+    const title = JSON.stringify({ title: deriveLocalTitle(requestBody) });
+    const events = [
+        `event: message_start\ndata: ${JSON.stringify({ type: "message_start", message: { id: "msg_local_title", type: "message", role: "assistant", content: [], model: "claude-haiku-4-5-20251001", stop_reason: null, stop_sequence: null, usage: { input_tokens: 0, output_tokens: 0 } } })}\n\n`,
+        `event: content_block_start\ndata: ${JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } })}\n\n`,
+        `event: content_block_delta\ndata: ${JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: title } })}\n\n`,
+        `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`,
+        `event: message_delta\ndata: ${JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 1 } })}\n\n`,
+        `event: message_stop\ndata: ${JSON.stringify({ type: "message_stop" })}\n\n`,
+    ].join("");
+
+    return new Response(events, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+    });
+}
 
 type FinalizeResponseAccountErrorDetails = {
     reason: string;
@@ -282,6 +336,39 @@ async function resolveAccessToken(
     }
 }
 
+async function ensureAccountProfileIdentity(
+    account: ManagedAccount,
+    accessToken: string,
+    deps: Pick<RequestOrchestrationDeps, "debugLog">,
+): Promise<void> {
+    if (account.accountUuid && account.organizationUuid) {
+        return;
+    }
+
+    const result = await fetchProfile(accessToken);
+    if (!result.data) {
+        deps.debugLog("profile identity fetch failed", {
+            accountIndex: account.index,
+            error: result.error,
+        });
+        return;
+    }
+
+    const nextAccountUuid = result.data.account?.uuid?.trim();
+    const nextOrganizationUuid = result.data.organization?.uuid?.trim();
+    const nextEmail = result.data.account?.email_address?.trim() || result.data.account?.email?.trim();
+
+    if (nextAccountUuid) {
+        account.accountUuid = nextAccountUuid;
+    }
+    if (nextOrganizationUuid) {
+        account.organizationUuid = nextOrganizationUuid;
+    }
+    if (nextEmail && !account.email) {
+        account.email = nextEmail;
+    }
+}
+
 function buildAttemptBody(
     account: ManagedAccount,
     requestContext: RequestContext,
@@ -355,6 +442,16 @@ function logFingerprintSnapshot(
         claudeCliVersion: deps.getClaudeCliVersion(),
         signatureEnabled: deps.signatureEmulationEnabled,
     });
+}
+
+function extractModelFromBody(body: RequestInit["body"]): string | null {
+    if (typeof body !== "string") return null;
+    try {
+        const parsed = JSON.parse(body) as { model?: unknown };
+        return typeof parsed.model === "string" ? parsed.model : null;
+    } catch {
+        return null;
+    }
 }
 
 function buildTransportRequestInit(
@@ -612,6 +709,13 @@ export function createRequestOrchestrationHelpers(deps: RequestOrchestrationDeps
 
     async function executeOAuthFetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
         const preparedRequest = await prepareRequest(input, init);
+        if (
+            deps.config.disable_title_generation_request !== false &&
+            isTitleGeneratorRequestBody(preparedRequest.requestContext.cloneBody)
+        ) {
+            deps.debugLog("title generation request handled locally");
+            return buildSyntheticTitleGeneratorResponse(preparedRequest.requestContext.cloneBody);
+        }
         const transientRefreshSkips = new Set<number>();
         let lastError: unknown = null;
 
@@ -674,6 +778,8 @@ export function createRequestOrchestrationHelpers(deps: RequestOrchestrationDeps
                 lastError = refreshError;
                 continue;
             }
+
+            await ensureAccountProfileIdentity(account, accessToken, deps);
 
             deps.maybeRefreshIdleAccounts(account);
 
@@ -782,6 +888,52 @@ export function createRequestOrchestrationHelpers(deps: RequestOrchestrationDeps
                     }
 
                     response = retried;
+                } else if (isLongContextError(errorBody)) {
+                    const model = extractModelFromBody(body) ?? "";
+                    const beta = nextLongContextExclusion(model);
+                    if (beta) {
+                        recordLongContextExclusion(model, beta);
+                        deps.debugLog("long-context beta error, retrying with exclusion", {
+                            status: response.status,
+                            model,
+                            excluded: beta,
+                        });
+                        const retryHeaders = buildRequestHeaders(
+                            input,
+                            preparedRequest.requestInit as Record<string, unknown>,
+                            accessToken,
+                            body,
+                            preparedRequest.requestUrl,
+                            {
+                                enabled: deps.signatureEmulationEnabled,
+                                claudeCliVersion: deps.getClaudeCliVersion(),
+                                promptCompactionMode: deps.promptCompactionMode,
+                                profile: resolveSignatureProfile(deps.config.signature_profile),
+                                sessionId: signatureSessionId,
+                                sanitizeSystemPrompt: deps.signatureSanitizeSystemPrompt,
+                                customBetas: deps.config.custom_betas,
+                                strategy: deps.config.account_selection_strategy,
+                            },
+                        );
+                        const retried = await deps.forwardRequest(
+                            fetchInput,
+                            buildTransportRequestInit(preparedRequest.requestInit, retryHeaders, body, false),
+                        );
+                        if (retried != null && retried.ok) {
+                            response = retried;
+                        } else {
+                            deps.debugLog("long-context retry did not recover, returning last response", {
+                                retriedStatus: retried?.status,
+                            });
+                            return finalizeResponse(retried ?? response);
+                        }
+                    } else {
+                        deps.debugLog("long-context error but no more betas to exclude, returning directly", {
+                            status: response.status,
+                            model,
+                        });
+                        return finalizeResponse(response);
+                    }
                 } else {
                     deps.debugLog("non-account-specific response error, returning directly", {
                         status: response.status,
