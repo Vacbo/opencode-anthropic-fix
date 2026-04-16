@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { validateCandidateManifest, validateVerifiedManifest } from "./schema.js";
+import { ManifestValidationError, validateCandidateManifest, validateVerifiedManifest } from "./schema.js";
 import type { CandidateManifest, ManifestIndex, VerifiedManifest } from "./types.js";
 
 export type ManifestTier = "candidate" | "verified";
@@ -33,15 +33,26 @@ function getManifestPath(tier: ManifestTier, version: string, options?: Manifest
     return resolve(getManifestRoot(options), tier, "claude-code", `${version}.json`);
 }
 
+// Returns null for ENOENT, throws ManifestValidationError for malformed JSON so
+// callers do not silently negative-cache files that exist but are corrupt.
 function readJsonFile(path: string): unknown | null {
     if (!existsSync(path)) {
         return null;
     }
 
+    let raw: string;
     try {
-        return JSON.parse(readFileSync(path, "utf-8"));
-    } catch {
-        return null;
+        raw = readFileSync(path, "utf-8");
+    } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === "ENOENT") return null;
+        throw new ManifestValidationError(`Failed to read manifest file: ${path}`, { cause: error });
+    }
+
+    try {
+        return JSON.parse(raw);
+    } catch (error) {
+        throw new ManifestValidationError(`Manifest file contains invalid JSON: ${path}`, { cause: error });
     }
 }
 
@@ -74,13 +85,33 @@ export function clearManifestLoaderCache(): void {
     manifestIndexCache.clear();
 }
 
+function logManifestValidationFailure(
+    tier: ManifestTier,
+    subject: "index" | string,
+    error: ManifestValidationError,
+): void {
+    const rootCause = error.cause instanceof Error ? `: ${error.cause.message}` : "";
+    // eslint-disable-next-line no-console -- operator diagnostic: surfaces corrupt-manifest fallback cause at load time
+    console.warn(`[opencode-anthropic-auth] manifest validation failed (${tier}/${subject}): ${error.message}${rootCause}`);
+}
+
 export function loadManifestIndex(tier: ManifestTier, options?: ManifestLoaderOptions): ManifestIndex | null {
     const cacheKey = getCacheKey("index", tier, undefined, options);
     if (manifestIndexCache.has(cacheKey)) {
         return manifestIndexCache.get(cacheKey) ?? null;
     }
 
-    const raw = readJsonFile(getManifestIndexPath(tier, options));
+    let raw: unknown | null;
+    try {
+        raw = readJsonFile(getManifestIndexPath(tier, options));
+    } catch (error) {
+        if (error instanceof ManifestValidationError) {
+            logManifestValidationFailure(tier, "index", error);
+            return null;
+        }
+        throw error;
+    }
+
     const index = isManifestIndex(raw) ? raw : null;
     manifestIndexCache.set(cacheKey, index);
     return index;
@@ -101,14 +132,18 @@ export function loadCandidateManifest(version: string, options?: ManifestLoaderO
         return candidateManifestCache.get(cacheKey) ?? null;
     }
 
-    const raw = readJsonFile(getManifestPath("candidate", normalizedVersion, options));
     let manifest: CandidateManifest | null = null;
-
-    if (raw !== null) {
-        try {
+    try {
+        const raw = readJsonFile(getManifestPath("candidate", normalizedVersion, options));
+        if (raw !== null) {
             manifest = validateCandidateManifest(raw);
-        } catch {
+        }
+    } catch (error) {
+        if (error instanceof ManifestValidationError) {
+            logManifestValidationFailure("candidate", normalizedVersion, error);
             manifest = null;
+        } else {
+            throw error;
         }
     }
 
@@ -127,14 +162,18 @@ export function loadVerifiedManifest(version: string, options?: ManifestLoaderOp
         return verifiedManifestCache.get(cacheKey) ?? null;
     }
 
-    const raw = readJsonFile(getManifestPath("verified", normalizedVersion, options));
     let manifest: VerifiedManifest | null = null;
-
-    if (raw !== null) {
-        try {
+    try {
+        const raw = readJsonFile(getManifestPath("verified", normalizedVersion, options));
+        if (raw !== null) {
             manifest = validateVerifiedManifest(raw);
-        } catch {
+        }
+    } catch (error) {
+        if (error instanceof ManifestValidationError) {
+            logManifestValidationFailure("verified", normalizedVersion, error);
             manifest = null;
+        } else {
+            throw error;
         }
     }
 

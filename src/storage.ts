@@ -319,52 +319,73 @@ export function unionAccountsWithDisk(
 }
 
 /**
- * Load accounts from disk.
+ * Load accounts from disk. Returns null for ENOENT and for all other read
+ * failures, but non-ENOENT errors (EACCES/EISDIR/JSON parse) are surfaced via
+ * console.warn so operators notice corrupted or unreadable credential files
+ * instead of the plugin silently treating them as "no accounts configured".
  */
 export async function loadAccounts(): Promise<AccountStorage | null> {
     const storagePath = getStoragePath();
 
+    let content: string;
     try {
-        const content = await fs.readFile(storagePath, "utf-8");
-        const data = JSON.parse(content);
-
-        if (!data || typeof data !== "object" || !Array.isArray(data.accounts)) {
-            return null;
-        }
-
-        if (data.version !== CURRENT_VERSION) {
-            // eslint-disable-next-line no-console -- operator diagnostic: storage version mismatch before migration attempt
-            console.warn(
-                `Storage version mismatch: ${String(data.version)} vs ${CURRENT_VERSION}. Attempting best-effort migration.`,
-            );
-        }
-
-        const now = Date.now();
-        const accounts = data.accounts
-            .map((raw: unknown) => validateAccount(raw, now))
-            .filter((acc: AccountMetadata | null): acc is AccountMetadata => acc !== null);
-
-        const deduped = deduplicateByRefreshToken(accounts);
-
-        let activeIndex =
-            typeof data.activeIndex === "number" && Number.isFinite(data.activeIndex) ? data.activeIndex : 0;
-
-        if (deduped.length > 0) {
-            activeIndex = Math.max(0, Math.min(activeIndex, deduped.length - 1));
-        } else {
-            activeIndex = 0;
-        }
-
-        return {
-            version: CURRENT_VERSION,
-            accounts: deduped,
-            activeIndex,
-        };
+        content = await fs.readFile(storagePath, "utf-8");
     } catch (error) {
         const code = (error as NodeJS.ErrnoException).code;
-        if (code === "ENOENT") return null;
+        if (code !== "ENOENT") {
+            logStorageReadFailure(storagePath, error);
+        }
         return null;
     }
+
+    let data: unknown;
+    try {
+        data = JSON.parse(content);
+    } catch (error) {
+        logStorageReadFailure(storagePath, error);
+        return null;
+    }
+
+    if (!data || typeof data !== "object" || !Array.isArray((data as Record<string, unknown>).accounts)) {
+        return null;
+    }
+
+    const parsed = data as Record<string, unknown>;
+    if (parsed.version !== CURRENT_VERSION) {
+        // eslint-disable-next-line no-console -- operator diagnostic: storage version mismatch before migration attempt
+        console.warn(
+            `Storage version mismatch: ${String(parsed.version)} vs ${CURRENT_VERSION}. Attempting best-effort migration.`,
+        );
+    }
+
+    const now = Date.now();
+    const accounts = (parsed.accounts as unknown[])
+        .map((raw: unknown) => validateAccount(raw, now))
+        .filter((acc: AccountMetadata | null): acc is AccountMetadata => acc !== null);
+
+    const deduped = deduplicateByRefreshToken(accounts);
+
+    let activeIndex =
+        typeof parsed.activeIndex === "number" && Number.isFinite(parsed.activeIndex) ? parsed.activeIndex : 0;
+
+    if (deduped.length > 0) {
+        activeIndex = Math.max(0, Math.min(activeIndex, deduped.length - 1));
+    } else {
+        activeIndex = 0;
+    }
+
+    return {
+        version: CURRENT_VERSION,
+        accounts: deduped,
+        activeIndex,
+    };
+}
+
+function logStorageReadFailure(path: string, error: unknown): void {
+    const err = error as NodeJS.ErrnoException;
+    const code = err.code ? ` [${err.code}]` : "";
+    // eslint-disable-next-line no-console -- operator diagnostic: non-ENOENT storage read failure should never be silent
+    console.warn(`[opencode-anthropic-auth] failed to read account storage at ${path}${code}: ${err.message}`);
 }
 
 /**

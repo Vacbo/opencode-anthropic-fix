@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { CandidateManifest, VerifiedManifest, FieldMetadata } from "../../../src/fingerprint/types.ts";
 import {
     classifyRisk,
+    ManifestValidationError,
     validateCandidateManifest,
     validateVerifiedManifest,
     mergeManifests,
@@ -166,6 +167,18 @@ describe("fingerprint/schema", () => {
             expect(() => validateCandidateManifest(null)).toThrow("Candidate manifest must be an object");
             expect(() => validateCandidateManifest("string")).toThrow("Candidate manifest must be an object");
         });
+
+        it("throws ManifestValidationError (not bare Error) so callers can discriminate via instanceof", () => {
+            expect(() => validateCandidateManifest(null)).toThrow(ManifestValidationError);
+            expect(() => validateCandidateManifest({ version: "2.1.109" })).toThrow(ManifestValidationError);
+            try {
+                validateCandidateManifest({ version: 42 });
+                throw new Error("expected validateCandidateManifest to throw");
+            } catch (error) {
+                expect(error).toBeInstanceOf(ManifestValidationError);
+                expect((error as ManifestValidationError).name).toBe("ManifestValidationError");
+            }
+        });
     });
 
     describe("validateVerifiedManifest", () => {
@@ -200,6 +213,11 @@ describe("fingerprint/schema", () => {
             };
 
             expect(() => validateVerifiedManifest(invalidManifest)).toThrow("Verified manifest missing required field");
+        });
+
+        it("throws ManifestValidationError (not bare Error) so callers can discriminate via instanceof", () => {
+            expect(() => validateVerifiedManifest(null)).toThrow(ManifestValidationError);
+            expect(() => validateVerifiedManifest({ version: "2.1.109" })).toThrow(ManifestValidationError);
         });
     });
 
@@ -238,6 +256,21 @@ describe("fingerprint/schema", () => {
                 confidence: "medium",
             };
             const result = resolveField(undefined, criticalField, fallbackValue, {
+                preferVerified: true,
+                allowCandidateLowRisk: true,
+                blockedCandidatePaths: [],
+            });
+            expect(result).toBe("fallback");
+        });
+
+        it("should fallback when candidate is sensitive risk", () => {
+            const sensitiveField: FieldMetadata<string> = {
+                value: "candidate",
+                risk: "sensitive",
+                origin: "bundle-string",
+                confidence: "medium",
+            };
+            const result = resolveField(undefined, sensitiveField, fallbackValue, {
                 preferVerified: true,
                 allowCandidateLowRisk: true,
                 blockedCandidatePaths: [],
@@ -529,6 +562,8 @@ describe("fingerprint/schema", () => {
             // Low-risk fields should use candidate values
             expect(result.metadata.deviceLinkage.value).toBe("device-candidate");
             expect(result.metadata.accountLinkage.value).toBe("account-candidate");
+            // Sensitive fields remain fallback-only until live verification promotes them.
+            expect(result.headers.xStainlessHeaders.value).toEqual(DEFAULT_FALLBACK_PROFILE.headers.xStainlessHeaders.value);
         });
     });
 

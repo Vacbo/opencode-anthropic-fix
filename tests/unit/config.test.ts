@@ -1,16 +1,21 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
-import { DEFAULT_CONFIG, getConfigDir, getConfigPath, loadConfig } from "../../src/config.js";
+import { ConfigCorruptReadError, DEFAULT_CONFIG, getConfigDir, getConfigPath, loadConfig, saveConfig } from "../../src/config.js";
 import { DEFAULT_SIGNATURE_PROFILE_ID } from "../../src/profiles/index.js";
 
-// Mock fs module
 vi.mock("node:fs", () => ({
     existsSync: vi.fn(),
     readFileSync: vi.fn(),
+    mkdirSync: vi.fn(),
+    renameSync: vi.fn(),
+    writeFileSync: vi.fn(),
 }));
 
 const mockExistsSync = existsSync as Mock;
 const mockReadFileSync = readFileSync as Mock;
+const mockMkdirSync = mkdirSync as Mock;
+const mockRenameSync = renameSync as Mock;
+const mockWriteFileSync = writeFileSync as Mock;
 
 describe("DEFAULT_CONFIG", () => {
     it("has expected default strategy", () => {
@@ -522,5 +527,60 @@ describe("loadConfig - sanitize_system_prompt field", () => {
         process.env.OPENCODE_ANTHROPIC_SANITIZE_SYSTEM_PROMPT = "false";
         const config = loadConfig();
         expect(config.signature_emulation.sanitize_system_prompt).toBe(false);
+    });
+});
+
+describe("saveConfig corrupt-read refusal", () => {
+    beforeEach(() => {
+        vi.resetAllMocks();
+    });
+
+    it("throws ConfigCorruptReadError when existing config file has invalid JSON", () => {
+        mockExistsSync.mockReturnValue(true);
+        mockReadFileSync.mockReturnValue("{not-valid-json");
+
+        expect(() => saveConfig({ debug: true })).toThrow(ConfigCorruptReadError);
+        expect(mockWriteFileSync).not.toHaveBeenCalled();
+        expect(mockRenameSync).not.toHaveBeenCalled();
+    });
+
+    it("throws ConfigCorruptReadError when existing config file is an array", () => {
+        mockExistsSync.mockReturnValue(true);
+        mockReadFileSync.mockReturnValue("[]");
+
+        expect(() => saveConfig({ debug: true })).toThrow(ConfigCorruptReadError);
+        expect(mockWriteFileSync).not.toHaveBeenCalled();
+    });
+
+    it("proceeds with write when existing config file is missing (fresh install)", () => {
+        mockExistsSync.mockReturnValue(false);
+
+        expect(() => saveConfig({ debug: true })).not.toThrow();
+        expect(mockMkdirSync).toHaveBeenCalled();
+        expect(mockWriteFileSync).toHaveBeenCalled();
+        expect(mockRenameSync).toHaveBeenCalled();
+    });
+
+    it("proceeds with write when existing config file is valid JSON", () => {
+        mockExistsSync.mockReturnValue(true);
+        mockReadFileSync.mockReturnValue(JSON.stringify({ account_selection_strategy: "sticky" }));
+
+        expect(() => saveConfig({ debug: true })).not.toThrow();
+        expect(mockWriteFileSync).toHaveBeenCalled();
+        expect(mockRenameSync).toHaveBeenCalled();
+    });
+
+    it("ConfigCorruptReadError carries the file path in its message", () => {
+        mockExistsSync.mockReturnValue(true);
+        mockReadFileSync.mockReturnValue("{not-valid-json");
+
+        try {
+            saveConfig({ debug: true });
+            throw new Error("expected saveConfig to throw");
+        } catch (error) {
+            expect(error).toBeInstanceOf(ConfigCorruptReadError);
+            expect((error as ConfigCorruptReadError).message).toContain(getConfigPath());
+            expect((error as ConfigCorruptReadError).message).toContain("Refusing to overwrite");
+        }
     });
 });

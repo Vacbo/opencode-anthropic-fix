@@ -430,25 +430,55 @@ function applyEnvOverrides(config: AnthropicAuthConfig): AnthropicAuthConfig {
     return config;
 }
 
+function logConfigReadFailure(path: string, error: unknown): void {
+    const err = error as NodeJS.ErrnoException;
+    const code = err.code ? ` [${err.code}]` : "";
+    // eslint-disable-next-line no-console -- operator diagnostic: surface config-read failure that falls back to defaults
+    console.warn(`[opencode-anthropic-auth] failed to read config at ${path}${code}: ${err.message}`);
+}
+
+// Returns [result, readOK]. readOK=false means the file existed but reading or
+// parsing failed; callers that need to avoid clobbering a corrupt file on save
+// must check readOK before merging updates.
+function readRawConfig(configPath: string): { data: Record<string, unknown> | null; readOK: boolean } {
+    if (!existsSync(configPath)) return { data: null, readOK: true };
+
+    let content: string;
+    try {
+        content = readFileSync(configPath, "utf-8");
+    } catch (error) {
+        logConfigReadFailure(configPath, error);
+        return { data: null, readOK: false };
+    }
+
+    try {
+        const raw = JSON.parse(content);
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+            return { data: null, readOK: false };
+        }
+        return { data: raw as Record<string, unknown>, readOK: true };
+    } catch (error) {
+        logConfigReadFailure(configPath, error);
+        return { data: null, readOK: false };
+    }
+}
+
 /**
  * Load config from disk, validate, apply env overrides.
  */
 export function loadConfig(): AnthropicAuthConfig {
     const configPath = getConfigPath();
+    const { data } = readRawConfig(configPath);
 
-    if (!existsSync(configPath)) {
+    if (data === null) {
         return applyEnvOverrides(createDefaultConfig());
     }
 
     try {
-        const content = readFileSync(configPath, "utf-8");
-        const raw = JSON.parse(content);
-        if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-            return applyEnvOverrides(createDefaultConfig());
-        }
-        const config = validateConfig(raw as Record<string, unknown>);
+        const config = validateConfig(data);
         return applyEnvOverrides(config);
-    } catch {
+    } catch (error) {
+        logConfigReadFailure(configPath, error);
         return applyEnvOverrides(createDefaultConfig());
     }
 }
@@ -459,15 +489,8 @@ export function loadConfig(): AnthropicAuthConfig {
  */
 export function loadRawConfig(): Record<string, unknown> {
     const configPath = getConfigPath();
-    if (!existsSync(configPath)) return {};
-    try {
-        const content = readFileSync(configPath, "utf-8");
-        const raw = JSON.parse(content);
-        if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-        return raw as Record<string, unknown>;
-    } catch {
-        return {};
-    }
+    const { data } = readRawConfig(configPath);
+    return data ?? {};
 }
 
 function deepMergeConfig(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
@@ -492,18 +515,33 @@ function deepMergeConfig(target: Record<string, unknown>, source: Record<string,
     return result;
 }
 
+export class ConfigCorruptReadError extends Error {
+    constructor(path: string) {
+        super(
+            `Refusing to overwrite ${path}: existing file is unreadable or corrupt. Fix or delete the file before updating config.`,
+        );
+        this.name = "ConfigCorruptReadError";
+    }
+}
+
 /**
  * Save a partial config update to disk (read-modify-write).
  * Only writes the keys you provide; other keys are preserved.
  * Uses atomic write (temp + rename) for safety.
+ * Throws ConfigCorruptReadError if the existing file exists but cannot be
+ * parsed, rather than silently overwriting it with only the update payload.
  */
 export function saveConfig(updates: Record<string, unknown>): void {
     const configPath = getConfigPath();
     const dir = dirname(configPath);
     mkdirSync(dir, { recursive: true });
 
-    const existing = loadRawConfig();
-    const merged = deepMergeConfig(existing, updates);
+    const { data: existing, readOK } = readRawConfig(configPath);
+    if (!readOK) {
+        throw new ConfigCorruptReadError(configPath);
+    }
+
+    const merged = deepMergeConfig(existing ?? {}, updates);
 
     const tmpPath = configPath + `.tmp.${process.pid}`;
     writeFileSync(tmpPath, JSON.stringify(merged, null, 2) + "\n", {

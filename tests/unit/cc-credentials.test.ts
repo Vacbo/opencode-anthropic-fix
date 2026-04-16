@@ -213,6 +213,77 @@ describe("readCCCredentialsFromKeychain", () => {
 
         expect(readCCCredentialsFromKeychain()).toBeNull();
     });
+
+    describe("debug diagnostic logging", () => {
+        const originalDebug = process.env.OPENCODE_ANTHROPIC_DEBUG;
+        let warnings: string[];
+        let originalWarn: typeof console.warn;
+
+        beforeEach(() => {
+            warnings = [];
+            originalWarn = console.warn;
+            console.warn = (...args: unknown[]) => {
+                warnings.push(args.map(String).join(" "));
+            };
+        });
+
+        afterEach(() => {
+            console.warn = originalWarn;
+            if (originalDebug === undefined) {
+                delete process.env.OPENCODE_ANTHROPIC_DEBUG;
+            } else {
+                process.env.OPENCODE_ANTHROPIC_DEBUG = originalDebug;
+            }
+        });
+
+        it("logs handled exit code with context when OPENCODE_ANTHROPIC_DEBUG=1", () => {
+            process.env.OPENCODE_ANTHROPIC_DEBUG = "1";
+            mockExecSync.mockImplementation(() => {
+                throw makeSecurityError(44);
+            });
+
+            expect(readCCCredentialsFromKeychain()).toBeNull();
+            expect(warnings.some((w) => w.includes("keychain lookup failed") && w.includes("handled exit code 44"))).toBe(true);
+        });
+
+        it("logs timeout with timeout duration when OPENCODE_ANTHROPIC_DEBUG=1", () => {
+            process.env.OPENCODE_ANTHROPIC_DEBUG = "1";
+            mockExecSync.mockImplementation(() => {
+                throw makeSecurityError(undefined, "ETIMEDOUT");
+            });
+
+            expect(readCCCredentialsFromKeychain()).toBeNull();
+            expect(warnings.some((w) => w.includes("keychain lookup failed") && w.includes("timed out"))).toBe(true);
+        });
+
+        it("stays silent when OPENCODE_ANTHROPIC_DEBUG is unset", () => {
+            delete process.env.OPENCODE_ANTHROPIC_DEBUG;
+            mockExecSync.mockImplementation(() => {
+                throw makeSecurityError(44);
+            });
+
+            expect(readCCCredentialsFromKeychain()).toBeNull();
+            expect(warnings).toEqual([]);
+        });
+
+        it("redacts the command argv so credential-value fragments never leak into logs", () => {
+            process.env.OPENCODE_ANTHROPIC_DEBUG = "1";
+            mockExecSync.mockImplementation((command: string) => {
+                if (command === "security dump-keychain") {
+                    return '    "svce"<blob>="Claude Code-credentials"';
+                }
+                throw makeSecurityError(undefined, undefined);
+            });
+
+            expect(readCCCredentialsFromKeychain()).toBeNull();
+            const failureLogs = warnings.filter((w) => w.includes("keychain lookup failed"));
+            expect(failureLogs.length).toBeGreaterThan(0);
+            for (const log of failureLogs) {
+                expect(log).not.toContain("-w");
+                expect(log).not.toContain("Claude Code-credentials");
+            }
+        });
+    });
 });
 
 describe("readCCCredentialsFromFile", () => {

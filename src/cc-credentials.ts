@@ -23,10 +23,23 @@ interface SecurityCommandError {
     status?: number | null;
     code?: string;
     signal?: string | null;
+    message?: string;
 }
 
 const SECURITY_TIMEOUT_MS = 5000;
 const SECURITY_HANDLED_EXIT_CODES = new Set([36, 44, 128]);
+
+function redactCommand(command: string): string {
+    const firstArg = command.split(/\s+/, 2)[0] ?? command;
+    return firstArg;
+}
+
+function logSecurityCommandFailure(command: string, reason: string): void {
+    if (process.env.OPENCODE_ANTHROPIC_DEBUG === "1") {
+        // eslint-disable-next-line no-console -- operator diagnostic: CC keychain lookup failure gated on debug flag
+        console.warn(`[opencode-anthropic-auth] keychain lookup failed (${redactCommand(command)}): ${reason}`);
+    }
+}
 const CLAUDE_CODE_SERVICE_PATTERN = /"svce"<blob>="(Claude Code-credentials[^"]*)"/g;
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -97,11 +110,18 @@ function runSecurityCommand(command: string): string | null {
     } catch (error) {
         const securityError = error as SecurityCommandError;
         if (typeof securityError.status === "number" && SECURITY_HANDLED_EXIT_CODES.has(securityError.status)) {
+            logSecurityCommandFailure(command, `handled exit code ${securityError.status}`);
             return null;
         }
         if (securityError.code === "ETIMEDOUT" || securityError.signal === "SIGTERM") {
+            logSecurityCommandFailure(command, `timed out after ${SECURITY_TIMEOUT_MS}ms`);
             return null;
         }
+        const status = typeof securityError.status === "number" ? `status ${securityError.status}` : "no status";
+        const code = securityError.code ? `code ${securityError.code}` : "";
+        const signal = securityError.signal ? `signal ${securityError.signal}` : "";
+        const detail = [status, code, signal].filter(Boolean).join(", ");
+        logSecurityCommandFailure(command, `unexpected error (${detail})`);
         return null;
     }
 }

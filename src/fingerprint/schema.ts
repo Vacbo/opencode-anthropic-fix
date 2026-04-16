@@ -4,6 +4,15 @@
  */
 
 import { OAUTH_BETA_FLAG } from "../constants.js";
+
+// Typed separately from bare Error so callers can distinguish validation
+// failures (rejected) from ENOENT (file not present) without string matching.
+export class ManifestValidationError extends Error {
+    constructor(message: string, options?: { cause?: unknown }) {
+        super(message, options);
+        this.name = "ManifestValidationError";
+    }
+}
 import type {
     CandidateManifest,
     VerifiedManifest,
@@ -74,18 +83,13 @@ export function classifyRisk(fieldPath: string): FieldRisk {
     return "low-risk";
 }
 
-/**
- * Validate a complete candidate manifest.
- * @throws Error if manifest is invalid
- */
 export function validateCandidateManifest(manifest: unknown): CandidateManifest {
     if (typeof manifest !== "object" || manifest === null) {
-        throw new Error("Candidate manifest must be an object");
+        throw new ManifestValidationError("Candidate manifest must be an object");
     }
 
     const cm = manifest as Record<string, unknown>;
 
-    // Required top-level fields
     const requiredFields = [
         "version",
         "source",
@@ -99,38 +103,31 @@ export function validateCandidateManifest(manifest: unknown): CandidateManifest 
     ];
     for (const field of requiredFields) {
         if (!(field in cm)) {
-            throw new Error(`Candidate manifest missing required field: ${field}`);
+            throw new ManifestValidationError(`Candidate manifest missing required field: ${field}`);
         }
     }
 
-    // Validate version is string
     if (typeof cm.version !== "string") {
-        throw new Error("Candidate manifest version must be a string");
+        throw new ManifestValidationError("Candidate manifest version must be a string");
     }
 
-    // Validate arrays
     if (!Array.isArray(cm.parserWarnings)) {
-        throw new Error("Candidate manifest parserWarnings must be an array");
+        throw new ManifestValidationError("Candidate manifest parserWarnings must be an array");
     }
     if (!Array.isArray(cm.unknownFields)) {
-        throw new Error("Candidate manifest unknownFields must be an array");
+        throw new ManifestValidationError("Candidate manifest unknownFields must be an array");
     }
 
     return manifest as CandidateManifest;
 }
 
-/**
- * Validate a verified manifest.
- * @throws Error if manifest is invalid
- */
 export function validateVerifiedManifest(manifest: unknown): VerifiedManifest {
     if (typeof manifest !== "object" || manifest === null) {
-        throw new Error("Verified manifest must be an object");
+        throw new ManifestValidationError("Verified manifest must be an object");
     }
 
     const vm = manifest as Record<string, unknown>;
 
-    // Required top-level fields
     const requiredFields = [
         "version",
         "verifiedAt",
@@ -142,27 +139,25 @@ export function validateVerifiedManifest(manifest: unknown): VerifiedManifest {
     ];
     for (const field of requiredFields) {
         if (!(field in vm)) {
-            throw new Error(`Verified manifest missing required field: ${field}`);
+            throw new ManifestValidationError(`Verified manifest missing required field: ${field}`);
         }
     }
 
-    // Validate version is string
     if (typeof vm.version !== "string") {
-        throw new Error("Verified manifest version must be a string");
+        throw new ManifestValidationError("Verified manifest version must be a string");
     }
 
-    // Validate arrays
     if (!Array.isArray(vm.scenarioIds)) {
-        throw new Error("Verified manifest scenarioIds must be an array");
+        throw new ManifestValidationError("Verified manifest scenarioIds must be an array");
     }
     if (!Array.isArray(vm.promotedFields)) {
-        throw new Error("Verified manifest promotedFields must be an array");
+        throw new ManifestValidationError("Verified manifest promotedFields must be an array");
     }
     if (!Array.isArray(vm.rejectedCandidateFields)) {
-        throw new Error("Verified manifest rejectedCandidateFields must be an array");
+        throw new ManifestValidationError("Verified manifest rejectedCandidateFields must be an array");
     }
     if (!Array.isArray(vm.evidenceArtifacts)) {
-        throw new Error("Verified manifest evidenceArtifacts must be an array");
+        throw new ManifestValidationError("Verified manifest evidenceArtifacts must be an array");
     }
 
     return manifest as VerifiedManifest;

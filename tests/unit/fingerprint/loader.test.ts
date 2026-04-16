@@ -79,4 +79,11 @@ describe("fingerprint/loader", () => {
         expect(firstLoad).toEqual(secondLoad);
         expect(secondLoad?.version).toBe("2.1.109");
     });
+
+    it("treats missing manifest files (ENOENT) as null without throwing", () => {
+        expect(() => loadCandidateManifest("2.9.999", { manifestRoot })).not.toThrow();
+        expect(() => loadVerifiedManifest("2.9.999", { manifestRoot })).not.toThrow();
+        expect(loadCandidateManifest("2.9.999", { manifestRoot })).toBeNull();
+        expect(loadVerifiedManifest("2.9.999", { manifestRoot })).toBeNull();
+    });
 });
