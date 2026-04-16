@@ -5,6 +5,8 @@
 export const FALLBACK_CLAUDE_CLI_VERSION = "2.1.111";
 export const CLAUDE_CODE_NPM_LATEST_URL = "https://registry.npmjs.org/@anthropic-ai/claude-code/latest";
 export const CLAUDE_CODE_BETA_FLAG = "claude-code-20250219";
+export const OAUTH_BETA_FLAG = "oauth-2025-04-20";
+export const FILES_API_BETA_FLAG = "files-api-2025-04-14";
 export const EFFORT_BETA_FLAG = "effort-2025-11-24";
 export const ADVANCED_TOOL_USE_BETA_FLAG = "advanced-tool-use-2025-11-20";
 export const FAST_MODE_BETA_FLAG = "fast-mode-2026-02-01";

@@ -5,6 +5,8 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import type { AccountManager } from "../../accounts.js";
+import { FILES_API_BETA_FLAG } from "../../constants.js";
+import { buildOAuthBearerHeaders } from "../../headers/oauth-bearer.js";
 import type { ManagedAccount } from "../../token-refresh.js";
 
 /**
@@ -61,10 +63,7 @@ async function getFilesAuth(
     if (!tok || !acct.expires || acct.expires < Date.now()) {
         tok = await refreshAccountTokenSingleFlight(acct);
     }
-    return {
-        authorization: `Bearer ${tok}`,
-        "anthropic-beta": "oauth-2025-04-20,files-api-2025-04-14",
-    };
+    return buildOAuthBearerHeaders(tok, { extraBetas: [FILES_API_BETA_FLAG] });
 }
 
 const API_BASE = "https://api.anthropic.com";
@@ -212,10 +211,7 @@ export async function handleFilesCommand(sessionID: string, args: string[], deps
             form.append("purpose", "assistants");
             const res = await fetch(`${API_BASE}/v1/files`, {
                 method: "POST",
-                headers: {
-                    authorization: authHeaders.authorization,
-                    "anthropic-beta": "oauth-2025-04-20,files-api-2025-04-14",
-                },
+                headers: authHeaders,
                 body: form,
             });
             if (!res.ok) {

@@ -3,6 +3,7 @@
  * Implements field classification, validation, and manifest merging.
  */
 
+import { OAUTH_BETA_FLAG } from "../constants.js";
 import type {
     CandidateManifest,
     VerifiedManifest,
@@ -232,7 +233,7 @@ export const DEFAULT_FALLBACK_PROFILE: RequestProfile = {
     },
     betas: {
         requiredBaseBetas: {
-            value: ["oauth-2025-04-20"],
+            value: [OAUTH_BETA_FLAG],
             risk: "critical",
             origin: "known-stable",
             confidence: "high",
