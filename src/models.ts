@@ -2,7 +2,7 @@
 // Model detection helpers extracted from src/index.ts
 // ---------------------------------------------------------------------------
 
-import type { Provider } from "./types.ts";
+import type { Provider } from "./types.js";
 
 export function isHaikuModel(model: string): boolean {
     return /haiku/i.test(model);

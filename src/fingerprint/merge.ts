@@ -1,6 +1,6 @@
-import { loadCandidateManifest, loadVerifiedManifest } from "./loader.ts";
-import { DEFAULT_FALLBACK_PROFILE, mergeManifests } from "./schema.ts";
-import type { MergeConfig, RequestProfile } from "./types.ts";
+import { loadCandidateManifest, loadVerifiedManifest } from "./loader.js";
+import { DEFAULT_FALLBACK_PROFILE, mergeManifests } from "./schema.js";
+import type { MergeConfig, RequestProfile } from "./types.js";
 
 const DEFAULT_RUNTIME_MERGE_CONFIG: MergeConfig = {
     preferVerified: true,

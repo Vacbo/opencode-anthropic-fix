@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { validateCandidateManifest, validateVerifiedManifest } from "./schema.ts";
-import type { CandidateManifest, ManifestIndex, VerifiedManifest } from "./types.ts";
+import { validateCandidateManifest, validateVerifiedManifest } from "./schema.js";
+import type { CandidateManifest, ManifestIndex, VerifiedManifest } from "./types.js";
 
 export type ManifestTier = "candidate" | "verified";
 

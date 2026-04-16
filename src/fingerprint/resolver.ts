@@ -1,7 +1,7 @@
-import { clearManifestLoaderCache, getLatestVersion, loadCandidateManifest, loadVerifiedManifest } from "./loader.ts";
-import type { ManifestLoaderOptions } from "./loader.ts";
-import { DEFAULT_FALLBACK_PROFILE, mergeManifests } from "./merge.ts";
-import type { MergeConfig, RequestProfile } from "./types.ts";
+import { clearManifestLoaderCache, getLatestVersion, loadCandidateManifest, loadVerifiedManifest } from "./loader.js";
+import type { ManifestLoaderOptions } from "./loader.js";
+import { DEFAULT_FALLBACK_PROFILE, mergeManifests } from "./merge.js";
+import type { MergeConfig, RequestProfile } from "./types.js";
 
 const DEFAULT_RUNTIME_MERGE_CONFIG: MergeConfig = {
     preferVerified: true,

@@ -6,7 +6,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getConfigDir } from "./config.js";
-import { DEBUG_SYSTEM_PROMPT_ENV, USER_ID_STORAGE_FILE } from "./constants.ts";
+import { DEBUG_SYSTEM_PROMPT_ENV, USER_ID_STORAGE_FILE } from "./constants.js";
 
 export function isTruthyEnv(value: string | undefined): boolean {
     if (!value) return false;

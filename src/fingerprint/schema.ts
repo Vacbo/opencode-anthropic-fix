@@ -20,7 +20,7 @@ import type {
     BodySchema,
     PromptStrategy,
     MetadataSemantics,
-} from "./types.ts";
+} from "./types.js";
 
 // ============================================================================
 // Risk Classification
@@ -431,16 +431,11 @@ function mergeFieldMetadata<T>(
             selectedOrigin = fallback.origin;
             selectedConfidence = fallback.confidence;
         } else if (risk === "sensitive") {
-            // Prefer fallback for sensitive unless explicitly allowed
-            if (config.allowCandidateLowRisk) {
-                selectedValue = candidate.value;
-                selectedOrigin = candidate.origin;
-                selectedConfidence = candidate.confidence;
-            } else {
-                selectedValue = fallback.value;
-                selectedOrigin = fallback.origin;
-                selectedConfidence = fallback.confidence;
-            }
+            // Sensitive fields require live verification. Candidate inventory is useful
+            // for CI and reports, but should not shape runtime requests.
+            selectedValue = fallback.value;
+            selectedOrigin = fallback.origin;
+            selectedConfidence = fallback.confidence;
         } else {
             // Low-risk: use candidate if allowed
             if (config.allowCandidateLowRisk) {

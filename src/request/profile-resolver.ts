@@ -1,9 +1,9 @@
 import { FALLBACK_CLAUDE_CLI_VERSION } from "../constants.js";
-import { clearManifestLoaderCache } from "../fingerprint/loader.ts";
-import type { ManifestLoaderOptions } from "../fingerprint/loader.ts";
-import { DEFAULT_FALLBACK_PROFILE } from "../fingerprint/merge.ts";
-import { ProfileResolver as FingerprintProfileResolver } from "../fingerprint/resolver.ts";
-import type { MergeConfig, RequestProfile } from "../fingerprint/types.ts";
+import { clearManifestLoaderCache } from "../fingerprint/loader.js";
+import type { ManifestLoaderOptions } from "../fingerprint/loader.js";
+import { DEFAULT_FALLBACK_PROFILE } from "../fingerprint/merge.js";
+import { ProfileResolver as FingerprintProfileResolver } from "../fingerprint/resolver.js";
+import type { MergeConfig, RequestProfile } from "../fingerprint/types.js";
 import { buildUserAgent, getClaudeEntrypoint } from "../headers/user-agent.js";
 
 export interface RequestProfileOptions {
@@ -23,12 +23,12 @@ function normalizeCliVersion(profile: RequestProfile, requestedVersion?: string 
     const requested = requestedVersion?.trim();
     const profileVersion = profile.billing.ccVersion.value;
 
-    if (profileVersion && profileVersion !== DEFAULT_FALLBACK_PROFILE.billing.ccVersion.value) {
-        return profileVersion;
-    }
-
     if (requested) {
         return requested;
+    }
+
+    if (profileVersion && profileVersion !== DEFAULT_FALLBACK_PROFILE.billing.ccVersion.value) {
+        return profileVersion;
     }
 
     return FALLBACK_CLAUDE_CLI_VERSION;
@@ -60,10 +60,11 @@ function normalizeEntrypoint(profile: RequestProfile): string {
 
 function normalizeRequestProfile(profile: RequestProfile, requestedVersion?: string | null): RequestProfile {
     const cliVersion = normalizeCliVersion(profile, requestedVersion);
+    const requested = requestedVersion?.trim();
 
     return {
         ...profile,
-        version: profile.version === DEFAULT_FALLBACK_PROFILE.version ? cliVersion : profile.version,
+        version: requested || (profile.version === DEFAULT_FALLBACK_PROFILE.version ? cliVersion : profile.version),
         transport: {
             ...profile.transport,
             defaultHeaders: {

@@ -1,9 +1,9 @@
 // ---------------------------------------------------------------------------
-// Thinking block normalization extracted from index.mjs
+// Thinking block normalization extracted from src/index.ts
 // ---------------------------------------------------------------------------
 
-import { isAdaptiveThinkingModel } from "./models.ts";
-import type { ThinkingEffort } from "./types.ts";
+import { isAdaptiveThinkingModel } from "./models.js";
+import type { ThinkingEffort } from "./types.js";
 
 /**
  * Map budgetTokens to an effort level.

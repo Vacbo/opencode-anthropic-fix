@@ -7,9 +7,9 @@ import {
     EXPERIMENTAL_BETA_FLAGS,
     TOKEN_COUNTING_BETA_FLAG,
 } from "./constants.js";
-import type { RequestProfile } from "./fingerprint/types.ts";
+import type { RequestProfile } from "./fingerprint/types.js";
 import { isTruthyEnv } from "./env.js";
-import { getLatestVersion, loadCandidateManifest } from "./fingerprint/loader.ts";
+import { getLatestVersion, loadCandidateManifest } from "./fingerprint/loader.js";
 import {
     hasOneMillionContext,
     isAdaptiveThinkingModel,
