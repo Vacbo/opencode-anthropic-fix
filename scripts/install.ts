@@ -178,7 +178,7 @@ async function cmdLink() {
 
     await ensureSymlink(pluginTarget, pluginEntry, "Plugin");
 
-    // CLI: symlink to cli.mjs
+    // CLI: symlink to src/cli.ts for live development
     const binDir = getBinDir();
     const cliBin = join(binDir, CLI_BIN_NAME);
     const cliTarget = join(PROJECT_ROOT, "src", "cli.ts");
@@ -203,7 +203,7 @@ async function cmdLink() {
 async function cmdCopy() {
     console.log(bold("Copying opencode-anthropic-auth...\n"));
 
-    const pluginSrc = join(DIST_DIR, "opencode-anthropic-auth-plugin.js");
+    const pluginSrc = join(DIST_DIR, "opencode-anthropic-auth-plugin.mjs");
     const cliSrc = join(DIST_DIR, "opencode-anthropic-auth-cli.mjs");
 
     if (!existsSync(pluginSrc) || !existsSync(cliSrc)) {

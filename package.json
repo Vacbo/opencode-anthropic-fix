@@ -19,7 +19,7 @@
         "README.md",
         "LICENSE"
     ],
-    "main": "dist/opencode-anthropic-auth-plugin.js",
+    "main": "dist/opencode-anthropic-auth-plugin.mjs",
     "publishConfig": {
         "access": "public",
         "registry": "https://registry.npmjs.org/"

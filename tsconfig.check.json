@@ -3,6 +3,17 @@
     "compilerOptions": {
         "rootDir": "."
     },
-    "include": ["src/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts", "vitest.config.ts", "index.test.ts", "cli.test.ts"],
+    "include": [
+        "src/**/*.ts",
+        "tests/**/*.ts",
+        "tests/**/*.d.ts",
+        "tests/**/*.d.mts",
+        "scripts/**/*.ts",
+        "scripts/**/*.d.ts",
+        "scripts/**/*.d.mts",
+        "vitest.config.ts",
+        "index.test.ts",
+        "cli.test.ts"
+    ],
     "exclude": ["node_modules", "dist"]
 }

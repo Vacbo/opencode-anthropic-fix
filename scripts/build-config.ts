@@ -1,7 +1,7 @@
 import { join } from "node:path";
 
 export const DIST_DIR = "dist";
-export const PLUGIN_OUTFILE = join(DIST_DIR, "opencode-anthropic-auth-plugin.js");
+export const PLUGIN_OUTFILE = join(DIST_DIR, "opencode-anthropic-auth-plugin.mjs");
 export const CLI_BUNDLE_OUTFILE = join(DIST_DIR, "opencode-anthropic-auth-cli.mjs");
 export const CLI_ENTRYPOINT = "src/cli.ts";
 

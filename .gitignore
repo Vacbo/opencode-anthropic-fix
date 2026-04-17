@@ -8,3 +8,5 @@ dist
 .planning
 .claude
 .opencode
+.desloppify/
+scripts/validation/proxy-certs/

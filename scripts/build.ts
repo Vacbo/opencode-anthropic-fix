@@ -3,7 +3,7 @@
 /**
  * Bundle the plugin/CLI JS artifacts and optionally compile standalone CLI binaries.
  *
- *   dist/opencode-anthropic-auth-plugin.js          — plugin ESM bundle
+ *   dist/opencode-anthropic-auth-plugin.mjs         — plugin ESM bundle
  *   dist/opencode-anthropic-auth-cli.mjs            — CLI ESM bundle
  *   dist/opencode-anthropic-auth-<target>[.exe]     — standalone CLI binaries
  */
