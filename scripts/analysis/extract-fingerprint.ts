@@ -138,7 +138,7 @@ function isPlausibleHeaderLiteral(value: string): boolean {
         return false;
     }
 
-    return /^[A-Za-z0-9][A-Za-z0-9._,/ :\-]*$/.test(trimmed);
+    return /^[A-Za-z0-9][A-Za-z0-9._,/ :-]*$/.test(trimmed);
 }
 
 function findNearestLiteralAfter(

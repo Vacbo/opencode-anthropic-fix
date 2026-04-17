@@ -1,7 +1,6 @@
 import { exec } from "node:child_process";
 import { findByIdentity, resolveIdentityFromOAuthExchange } from "../../account-identity.js";
 import { AccountManager } from "../../accounts.js";
-import type { OAuthProfilePayload } from "../status-api.js";
 import { fetchProfile, fetchUsage } from "../status-api.js";
 import { loadConfig } from "../../config.js";
 import { authorize, exchange, refreshToken, revoke } from "../../oauth.js";
@@ -28,12 +27,6 @@ type RefreshableAccount = {
 };
 type UsageAccount = RefreshableAccount & {
     enabled: boolean;
-};
-type UsageFetchResult = {
-    usage: Record<string, unknown> | null;
-    error: string | null;
-    profile: OAuthProfilePayload | null;
-    profileError: string | null;
 };
 type LogoutOptions = { force?: boolean; all?: boolean };
 type RemoveOptions = { force?: boolean };

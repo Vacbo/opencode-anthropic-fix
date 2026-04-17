@@ -22,7 +22,7 @@ import fs from "node:fs";
 import http, { type IncomingMessage, type Server } from "node:http";
 import net, { type Socket } from "node:net";
 import path from "node:path";
-import tls, { type TLSSocket } from "node:tls";
+import tls from "node:tls";
 import { fileURLToPath } from "node:url";
 
 interface ProxyCerts {
