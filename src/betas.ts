@@ -157,9 +157,9 @@ export function buildAnthropicBetaHeader(
     const haiku = isHaikuModel(model);
     const isRoundRobin = strategy === "round-robin";
 
-    if (!haiku) {
-        betas.push(CLAUDE_CODE_BETA_FLAG);
-    }
+    // Live CC 2.1.112 capture (2026-04-17, minimal-hi scenario) confirms claude-code-20250219
+    // is sent on Haiku 4.5 too. See .sisyphus/evidence/phase-1-claim-validation/2026-04-17/.
+    betas.push(CLAUDE_CODE_BETA_FLAG);
 
     if (isFirstPartyProvider) {
         betas.push(...requiredBaseBetas);
@@ -214,11 +214,13 @@ export function buildAnthropicBetaHeader(
         betas.push("prompt-caching-scope-2026-01-05");
     }
 
-    if (!disableExperimentalBetas && isMessagesEndpoint && isFirstPartyProvider && !haiku) {
+    // Live CC 2.1.112 capture (2026-04-17) confirms advisor-tool-2026-03-01 is sent on Haiku.
+    // advanced-tool-use-2025-11-20 also observed on Sonnet/Opus; keep manifest-gated.
+    if (!disableExperimentalBetas && isMessagesEndpoint && isFirstPartyProvider) {
         if (manifestOptionalBetaSet.has(ADVISOR_TOOL_BETA_FLAG)) {
             betas.push(ADVISOR_TOOL_BETA_FLAG);
         }
-        if (manifestOptionalBetaSet.has(ADVANCED_TOOL_USE_BETA_FLAG)) {
+        if (manifestOptionalBetaSet.has(ADVANCED_TOOL_USE_BETA_FLAG) && !haiku) {
             betas.push(ADVANCED_TOOL_USE_BETA_FLAG);
         }
     }

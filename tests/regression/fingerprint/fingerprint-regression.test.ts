@@ -436,11 +436,11 @@ describe("fallback Claude Code fingerprint — Beta header composition (signatur
         ]);
     });
 
-    it("does not include claude-code-20250219 for haiku models", () => {
+    it("includes claude-code-20250219 for haiku models (CC 2.1.112 capture 2026-04-17 confirms parity)", () => {
         const betas = callBuildBeta({
             model: "claude-haiku-4-5",
         }).split(",");
-        expect(betas).not.toContain("claude-code-20250219");
+        expect(betas).toContain("claude-code-20250219");
     });
 });
 
@@ -479,31 +479,26 @@ describe("fallback Claude Code fingerprint — Beta header composition (signatur
 // System prompt identity block
 // ---------------------------------------------------------------------------
 describe("fallback Claude Code fingerprint — System prompt identity string", () => {
-    it("CLAUDE_CODE_IDENTITY_STRING is the documented value", () => {
-        expect(CLAUDE_CODE_IDENTITY_STRING).toBe("You are Claude Code, Anthropic's official CLI for Claude.");
+    it("CLAUDE_CODE_IDENTITY_STRING matches live CC 2.1.112 capture (2026-04-17)", () => {
+        expect(CLAUDE_CODE_IDENTITY_STRING).toBe("You are a Claude agent, built on Anthropic's Claude Agent SDK.");
     });
 
-    it("identity string does not include trailing period variation", () => {
-        // Exact match — no extra text
-        expect(CLAUDE_CODE_IDENTITY_STRING).not.toContain("running within the Claude Agent SDK");
+    it("identity string is the Claude Agent SDK phrasing, not the legacy Claude Code CLI phrasing", () => {
+        expect(CLAUDE_CODE_IDENTITY_STRING).not.toContain("official CLI for Claude");
     });
 });
 
 describe("fallback Claude Code fingerprint — Identity block cache TTL", () => {
-    it("identity block has cache_control with ttl: '1h'", () => {
+    it("identity block has cache_control with type 'ephemeral' and ttl '1h' (matches CC 2.1.112 capture 2026-04-17)", () => {
         const blocks = buildSystemPromptBlocks(
             [],
-            { enabled: true, claudeCliVersion: "2.1.107", promptCompactionMode: "minimal" },
+            { enabled: true, claudeCliVersion: "2.1.112", promptCompactionMode: "minimal" },
             [],
         );
 
         const identityBlock = blocks.find((b) => b.text === CLAUDE_CODE_IDENTITY_STRING);
         expect(identityBlock).toBeDefined();
-        expect(identityBlock!.cache_control).toBeDefined();
-        expect(identityBlock!.cache_control!.type).toBe("ephemeral");
-        // Current fallback identity block sends only {type:"ephemeral"} — no scope or ttl
-        expect(identityBlock!.cache_control!.scope).toBeUndefined();
-        expect(identityBlock!.cache_control!.ttl).toBeUndefined();
+        expect(identityBlock!.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
     });
 
     it("billing header block does NOT have cache_control", () => {
@@ -578,9 +573,7 @@ describe("Sonnet 4.6 — Adaptive thinking model detection", () => {
 
     it("isAdaptiveThinkingModel returns true for Bedrock ARN of Opus 4.7", () => {
         expect(
-            isAdaptiveThinkingModel(
-                "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-opus-4-7-v1",
-            ),
+            isAdaptiveThinkingModel("arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-opus-4-7-v1"),
         ).toBe(true);
     });
 
@@ -666,7 +659,11 @@ describe("Sonnet 4.6 — Beta header includes effort-2025-11-24", () => {
 
 describe("Sonnet 4.6 — Thinking block normalization", () => {
     it("normalizes budget_tokens to adaptive thinking + output_config for Sonnet 4.6", () => {
-        const result = normalizeThinkingConfig({ type: "enabled", budget_tokens: 8000 }, undefined, "claude-sonnet-4-6");
+        const result = normalizeThinkingConfig(
+            { type: "enabled", budget_tokens: 8000 },
+            undefined,
+            "claude-sonnet-4-6",
+        );
         expect(result).toEqual({
             thinking: { type: "adaptive" },
             outputConfig: { effort: "medium" },
@@ -696,7 +693,11 @@ describe("Sonnet 4.6 — Thinking block normalization", () => {
     });
 
     it("maps high budget_tokens to high effort for Sonnet 4.6", () => {
-        const result = normalizeThinkingConfig({ type: "enabled", budget_tokens: 20000 }, undefined, "claude-sonnet-4-6");
+        const result = normalizeThinkingConfig(
+            { type: "enabled", budget_tokens: 20000 },
+            undefined,
+            "claude-sonnet-4-6",
+        );
         expect(result).toEqual({
             thinking: { type: "adaptive" },
             outputConfig: { effort: "high" },

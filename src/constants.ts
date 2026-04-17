@@ -13,12 +13,13 @@ export const FAST_MODE_BETA_FLAG = "fast-mode-2026-02-01";
 export const TASK_BUDGETS_BETA_FLAG = "task-budgets-2026-03-13";
 export const TOKEN_EFFICIENT_TOOLS_BETA_FLAG = "token-efficient-tools-2026-03-28";
 export const TOKEN_COUNTING_BETA_FLAG = "token-counting-2024-11-01";
-export const CLAUDE_CODE_IDENTITY_STRING = "You are Claude Code, Anthropic's official CLI for Claude.";
+// Source: .sisyphus/evidence/phase-1-claim-validation/2026-04-17/ (captured CC 2.1.112).
+export const CLAUDE_CODE_IDENTITY_STRING = "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
 
 export const KNOWN_IDENTITY_STRINGS = new Set([
     CLAUDE_CODE_IDENTITY_STRING,
+    "You are Claude Code, Anthropic's official CLI for Claude.",
     "You are Claude Code, Anthropic's official CLI for Claude, running within the Claude Agent SDK.",
-    "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
 ]);
 
 export const BEDROCK_UNSUPPORTED_BETAS = new Set([

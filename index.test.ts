@@ -1703,8 +1703,8 @@ describe("system prompt transform", () => {
         const output = { system: ["You are a helpful assistant."] };
         plugin["experimental.chat.system.transform"]({ model: { providerID: "anthropic" } }, output);
 
-        expect(output.system[0]).toBe("You are Claude Code, Anthropic's official CLI for Claude.");
-        expect(output.system[1]).toContain("You are Claude Code");
+        expect(output.system[0]).toBe("You are a Claude agent, built on Anthropic's Claude Agent SDK.");
+        expect(output.system[1]).toContain("You are a Claude agent");
         expect(output.system[1]).toContain("You are a helpful assistant.");
     });
 });
@@ -3783,8 +3783,8 @@ describe("header handling", () => {
         expect(parsed.system[0].cache_control).toBeUndefined();
         expect(parsed.system[1]).toEqual({
             type: "text",
-            text: "You are Claude Code, Anthropic's official CLI for Claude.",
-            cache_control: { type: "ephemeral" },
+            text: "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
+            cache_control: { type: "ephemeral", ttl: "1h" },
         });
         // System prompt is now pristine: billing + identity only. The original
         // "Use OpenCode defaults" text was relocated into the first user message
@@ -3817,7 +3817,7 @@ describe("header handling", () => {
         const parsed = JSON.parse(init.body);
 
         // identity block is injected once by the plugin in system
-        expect(parsed.system[1].text).toBe("You are Claude Code, Anthropic's official CLI for Claude.");
+        expect(parsed.system[1].text).toBe("You are a Claude agent, built on Anthropic's Claude Agent SDK.");
         // System prompt is now pristine: billing + identity only.
         expect(parsed.system).toHaveLength(2);
 
@@ -3851,8 +3851,8 @@ describe("header handling", () => {
         const parsed = JSON.parse(init.body);
         expect(parsed.system[0]).toEqual({
             type: "text",
-            text: "You are Claude Code, Anthropic's official CLI for Claude.",
-            cache_control: { type: "ephemeral" },
+            text: "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
+            cache_control: { type: "ephemeral", ttl: "1h" },
         });
         expect(
             parsed.system.some((item: { text: string }) => item.text.startsWith("x-anthropic-billing-header:")),
@@ -3977,7 +3977,7 @@ describe("header handling", () => {
         // because the sample text was relocated into the first user message).
         expect(consoleSpy).toHaveBeenCalledWith(
             "[opencode-anthropic-auth][system-debug] transformed system:",
-            expect.stringContaining("You are Claude Code, Anthropic's official CLI for Claude."),
+            expect.stringContaining("You are a Claude agent, built on Anthropic's Claude Agent SDK."),
         );
         consoleSpy.mockRestore();
     });
@@ -4290,7 +4290,7 @@ describe("markSuccess wiring", () => {
         // and check what was persisted. The markSuccess resets consecutiveFailures
         // and lastFailureTime, which will be reflected in the next save.
         // For now, just verify the response came back successfully — the unit tests
-// in tests/unit/accounts.test.ts verify markSuccess behavior directly.
+        // in tests/unit/accounts.test.ts verify markSuccess behavior directly.
         expect(mockFetch).toHaveBeenCalledTimes(1);
     });
 

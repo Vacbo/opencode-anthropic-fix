@@ -43,7 +43,7 @@ describe("signature profiles", () => {
         );
     });
 
-    it("keeps the default beta fingerprint byte-for-byte unchanged", () => {
+    it("keeps the default beta fingerprint byte-for-byte aligned with live CC 2.1.112 on Haiku 4.5 (capture 2026-04-17)", () => {
         const betas = buildAnthropicBetaHeader(
             "",
             true,
@@ -58,7 +58,7 @@ describe("signature profiles", () => {
         );
 
         expect(betas).toBe(
-            "oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05",
+            "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advisor-tool-2026-03-01",
         );
     });
 

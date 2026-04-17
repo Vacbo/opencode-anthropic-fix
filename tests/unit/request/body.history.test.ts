@@ -622,7 +622,7 @@ describe("transformRequestBody - opt-in system block relocation", () => {
 
         expect(parsed.system).toHaveLength(2);
         expect(parsed.system[0].text).toMatch(/^x-anthropic-billing-header:/);
-        expect(parsed.system[1].text).toBe("You are Claude Code, Anthropic's official CLI for Claude.");
+        expect(parsed.system[1].text).toBe("You are a Claude agent, built on Anthropic's Claude Agent SDK.");
 
         const systemTexts = parsed.system.map((b: { text: string }) => b.text);
         expect(systemTexts.some((t: string) => t.includes("helpful assistant"))).toBe(false);
@@ -821,7 +821,7 @@ describe("transformRequestBody - opt-in system block relocation", () => {
 
         const systemTexts = parsed.system.map((block: { text: string }) => block.text);
         expect(systemTexts[0]).toMatch(/^x-anthropic-billing-header:/);
-        expect(systemTexts[1]).toBe("You are Claude Code, Anthropic's official CLI for Claude.");
+        expect(systemTexts[1]).toBe("You are a Claude agent, built on Anthropic's Claude Agent SDK.");
         expect(systemTexts).not.toContain("Plugin instructions");
         const content = parsed.messages[0].content as Array<{
             text: string;
@@ -858,7 +858,9 @@ describe("transformRequestBody - opt-in system block relocation", () => {
             ...(parsed.system as Array<{ cache_control?: { type: string } }>).filter((block) => block.cache_control),
             ...(parsed.messages as Array<{ content: unknown }>).flatMap((message) =>
                 Array.isArray(message.content)
-                    ? (message.content as Array<{ cache_control?: { type: string } }>).filter((block) => block.cache_control)
+                    ? (message.content as Array<{ cache_control?: { type: string } }>).filter(
+                          (block) => block.cache_control,
+                      )
                     : [],
             ),
         ];

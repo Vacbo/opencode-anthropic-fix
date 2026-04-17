@@ -64,7 +64,7 @@ describe("fallback Claude Code fingerprint — full request comparison", () => {
         console.log(`║ anthropic-ver:   2023-06-01`);
         console.log(`║ x-app:           cli`);
         console.log(`║ cch:             00000 placeholder → xxHash64(serialized body, seed 0x6E52736AC806831E)`);
-        console.log(`║ Identity:        You are Claude Code, Anthropic's official CLI for Claude.`);
+        console.log(`║ Identity:        You are a Claude agent, built on Anthropic's Claude Agent SDK.`);
         console.log(`║ Identity cache:  {"type":"ephemeral","scope":"global","ttl":"1h"}`);
         console.log(`║ Client ID:       9d1c250a-e61b-44d9-88ed-5944d1962f5e`);
         console.log("╚══════════════════════════════════════════════════════════╝");
@@ -76,10 +76,10 @@ describe("fallback Claude Code fingerprint — full request comparison", () => {
         expect(billing).toMatch(new RegExp(`cc_version=${CC_VERSION.replace(/\./g, "\\.")}\\.[0-9a-f]{3}`));
         expect(betas.split(",")).toContain("oauth-2025-04-20");
         expect(betas.split(",")).not.toContain("managed-agents-2026-04-01");
-        expect(CLAUDE_CODE_IDENTITY_STRING).toBe("You are Claude Code, Anthropic's official CLI for Claude.");
+        expect(CLAUDE_CODE_IDENTITY_STRING).toBe("You are a Claude agent, built on Anthropic's Claude Agent SDK.");
 
         const identityBlock = blocks.find((b) => b.text === CLAUDE_CODE_IDENTITY_STRING);
-        expect(identityBlock?.cache_control).toEqual({ type: "ephemeral" });
+        expect(identityBlock?.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
     });
 
     it("builds full request headers matching CC", () => {
@@ -118,7 +118,8 @@ describe("fallback Claude Code fingerprint — full request comparison", () => {
         expect(betaHeader).toContain("interleaved-thinking-2025-05-14");
         expect(betaHeader).toContain("context-management-2025-06-27");
         expect(betaHeader).toContain("prompt-caching-scope-2026-01-05");
-        expect(betaHeader).not.toContain("advisor-tool-2026-03-01");
+        expect(betaHeader).toContain("claude-code-20250219");
+        expect(betaHeader).toContain("advisor-tool-2026-03-01");
         expect(betaHeader).not.toContain("managed-agents-2026-04-01");
         expect(betaHeader).toContain("oauth-2025-04-20");
         expect(headers.get("x-claude-code-session-id")).toBe("session-123");
@@ -148,7 +149,9 @@ describe("fallback Claude Code fingerprint — full request comparison", () => {
             "test-access-token",
             JSON.stringify({
                 model: "claude-haiku-4-5",
-                messages: [{ role: "user", content: "Explain the OAuth scope user:file_upload without using the Files API." }],
+                messages: [
+                    { role: "user", content: "Explain the OAuth scope user:file_upload without using the Files API." },
+                ],
             }),
             new URL("https://api.anthropic.com/v1/messages"),
             signature,
