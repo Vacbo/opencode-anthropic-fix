@@ -10,3 +10,6 @@ dist
 .opencode
 .desloppify/
 scripts/validation/proxy-certs/
+scorecard.png
+manifests/reports/proxyman/
+manifests/reports/verification/

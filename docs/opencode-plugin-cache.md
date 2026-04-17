@@ -28,7 +28,7 @@ OpenCode resolves that spec into its own package cache:
         └── opencode-anthropic-fix/
             ├── package.json        <-- version lives here
             └── dist/
-                └── opencode-anthropic-auth-plugin.js  <-- loaded from here
+└── opencode-anthropic-auth-plugin.mjs  <-- built artifact cached here
 ```
 
 The cache-directory name mirrors the `opencode.json` spec exactly (`@latest`, `^1.0.0`, etc.).
@@ -44,7 +44,7 @@ The cache-directory name mirrors the `opencode.json` spec exactly (`@latest`, `^
 cat ~/.cache/opencode/packages/@vacbo/opencode-anthropic-fix@latest/node_modules/@vacbo/opencode-anthropic-fix/package.json | grep version
 
 # Compare its SHA with what we published
-shasum -a 256 ~/.cache/opencode/packages/@vacbo/opencode-anthropic-fix@latest/node_modules/@vacbo/opencode-anthropic-fix/dist/opencode-anthropic-auth-plugin.js
+shasum -a 256 ~/.cache/opencode/packages/@vacbo/opencode-anthropic-fix@latest/node_modules/@vacbo/opencode-anthropic-fix/dist/opencode-anthropic-auth-plugin.mjs
 ```
 
 ## Forcing an upgrade
@@ -108,4 +108,4 @@ After restart, OpenCode re-resolves `@latest` from npm, extracts it into the cac
 | 0.1.2              | `f6a561955b33a913`                 | Metadata-only fix (bin paths). Bundle identical to 0.1.1.                                                       |
 | 0.1.3              | `f6a561955b33a913`                 | Removed unused `@openauthjs/openauth` dep. Bundle identical to 0.1.1 (esbuild was already tree-shaking it out). |
 
-If the SHA of `~/.cache/opencode/packages/@vacbo/opencode-anthropic-fix@latest/node_modules/@vacbo/opencode-anthropic-fix/dist/opencode-anthropic-auth-plugin.js` is not `f6a561955b33a913...`, OpenCode is running a pre-0.1.1 plugin and needs a full cache flush plus restart.
+If the SHA of `~/.cache/opencode/packages/@vacbo/opencode-anthropic-fix@latest/node_modules/@vacbo/opencode-anthropic-fix/dist/opencode-anthropic-auth-plugin.mjs` is not `f6a561955b33a913...`, OpenCode is running a pre-0.1.1 plugin and needs a full cache flush plus restart.

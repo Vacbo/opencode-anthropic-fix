@@ -68,7 +68,7 @@ opencode-anthropic-fix/
   .oxfmtrc.json          Oxfmt config + ignore patterns
   .husky/                Git hooks (pre-commit: lint-staged, pre-push: test + format + lint + typecheck)
   dist/                  Build output (gitignored)
-    opencode-anthropic-auth-plugin.js   Bundled plugin (self-contained)
+    opencode-anthropic-auth-plugin.mjs  Bundled plugin (self-contained)
     opencode-anthropic-auth-cli.mjs     Bundled CLI (self-contained)
 ```
 
@@ -82,16 +82,16 @@ graph TB
         OC -->|/anthropic| SlashCmd[Slash Command Handler]
     end
 
-    subgraph Plugin["index.mjs (Plugin)"]
+    subgraph Plugin["src/index.ts (Plugin)"]
         Auth[Auth Methods]
         Loader[Auth Loader]
         SysTransform[System Prompt Transform]
         FetchInterceptor[Fetch Interceptor]
-        SlashCmd -->|in-process| CLI[cli.mjs dispatch]
+        SlashCmd -->|in-process| CLI[src/cli.ts dispatch]
         SlashCmd -->|login/reauth| OAuthFlow[Slash OAuth Flow]
     end
 
-    subgraph Core["lib/ (Core)"]
+    subgraph Core["src/ (Core)"]
         OAuth[OAuth Helpers]
         AM[AccountManager]
         Rotation[Rotation Engine]
@@ -479,13 +479,13 @@ A custom provider requires `opencode.json` config with at least one model defini
 
 | File                | Tests                                                       | Coverage                     |
 | ------------------- | ----------------------------------------------------------- | ---------------------------- |
-| `backoff.test.mjs`  | Rate limit parsing, backoff calculation                     | `lib/backoff.mjs`            |
-| `rotation.test.mjs` | Health scores, token buckets, selection algorithms          | `lib/rotation.mjs`           |
-| `config.test.mjs`   | Config loading, validation, env overrides                   | `lib/config.mjs`             |
-| `storage.test.mjs`  | Account persistence, deduplication, atomic writes           | `lib/storage.mjs`            |
-| `accounts.test.mjs` | AccountManager lifecycle, pool management, empty bootstrap  | `lib/accounts.mjs`           |
-| `index.test.mjs`    | Plugin lifecycle, fetch interceptor, transforms, slash cmds | `index.mjs`, `lib/oauth.mjs` |
-| `cli.test.mjs`      | CLI auth + account commands, IO capture, live usage quotas  | `cli.mjs`                    |
+| `tests/unit/backoff.test.ts`  | Rate limit parsing, backoff calculation                     | `src/backoff.ts`             |
+| `tests/unit/rotation.test.ts` | Health scores, token buckets, selection algorithms          | `src/rotation.ts`            |
+| `tests/unit/config.test.ts`   | Config loading, validation, env overrides                   | `src/config.ts`              |
+| `tests/unit/storage.test.ts`  | Account persistence, deduplication, atomic writes           | `src/storage.ts`             |
+| `tests/unit/accounts.test.ts` | AccountManager lifecycle, pool management, empty bootstrap  | `src/accounts.ts`            |
+| `index.test.ts`               | Plugin lifecycle, fetch interceptor, transforms, slash cmds | `src/index.ts`, `src/oauth.ts` |
+| `cli.test.ts`                 | CLI auth + account commands, IO capture, live usage quotas  | `src/cli.ts`                 |
 
 ### Writing Tests
 
@@ -495,14 +495,14 @@ Tests mock filesystem and network calls. Use the existing patterns:
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock dependencies before importing the module under test
-vi.mock("./lib/storage.mjs", () => ({
+vi.mock("./src/storage.js", () => ({
     loadAccounts: vi.fn(),
     saveAccounts: vi.fn(),
     getStoragePath: vi.fn(() => "/mock/path"),
 }));
 
 // Import after mocking
-import { cmdList } from "./cli.mjs";
+import { cmdList } from "./src/cli.js";
 ```
 
 ### Running Specific Tests

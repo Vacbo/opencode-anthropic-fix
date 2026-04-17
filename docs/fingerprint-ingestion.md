@@ -305,15 +305,28 @@ The workflow:
 
 ### For Local Verification
 
-Run the trusted verifier on this machine:
+Preferred local verification flow on this machine:
 
 ```bash
-# Run verification for a specific version and scenario
-bun scripts/verification/run-live-verification.ts --version 2.1.109 --scenario minimal-hi
+# 1. Capture OG Claude Code and plugin/OpenCode separately with the passive HTTPS proxy
+bun scripts/validation/proxy-capture.ts
+# Run the capture helper under Bun so the validation path keeps Claude Code's runtime/TLS shape.
 
-# Promote verified fields to the verified manifest
-bun scripts/verification/promote-verified.ts --version 2.1.109
+# 2. Compare the saved captures offline
+bun scripts/verification/run-live-verification.ts \
+  --version 2.1.109 \
+  --scenario minimal-hi \
+  --og-capture /path/to/og-capture.json \
+  --plugin-capture /path/to/plugin-capture.json \
+  --report manifests/reports/verification/2.1.109-minimal-hi.json
+
+# 3. Promote verified fields to the verified manifest
+bun scripts/verification/promote-verified.ts \
+  --version 2.1.109 \
+  --report manifests/reports/verification/2.1.109-minimal-hi.json
 ```
+
+`run-live-verification.ts` still supports inline command execution for debugging, but passive capture plus offline comparison is the trusted path.
 
 ### For Runtime Consumption
 

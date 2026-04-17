@@ -35,6 +35,10 @@ That's it. OpenCode will now use your Claude subscription directly. All model co
 
 Manual parallel QA: `bash scripts/qa-parallel.sh`
 
+Fresh reverse-engineering notes for Claude Code login/status flows live in `docs/claude-code-oauth-status-flow.md`.
+
+A higher-level request graph summary lives in `docs/claude-code-request-graph.md`.
+
 ## What This Fork Adds
 
 The [original plugin](https://github.com/anomalyco/opencode-anthropic-auth) provided basic OAuth support. This fork adds:

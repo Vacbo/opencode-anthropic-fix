@@ -8,7 +8,15 @@ This flow is for this machine. It assumes three things are already true:
 
 ## What the runner does
 
-`scripts/verification/run-live-verification.ts` starts a local MITM proxy, runs the same scenario through OG Claude Code and the plugin, captures both sanitized requests, compares the required fingerprint fields, and writes a JSON report.
+The preferred flow is:
+
+1. capture OG Claude Code and plugin traffic with the passive HTTPS MITM in `scripts/validation/proxy-capture.ts`,
+2. save the raw request artifacts,
+3. feed those artifacts into `scripts/verification/run-live-verification.ts` for offline comparison.
+
+When Proxyman is already the known-good capture method on this machine, prefer the new Proxyman-backed wrapper instead of re-creating another capture layer.
+
+`scripts/verification/run-live-verification.ts` can still drive commands directly, but that path is for debugging only. The primary verification workflow is offline comparison from saved captures.
 
 It does **not** write raw bearer tokens or raw request bodies into the report.
 
@@ -16,12 +24,62 @@ It does **not** write raw bearer tokens or raw request bodies into the report.
 
 ## Quick start
 
-Run the baseline scenario:
+### Preferred when Proxyman is the trusted capture source
+
+Requirements:
+
+- Proxyman app is running
+- Recording is enabled in Proxyman
+- `proxyman-cli` is available at `/Applications/Proxyman.app/Contents/MacOS/proxyman-cli`
+
+Run a complete OG-vs-plugin experiment for one scenario:
+
+```bash
+bun scripts/proxyman/run-scenario.ts \
+  --version 2.1.109 \
+  --scenario minimal-hi
+```
+
+This wrapper will:
+
+1. clear the current Proxyman session,
+2. run OG Claude Code through the Proxyman proxy,
+3. export a HAR from Proxyman,
+4. normalize the selected flow into the verifier's `CaptureRecord` format,
+5. repeat for the plugin/OpenCode command,
+6. invoke `scripts/verification/run-live-verification.ts` in offline mode.
+
+Artifacts are written to `manifests/reports/proxyman/<scenario>-<timestamp>/`.
+
+If you already exported a Proxyman HAR manually, normalize it directly:
+
+```bash
+bun scripts/proxyman/normalize-har.ts \
+  --har /path/to/export.har \
+  --scenario minimal-hi \
+  --out /tmp/minimal-hi-capture.json
+```
+
+### Alternate local passive-proxy path
+
+Capture the baseline scenario with the passive proxy:
+
+```bash
+bun scripts/validation/proxy-capture.ts
+# Run the capture helper under Bun so the validation path keeps Claude Code's runtime/TLS shape.
+# In another terminal, point OG Claude Code at the HTTPS proxy and run the scenario.
+# Repeat separately for the plugin/OpenCode command.
+```
+
+Then compare the saved artifacts offline:
 
 ```bash
 bun scripts/verification/run-live-verification.ts \
   --version 2.1.109 \
-  --scenario minimal-hi
+  --scenario minimal-hi \
+  --og-capture /path/to/og-capture.json \
+  --plugin-capture /path/to/plugin-capture.json \
+  --report manifests/reports/verification/2.1.109-minimal-hi.json
 ```
 
 Then promote the verified fields:
@@ -29,7 +87,7 @@ Then promote the verified fields:
 ```bash
 bun scripts/verification/promote-verified.ts \
   --version 2.1.109 \
-  --report manifests/reports/verification/2.1.109-<timestamp>.json
+  --report manifests/reports/verification/2.1.109-minimal-hi.json
 ```
 
 ## Scenario files
@@ -45,9 +103,9 @@ By default the runner skips `oauth-token-refresh` because a real refresh usually
 
 ## Command templates
 
-The runner shells out with templates. The default commands are:
+If you explicitly use the live command-driving mode, the default commands are:
 
-- OG Claude Code: `claude --print {prompt}`
+- OG Claude Code: `claude --bare --print {prompt}`
 - Plugin/OpenCode: `opencode run {prompt}`
 
 If your local setup differs, override them:
@@ -101,7 +159,7 @@ Usually one of these:
 - the prompt template did not match the scenario,
 - the local command differs from the default template.
 
-Start by overriding the command template explicitly.
+Start by using the passive proxy flow and offline `--og-capture` / `--plugin-capture` mode. Only fall back to command templates when debugging the runner itself.
 
 ### Scenario passes but nothing gets promoted
 
@@ -116,4 +174,4 @@ bun run typecheck
 bun scripts/verification/run-live-verification.ts --help
 ```
 
-If you are testing the real live flow, run a single scenario first. `minimal-hi` is the safest smoke test.
+If you are testing the real live flow, run a single scenario first. `minimal-hi` is the safest smoke test. For normal verification, prefer passive capture + offline comparison.

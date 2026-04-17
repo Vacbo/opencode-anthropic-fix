@@ -22,7 +22,7 @@ These guarantees ensure that parallel requests (for example, multiple concurrent
 ## Request-shaping expectations
 
 - Always include OAuth beta behavior: `oauth-2025-04-20` must be present in `anthropic-beta` when authenticated via OAuth.
-- Preserve model/provider-aware beta composition logic in `index.mjs`.
+- Preserve model/provider-aware beta composition logic in `src/betas.ts` and `src/headers/builder.ts`.
 - Preserve Claude-style system prompt shaping (identity block + billing header block rules).
 - Keep `metadata.user_id` composition stable across account/session context.
 
@@ -30,7 +30,7 @@ These guarantees ensure that parallel requests (for example, multiple concurrent
 
 - Prefer minimal diffs that keep existing runtime behavior intact.
 - When updating beta/header logic, update docs in `docs/mimese-http-header-system-prompt.md` and `README.md` together.
-- Add or adjust tests in `index.test.mjs` for any header/system/body mimicry change.
+- Add or adjust tests in `index.test.ts` and `tests/regression/fingerprint/cc-comparison.test.ts` for any header/system/body mimicry change.
 - Preserve the per-instance proxy lifecycle: each OpenCode instance gets its own proxy that dies with the parent process.
 - Maintain concurrency guarantees: single proxy handles N concurrent requests, circuit breaker is per-request not global, no restart-kill behavior, stable identity dedup.
 - Keep graceful fallback to native fetch when Bun is unavailable.
