@@ -1,0 +1,10 @@
+{
+    "id": "opus-effort-xhigh",
+    "name": "Opus 4.7 Effort xhigh (Wave 3, Observation)",
+    "description": "Opus 4.7 exclusively supports effort: 'xhigh' per Anthropic's adaptive-thinking docs (even though /v1/models/{id} response body currently omits xhigh from effort capability fields \u2014 see \u00a77 data-source reliability note in phase-0-decisions.md). Observes what effort level CC v2.1.112 actually sends on Opus 4.7 for complex reasoning requests. Evidence is request-only: inspect ogCapture.parsedBody.output_config.effort.",
+    "prompt": "Solve this: find all prime numbers p such that p, p+2, p+6, p+8 are all prime. Explain the reasoning in depth.",
+    "expectedBehavior": "ogCapture.parsedBody.output_config.effort is one of 'low', 'medium', 'high', 'max', or 'xhigh'. Record the observed value. If CC uses 'xhigh', port to Phase 3: extend src/betas.ts and src/models.ts to support it. If CC uses 'high' or 'max', xhigh is an opt-in config option only.",
+    "requiredFields": ["body.output_config", "body.output_config.effort", "body.thinking.type"],
+    "runnerMode": "prompt",
+    "requestPathContains": "/v1/messages"
+}

@@ -1,0 +1,10 @@
+{
+    "id": "opus-rejects-manual-thinking",
+    "name": "Opus 4.7 Rejects Manual Thinking (Wave 3, Request-Shape Regression)",
+    "description": "Per live /v1/models capability API (2026-04-17) and Anthropic docs, Opus 4.7 returns 400 for thinking: {type: 'enabled'}. This scenario verifies the PLUGIN never sends manual-thinking mode to Opus 4.7, so we never get the 400 in the first place. Evidence is request-only: assert pluginCapture.parsedBody.thinking.type !== 'enabled' when model matches /claude-opus-4-7/.",
+    "prompt": "Solve this: explain the Monty Hall problem in 2 sentences.",
+    "expectedBehavior": "pluginCapture.parsedBody.thinking.type is 'adaptive' (NOT 'enabled'). If the plugin sends 'enabled' to Opus 4.7, that's the bug. No response-status proof required \u2014 request-shape diff is the evidence.",
+    "requiredFields": ["body.thinking.type", "body.thinking"],
+    "runnerMode": "prompt",
+    "requestPathContains": "/v1/messages"
+}

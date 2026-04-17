@@ -1,0 +1,10 @@
+{
+    "id": "prompt-cache-reuse",
+    "name": "Prompt Cache Reuse (Sonnet 4.6, Wave 2)",
+    "description": "Baseline for cache_control placement. Run TWICE via external shell loop (the harness has no --runs flag). First run seeds the cache; second run should show cache_read tokens in the usage if OpenCode's prompt prefix matches CC's byte-for-byte.",
+    "prompt": "List 3 Python standard library modules.",
+    "expectedBehavior": "system[0] identity block carries cache_control: {type: 'ephemeral'}. anthropic-beta contains prompt-caching-scope-2026-01-05. Run 2 anthropic-beta header is a SUPERSET of run 1 (sticky-on latching).",
+    "requiredFields": ["body.system[0].cache_control", "headers.anthropic-beta", "body.tools"],
+    "runnerMode": "prompt",
+    "requestPathContains": "/v1/messages"
+}

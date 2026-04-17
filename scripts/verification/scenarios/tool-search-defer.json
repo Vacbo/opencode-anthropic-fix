@@ -1,0 +1,10 @@
+{
+    "id": "tool-search-defer",
+    "name": "Tool Search / Deferred Loading (Sonnet 4.6, Wave 2)",
+    "description": "Forces CC's tool-search path by asking about a specific tool capability. Verifies presence of tool_search_tool_bm25_20251119 or tool_search_tool_regex_20251119 in the tools array when defer_loading is enabled. Distinct from the preexisting tool-search.json which tests tool registration metadata at the manifest level.",
+    "prompt": "Do you have a tool that can search the web? If yes, just say its name.",
+    "expectedBehavior": "If CC v2.1.112 sends defer_loading: true, tools[] includes a server-side tool of type tool_search_tool_bm25_20251119 or tool_search_tool_regex_20251119. Response may include a tool_use block calling the search tool.",
+    "requiredFields": ["body.tools", "body.tools[].type", "body.tools[].defer_loading"],
+    "runnerMode": "prompt",
+    "requestPathContains": "/v1/messages"
+}

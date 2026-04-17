@@ -1,0 +1,10 @@
+{
+    "id": "long-context-compact",
+    "name": "Long Context with compact_20260112 (Sonnet 4.6, Wave 2)",
+    "description": "Verifies the compact_20260112 context-management strategy, which the live /v1/models capability API confirms is exclusive to Sonnet 4.6 and Opus 4.7 (Haiku 4.5 returns supported: false). Tests if CC actually sends this strategy or if it only sends clear_tool_uses. Shorter prompt than long-context to isolate the compact vs clear_tool_uses dimension.",
+    "prompt": "PLACEHOLDER \u2014 supplied via --prompt-file at runtime (generator target: ~50K tokens, enough to trigger compaction but not clear_tool_uses)",
+    "expectedBehavior": "body.context_management.edits[] contains {type: 'compact_20260112'} OR the compact strategy is negotiated via a different mechanism (document which). compact-2026-01-12 beta may be present in anthropic-beta (verify).",
+    "requiredFields": ["body.context_management", "body.context_management.edits", "headers.anthropic-beta"],
+    "runnerMode": "prompt",
+    "requestPathContains": "/v1/messages"
+}

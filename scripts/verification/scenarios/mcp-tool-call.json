@@ -1,0 +1,10 @@
+{
+    "id": "mcp-tool-call",
+    "name": "MCP Tool Call (Sonnet 4.6, Wave 2)",
+    "description": "Request that triggers a filesystem Read to observe MCP tool name shape, defer_loading behavior, and tool array alphabetization in the wire payload.",
+    "prompt": "Read the first 10 lines of README.md and summarize in one sentence.",
+    "expectedBehavior": "tools[] contains MCP-prefixed tool definitions (mcp_PascalCase). Tools are alphabetized. If CC v2.1.112 uses tool lazy loading, MCP tools have defer_loading: true and a tool_search_tool_* server-side tool is injected.",
+    "requiredFields": ["body.tools", "body.tools[].name", "body.tools[].defer_loading", "headers.anthropic-beta"],
+    "runnerMode": "prompt",
+    "requestPathContains": "/v1/messages"
+}

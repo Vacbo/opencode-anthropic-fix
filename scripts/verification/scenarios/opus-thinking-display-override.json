@@ -1,0 +1,10 @@
+{
+    "id": "opus-thinking-display-override",
+    "name": "Opus 4.7 Thinking Display Override (Wave 3, Request-Shape Observation)",
+    "description": "Opus 4.7 defaults thinking.display to 'omitted' (silent change from Opus 4.6, which defaults to 'summarized'). Tests whether CC v2.1.112 explicitly passes thinking.display: 'summarized' on Opus 4.7 to preserve the Opus 4.6 behavior, or accepts the 'omitted' default. Evidence is request-only: inspect whether ogCapture.parsedBody.thinking.display field is present and what its value is.",
+    "prompt": "Think carefully about this: what is the greatest common divisor of 1071 and 462?",
+    "expectedBehavior": "body.thinking = {type: 'adaptive'} (manual 'enabled' would 400 on Opus 4.7 per live API). Record whether body.thinking.display is: (a) explicitly 'summarized' \u2014 CC overrides the new default to preserve summarized behavior; (b) explicitly 'omitted' \u2014 CC embraces the new default; (c) absent \u2014 CC relies on the Opus 4.7 default. Each case has a distinct Phase 3 port plan (see Task 1.3 claim table).",
+    "requiredFields": ["body.thinking", "body.thinking.type"],
+    "runnerMode": "prompt",
+    "requestPathContains": "/v1/messages"
+}
