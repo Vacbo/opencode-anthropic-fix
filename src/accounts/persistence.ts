@@ -101,10 +101,8 @@ export function mergeAuthFallbackIntoAccounts(
     const fallbackExpires = typeof authFallback.expires === "number" ? authFallback.expires : 0;
     const fallbackLooksFresh = fallbackHasAccess && fallbackExpires > Date.now();
 
-    if (!match && fallbackLooksFresh) {
-        const preferredAccount =
-            preferredIndex >= 0 && preferredIndex < accounts.length ? accounts[preferredIndex] : accounts.length === 1 ? accounts[0] : null;
-        match = preferredAccount ?? null;
+    if (!match && fallbackLooksFresh && preferredIndex >= 0 && preferredIndex < accounts.length) {
+        match = accounts[preferredIndex];
     }
 
     if (!match) {

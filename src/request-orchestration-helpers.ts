@@ -4,7 +4,6 @@ import { isAccountSpecificError, parseRateLimitReason, parseRetryAfterHeader } f
 import type { AnthropicAuthConfig } from "./config.js";
 import { FOREGROUND_EXPIRY_BUFFER_MS } from "./constants.js";
 import { logTransformedSystemPrompt } from "./env.js";
-import { fetchProfile } from "./cli/status-api.js";
 import { buildRequestHeaders } from "./headers/builder.js";
 import type { PluginHelpers } from "./plugin-helpers.js";
 import { resolveSignatureProfile } from "./profiles/index.js";
@@ -334,39 +333,6 @@ async function resolveAccessToken(
         }
 
         return { lastError: finalError };
-    }
-}
-
-async function ensureAccountProfileIdentity(
-    account: ManagedAccount,
-    accessToken: string,
-    deps: Pick<RequestOrchestrationDeps, "debugLog">,
-): Promise<void> {
-    if (account.accountUuid && account.organizationUuid) {
-        return;
-    }
-
-    const result = await fetchProfile(accessToken);
-    if (!result.data) {
-        deps.debugLog("profile identity fetch failed", {
-            accountIndex: account.index,
-            error: result.error,
-        });
-        return;
-    }
-
-    const nextAccountUuid = result.data.account?.uuid?.trim();
-    const nextOrganizationUuid = result.data.organization?.uuid?.trim();
-    const nextEmail = result.data.account?.email_address?.trim() || result.data.account?.email?.trim();
-
-    if (nextAccountUuid) {
-        account.accountUuid = nextAccountUuid;
-    }
-    if (nextOrganizationUuid) {
-        account.organizationUuid = nextOrganizationUuid;
-    }
-    if (nextEmail && !account.email) {
-        account.email = nextEmail;
     }
 }
 
@@ -779,8 +745,6 @@ export function createRequestOrchestrationHelpers(deps: RequestOrchestrationDeps
                 lastError = refreshError;
                 continue;
             }
-
-            await ensureAccountProfileIdentity(account, accessToken, deps);
 
             deps.maybeRefreshIdleAccounts(account);
 

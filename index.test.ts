@@ -73,6 +73,8 @@ vi.mock("./src/refresh-lock.js", () => ({
 vi.mock("./src/config.js", () => {
     const DEFAULT_CONFIG = {
         account_selection_strategy: "sticky",
+        relocate_third_party_prompts: true,
+        disable_title_generation_request: true,
         failure_ttl_seconds: 3600,
         debug: false,
         signature_emulation: {
@@ -152,6 +154,7 @@ const originalFetch = globalThis.fetch;
 globalThis.fetch = mockFetch as unknown as typeof fetch;
 
 import { DEFAULT_CONFIG, loadConfig, loadConfigFresh, saveConfig as saveRuntimeConfig } from "./src/config.js";
+import { FALLBACK_CLAUDE_CLI_VERSION } from "./src/constants.js";
 import { AccountManager } from "./src/accounts.js";
 import { AnthropicAuthPlugin } from "./src/index.js";
 import { acquireRefreshLock, releaseRefreshLock } from "./src/refresh-lock.js";
@@ -860,7 +863,7 @@ describe("fetch interceptor", () => {
         expect(headers.get("anthropic-beta")).toContain("oauth-2025-04-20");
         expect(headers.get("anthropic-beta")).toContain("claude-code-20250219");
         expect(headers.get("anthropic-beta")).not.toContain("managed-agents-2026-04-01");
-        expect(headers.get("user-agent")).toContain("claude-cli/2.1.107");
+        expect(headers.get("user-agent")).toContain(`claude-cli/${FALLBACK_CLAUDE_CLI_VERSION}`);
         expect(headers.get("x-app")).toBe("cli");
         expect(headers.get("x-claude-code-session-id")).toMatch(
             /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
@@ -1095,7 +1098,7 @@ describe("fetch interceptor", () => {
         expect(wrappedText).toContain("<example>keep me</example>");
     });
 
-    it("prefixes tool names with mcp_ in request", async () => {
+    it("rewrites tool names to Claude Code wire form in request", async () => {
         mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
 
         await fetchFn("https://api.anthropic.com/v1/messages", {
@@ -1103,9 +1106,14 @@ describe("fetch interceptor", () => {
             body: JSON.stringify({
                 tools: [{ name: "read_file", description: "Read a file" }],
                 messages: [
+                    { role: "user", content: "read the file" },
                     {
                         role: "assistant",
                         content: [{ type: "tool_use", name: "read_file", id: "t1", input: {} }],
+                    },
+                    {
+                        role: "user",
+                        content: [{ type: "tool_result", tool_use_id: "t1", content: "ok" }],
                     },
                 ],
             }),
@@ -1113,8 +1121,9 @@ describe("fetch interceptor", () => {
 
         const [, init] = mockFetch.mock.calls[0];
         const body = JSON.parse(init.body);
-        expect(body.tools[0].name).toBe("mcp_read_file");
-        expect(body.messages[0].content[0].name).toBe("mcp_read_file");
+        expect(body.tools[0].name).toBe("ReadFile");
+        const assistantMsg = body.messages.find((m: { role: string }) => m.role === "assistant");
+        expect(assistantMsg?.content[0].name).toBe("ReadFile");
     });
 
     it("strips mcp_ prefix from tool names in response stream", async () => {
@@ -1169,7 +1178,7 @@ describe("fetch interceptor", () => {
         expect(text).not.toContain("mcp_read_file");
     });
 
-    it("double-prefixes tools already named mcp_* in request body", async () => {
+    it("strips the legacy mcp_ prefix and PascalCases the remainder for wire form", async () => {
         mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
 
         await fetchFn("https://api.anthropic.com/v1/messages", {
@@ -1177,9 +1186,14 @@ describe("fetch interceptor", () => {
             body: JSON.stringify({
                 tools: [{ name: "mcp_server", description: "An MCP server tool" }],
                 messages: [
+                    { role: "user", content: "use the server" },
                     {
                         role: "assistant",
                         content: [{ type: "tool_use", name: "mcp_server", id: "t1", input: {} }],
+                    },
+                    {
+                        role: "user",
+                        content: [{ type: "tool_result", tool_use_id: "t1", content: "ok" }],
                     },
                 ],
             }),
@@ -1187,9 +1201,9 @@ describe("fetch interceptor", () => {
 
         const [, init] = mockFetch.mock.calls[0];
         const body = JSON.parse(init.body);
-        // Must become mcp_mcp_server so that response stripping restores the original name
-        expect(body.tools[0].name).toBe("mcp_mcp_server");
-        expect(body.messages[0].content[0].name).toBe("mcp_mcp_server");
+        expect(body.tools[0].name).toBe("Server");
+        const assistantMsg = body.messages.find((m: { role: string }) => m.role === "assistant");
+        expect(assistantMsg?.content[0].name).toBe("Server");
     });
 
     it("round-trips mcp_-prefixed tool names correctly", async () => {
@@ -3380,7 +3394,7 @@ describe("header handling", () => {
         fetchFn = result.fetch!;
     });
 
-    it("preserves and merges incoming anthropic-beta headers", async () => {
+    it("strips incoming anthropic-beta headers in signature mode and emits the manifest-driven inventory", async () => {
         mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
 
         await fetchFn("https://api.anthropic.com/v1/messages", {
@@ -3395,22 +3409,19 @@ describe("header handling", () => {
         const [, init] = mockFetch.mock.calls[0];
         const betaHeader = init.headers.get("anthropic-beta");
 
-        // Should contain both required betas AND the custom ones
         expect(betaHeader).toContain("oauth-2025-04-20");
         expect(betaHeader).toContain("interleaved-thinking-2025-05-14");
         expect(betaHeader).toContain("claude-code-20250219");
-        expect(betaHeader).not.toContain("advisor-tool-2026-03-01");
-        expect(betaHeader).not.toContain("advanced-tool-use-2025-11-20");
         expect(betaHeader).not.toContain("fast-mode-2026-02-01");
         expect(betaHeader).not.toContain("redact-thinking-2026-02-12");
         expect(betaHeader).not.toContain("fine-grained-tool-streaming-2025-05-14");
         expect(betaHeader).not.toContain("code-execution-2025-08-25");
         expect(betaHeader).not.toContain("files-api-2025-04-14");
-        expect(betaHeader).toContain("custom-beta-2025-01-01");
-        expect(betaHeader).toContain("another-beta-2025-02-01");
+        expect(betaHeader).not.toContain("custom-beta-2025-01-01");
+        expect(betaHeader).not.toContain("another-beta-2025-02-01");
     });
 
-    it("does NOT add context-1m beta for anthropic/OAuth provider (not supported)", async () => {
+    it("includes context-1m beta on OAuth because the 2.1.109 manifest advertises it", async () => {
         mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
 
         await fetchFn("https://api.anthropic.com/v1/messages", {
@@ -3420,11 +3431,10 @@ describe("header handling", () => {
         });
 
         const [, init] = mockFetch.mock.calls[0];
-        // context-1m beta is unsupported on OAuth; compaction is gated by model.limit.input instead.
-        expect(init.headers.get("anthropic-beta")).not.toContain("context-1m-2025-08-07");
+        expect(init.headers.get("anthropic-beta")).toContain("context-1m-2025-08-07");
     });
 
-    it("adds effort beta instead of interleaved-thinking for Opus 4.6 models", async () => {
+    it("adds effort beta for Opus 4.6 and keeps manifest-driven first-party betas", async () => {
         mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
 
         await fetchFn("https://api.anthropic.com/v1/messages", {
@@ -3436,11 +3446,8 @@ describe("header handling", () => {
         const [, init] = mockFetch.mock.calls[0];
         const betaHeader = init.headers.get("anthropic-beta");
         expect(betaHeader).toContain("effort-2025-11-24");
-        expect(betaHeader).not.toContain("advisor-tool-2026-03-01");
-        expect(betaHeader).not.toContain("advanced-tool-use-2025-11-20");
         expect(betaHeader).not.toContain("fast-mode-2026-02-01");
         expect(betaHeader).not.toContain("redact-thinking-2026-02-12");
-        expect(betaHeader).not.toContain("interleaved-thinking-2025-05-14");
     });
 
     it("transforms budget_tokens thinking to adaptive shape for Opus 4.6", async () => {

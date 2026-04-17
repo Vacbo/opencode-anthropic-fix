@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite
 
 import { createDeferred, createDeferredQueue, nextTick } from "../../helpers/deferred.js";
 import { clearMockAccounts, createFetchHarness } from "../../helpers/plugin-fetch-harness.js";
+import { toWireToolName } from "../../../src/tools/wire-names.js";
 import {
     contentBlockStartEvent,
     contentBlockStopEvent,
@@ -197,6 +198,16 @@ function makeRequestBody(
                 },
             ],
         });
+        messages.push({
+            role: "user",
+            content: [
+                {
+                    type: "tool_result",
+                    tool_use_id: `tool_${options.historicalToolName}`,
+                    content: "ok",
+                },
+            ],
+        });
     }
 
     messages.push({
@@ -229,7 +240,7 @@ function makeRequestBody(
 
 type SentRequestBody = {
     tools: Array<{ name: string }>;
-    messages: Array<{ content: Array<{ name: string }> }>;
+    messages: Array<{ role?: string; content: Array<{ name?: string }> | string }>;
 };
 
 function parseSentBody(call: unknown[]): SentRequestBody {
@@ -323,7 +334,7 @@ describe("index.parallel RED", () => {
 
         const sentBodies = harness.mockFetch.mock.calls.map((call) => parseSentBody(call));
         sentBodies.forEach((body, index) => {
-            expect(body.tools[0].name).toBe(`mcp_mcp_parallel_tool_${index}`);
+            expect(body.tools[0].name).toBe(toWireToolName(`mcp_parallel_tool_${index}`));
         });
 
         harness.tearDown();
@@ -353,14 +364,7 @@ describe("index.parallel RED", () => {
         );
 
         const transformedNames = harness.mockFetch.mock.calls.map((call) => parseSentBody(call).tools[0].name);
-        expect(transformedNames).toEqual([
-            "mcp_read_file",
-            "mcp_mcp_existing_read",
-            "mcp_write_file",
-            "mcp_mcp_existing_write",
-            "mcp_list_files",
-            "mcp_mcp_existing_list",
-        ]);
+        expect(transformedNames).toEqual(toolNames.map(toWireToolName));
 
         harness.tearDown();
     });
@@ -383,11 +387,14 @@ describe("index.parallel RED", () => {
             ),
         );
 
-        const transformedNames = harness.mockFetch.mock.calls.map(
-            (call) => parseSentBody(call).messages[0].content[0].name,
-        );
+        const transformedNames = harness.mockFetch.mock.calls.map((call) => {
+            const assistantMsg = (parseSentBody(call).messages as Array<{ role?: string; content: Array<{ name?: string }> }>).find(
+                (msg) => msg.role === "assistant",
+            );
+            return assistantMsg?.content[0].name;
+        });
         transformedNames.forEach((name, index) => {
-            expect(name).toBe(`mcp_history_tool_${index}`);
+            expect(name).toBe(toWireToolName(`mcp_history_tool_${index}`));
         });
 
         harness.tearDown();
@@ -503,7 +510,7 @@ describe("index.parallel RED", () => {
 
         expect(successfulRotations).toHaveLength(12);
         successfulRotations.forEach((call) => {
-            expect(parseSentBody(call).tools[0].name).not.toMatch(/^mcp_mcp_mcp_/);
+            expect(parseSentBody(call).tools[0].name).not.toMatch(/^mcp_/i);
         });
 
         harness.tearDown();
@@ -550,7 +557,7 @@ describe("index.parallel RED", () => {
 
         harness.mockFetch.mock.calls.forEach((call, index) => {
             expect(callHeaders(call).get("authorization")).toBe("Bearer access-fresh");
-            expect(parseSentBody(call).tools[0].name).toBe(`mcp_mcp_refresh_tool_${index}`);
+            expect(parseSentBody(call).tools[0].name).toBe(toWireToolName(`mcp_refresh_tool_${index}`));
         });
 
         harness.tearDown();
@@ -635,7 +642,7 @@ describe("index.parallel RED", () => {
 
         const successCall = harness.mockFetch.mock.calls.find((call) => callUrl(call).includes("/ok"));
         expect(successCall).toBeDefined();
-        expect(parseSentBody(successCall!).tools[0].name).toBe("mcp_mcp_ok_tool");
+        expect(parseSentBody(successCall!).tools[0].name).toBe(toWireToolName("mcp_ok_tool"));
 
         harness.tearDown();
     });
@@ -669,7 +676,7 @@ describe("index.parallel RED", () => {
         const lastSharedCall = harness.mockFetch.mock.calls[harness.mockFetch.mock.calls.length - 1];
 
         expect(JSON.parse(sharedBody).tools[0].name).toBe("mcp_shared_tool");
-        expect(parseSentBody(lastSharedCall).tools[0].name).toBe("mcp_mcp_shared_tool");
+        expect(parseSentBody(lastSharedCall).tools[0].name).toBe(toWireToolName("mcp_shared_tool"));
 
         harness.tearDown();
     });
@@ -704,7 +711,7 @@ describe("index.parallel RED", () => {
         const cleanCall = harness.mockFetch.mock.calls.find((call) => callUrl(call).includes("/clean"));
         expect(cleanCall).toBeDefined();
         expect(callHeaders(cleanCall!).get("x-stainless-retry-count")).toBe("0");
-        expect(parseSentBody(cleanCall!).tools[0].name).toBe("mcp_mcp_clean_followup");
+        expect(parseSentBody(cleanCall!).tools[0].name).toBe(toWireToolName("mcp_clean_followup"));
 
         harness.tearDown();
     });
@@ -738,7 +745,7 @@ describe("index.parallel RED", () => {
 
         const lastCleanupCall = harness.mockFetch.mock.calls[harness.mockFetch.mock.calls.length - 1];
 
-        expect(parseSentBody(lastCleanupCall).tools[0].name).toBe("mcp_mcp_cleanup_gate_followup");
+        expect(parseSentBody(lastCleanupCall).tools[0].name).toBe(toWireToolName("mcp_cleanup_gate_followup"));
 
         harness.tearDown();
     });

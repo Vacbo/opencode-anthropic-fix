@@ -111,6 +111,21 @@ vi.mock("./src/oauth.js", () => ({
         expires: Date.now() + 3600_000,
         email: "new@example.com",
     })),
+    refreshToken: vi.fn(async (refreshTokenValue: string, options: { signal?: AbortSignal } = {}) => {
+        // Delegate to the shared mockFetch so tests can queue HTTP responses via
+        // mockResolvedValueOnce and mockUsageForAccounts just like the real fetch.
+        const resp = await (globalThis.fetch as (url: string, init: unknown) => Promise<{ ok: boolean; status: number; json?: () => Promise<unknown>; text?: () => Promise<string> }>)("https://console.anthropic.com/v1/oauth/token", {
+            method: "POST",
+            headers: {},
+            body: JSON.stringify({ refresh_token: refreshTokenValue }),
+            ...(options.signal ? { signal: options.signal } : {}),
+        });
+        if (!resp.ok) {
+            const err = new Error(`Token refresh failed (HTTP ${resp.status})`);
+            throw err;
+        }
+        return (await resp.json?.()) as { access_token: string; refresh_token?: string; expires_in: number };
+    }),
     revoke: vi.fn(async () => true),
 }));
 
