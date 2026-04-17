@@ -142,8 +142,8 @@ function buildInputBody(prompt: string, model: string): string {
     // and relocate any third-party prompts.
     return JSON.stringify({
         model,
-        max_tokens: 1024,
-        stream: false,
+        max_tokens: 64000,
+        stream: true,
         messages: [
             {
                 role: "user",

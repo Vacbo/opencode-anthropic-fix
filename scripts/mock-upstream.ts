@@ -1,6 +1,7 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
-import http from "node:http";
+import http, { type IncomingMessage, type ServerResponse } from "node:http";
+import type { Socket } from "node:net";
 
 const HOST = "127.0.0.1";
 const DEFAULT_GRACEFUL_SHUTDOWN_MS = 60_000;
@@ -8,15 +9,17 @@ const gracefulShutdownMs = Number.parseInt(process.env.GRACEFUL_SHUTDOWN_MS ?? "
 const idleShutdownMs =
     Number.isFinite(gracefulShutdownMs) && gracefulShutdownMs > 0 ? gracefulShutdownMs : DEFAULT_GRACEFUL_SHUTDOWN_MS;
 
+type SseEvent = Record<string, unknown>;
+
 let requestCounter = 0;
 let lastActivityAt = Date.now();
-const sockets = new Set();
+const sockets = new Set<Socket>();
 
-function touchActivity() {
+function touchActivity(): void {
     lastActivityAt = Date.now();
 }
 
-function nextToolUseId() {
+function nextToolUseId(): { requestNumber: number; toolUseId: string } {
     requestCounter += 1;
     return {
         requestNumber: requestCounter,
@@ -24,14 +27,14 @@ function nextToolUseId() {
     };
 }
 
-function writeSseEvent(response, payload) {
+function writeSseEvent(response: ServerResponse<IncomingMessage>, payload: unknown): void {
     response.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
-function collectRequestBody(request) {
-    return new Promise((resolve, reject) => {
-        const chunks = [];
-        request.on("data", (chunk) => {
+function collectRequestBody(request: IncomingMessage): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+        const chunks: Buffer[] = [];
+        request.on("data", (chunk: Buffer | string) => {
             chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
         });
         request.on("end", () => {
@@ -41,9 +44,14 @@ function collectRequestBody(request) {
     });
 }
 
-function scheduleSseSequence(response, requestNumber, toolUseId, requestBody) {
+function scheduleSseSequence(
+    response: ServerResponse<IncomingMessage>,
+    requestNumber: number,
+    toolUseId: string,
+    requestBody: string,
+): void {
     const bodyPreview = requestBody.slice(0, 120);
-    const events = [
+    const events: SseEvent[] = [
         {
             type: "message_start",
             message: {
@@ -107,7 +115,7 @@ function scheduleSseSequence(response, requestNumber, toolUseId, requestBody) {
 
     let eventIndex = 0;
 
-    const flushNext = () => {
+    const flushNext = (): void => {
         if (eventIndex >= events.length) {
             response.end();
             return;
@@ -142,7 +150,7 @@ const server = http.createServer(async (request, response) => {
     scheduleSseSequence(response, requestNumber, toolUseId, requestBody);
 });
 
-server.on("connection", (socket) => {
+server.on("connection", (socket: Socket) => {
     sockets.add(socket);
     socket.on("close", () => {
         sockets.delete(socket);
@@ -150,23 +158,20 @@ server.on("connection", (socket) => {
     });
 });
 
-const idleTimer = setInterval(
-    () => {
-        if (Date.now() - lastActivityAt < idleShutdownMs) {
-            return;
-        }
+const idleTimer = setInterval(() => {
+    if (Date.now() - lastActivityAt < idleShutdownMs) {
+        return;
+    }
 
-        clearInterval(idleTimer);
-        server.close(() => {
-            process.exit(0);
-        });
-    },
-    Math.min(idleShutdownMs, 1_000),
-);
+    clearInterval(idleTimer);
+    server.close(() => {
+        process.exit(0);
+    });
+}, Math.min(idleShutdownMs, 1_000));
 
 idleTimer.unref();
 
-function shutdown(exitCode) {
+function shutdown(exitCode: number): void {
     clearInterval(idleTimer);
     for (const socket of sockets) {
         socket.destroy();

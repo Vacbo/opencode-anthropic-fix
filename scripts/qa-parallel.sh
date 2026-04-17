@@ -89,7 +89,7 @@ refresh_proxy_bundle() {
 }
 
 start_mock_upstream() {
-	node "$ROOT_DIR/scripts/mock-upstream.js" >"$MOCK_LOG" 2>&1 &
+	bun "$ROOT_DIR/scripts/mock-upstream.ts" >"$MOCK_LOG" 2>&1 &
 	MOCK_PID=$!
 
 	if ! wait_for_banner "$MOCK_LOG" "MOCK_UPSTREAM_PORT=" MOCK_PORT 10; then

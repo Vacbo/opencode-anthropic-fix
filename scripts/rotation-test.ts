@@ -1,14 +1,108 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 import fs from "node:fs/promises";
-import http from "node:http";
+import http, { type Server } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 const DEFAULT_ACCOUNTS_FILE = path.join(os.tmpdir(), "rotation-test.json");
+const EXPIRED_TOKEN_OFFSET_MS = 60_000;
+const OAUTH_ITERATIONS_PER_ACCOUNT = 10;
 
-function createStats(now) {
+interface AccountStats {
+    requests: number;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+    lastReset: number;
+}
+
+interface StoredAccountIdentity {
+    kind: "oauth";
+    email: string;
+}
+
+interface StoredAccount {
+    id: string;
+    email: string;
+    identity: StoredAccountIdentity;
+    refreshToken: string;
+    access: string;
+    expires: number;
+    token_updated_at: number;
+    addedAt: number;
+    lastUsed: number;
+    enabled: boolean;
+    rateLimitResetTimes: Record<string, number>;
+    consecutiveFailures: number;
+    lastFailureTime: number | null;
+    stats: AccountStats;
+    source: "oauth";
+}
+
+interface StorageShape {
+    version: number;
+    activeIndex: number;
+    accounts: StoredAccount[];
+}
+
+interface StoredAccountInput {
+    id: string;
+    email: string;
+    refreshToken: string;
+    accessToken: string;
+    now: number;
+}
+
+interface OAuthAuthorizeResult {
+    url: string;
+    callback: (value: string) => Promise<{ type: string } | undefined>;
+}
+
+interface PluginAuthMethod {
+    authorize?: () => Promise<OAuthAuthorizeResult>;
+}
+
+interface PluginInstance {
+    auth?: {
+        methods?: PluginAuthMethod[];
+    };
+    dispose?: () => Promise<void> | void;
+}
+
+interface PluginClient {
+    auth: {
+        set: () => Promise<void>;
+    };
+    session: {
+        prompt: () => Promise<void>;
+    };
+    tui: {
+        showToast: () => Promise<void>;
+    };
+}
+
+interface TokenServerHandle {
+    rotationCounters: Map<string, number>;
+    start: () => Promise<number>;
+    stop: () => Promise<void>;
+}
+
+interface FetchPreconnectOptions {
+    dns?: boolean;
+    tcp?: boolean;
+    http?: boolean;
+    https?: boolean;
+}
+
+interface FetchType {
+    (input: string | URL | Request, init?: RequestInit): Promise<Response>;
+    preconnect: (url: string | URL, options?: FetchPreconnectOptions) => void;
+}
+
+function createStats(now: number): AccountStats {
     return {
         requests: 0,
         inputTokens: 0,
@@ -19,7 +113,7 @@ function createStats(now) {
     };
 }
 
-function createStoredAccount({ id, email, refreshToken, accessToken, now }) {
+function createStoredAccount({ id, email, refreshToken, accessToken, now }: StoredAccountInput): StoredAccount {
     return {
         id,
         email,
@@ -29,7 +123,7 @@ function createStoredAccount({ id, email, refreshToken, accessToken, now }) {
         },
         refreshToken,
         access: accessToken,
-        expires: now - 60_000,
+        expires: now - EXPIRED_TOKEN_OFFSET_MS,
         token_updated_at: now,
         addedAt: now,
         lastUsed: 0,
@@ -42,45 +136,50 @@ function createStoredAccount({ id, email, refreshToken, accessToken, now }) {
     };
 }
 
-async function ensureDir(dirPath) {
+async function ensureDir(dirPath: string): Promise<void> {
     await fs.mkdir(dirPath, { recursive: true });
 }
 
-async function readJson(filePath) {
-    return JSON.parse(await fs.readFile(filePath, "utf8"));
+async function readJson(filePath: string): Promise<StorageShape> {
+    return JSON.parse(await fs.readFile(filePath, "utf8")) as StorageShape;
 }
 
-async function writeJson(filePath, value) {
+async function writeJson(filePath: string, value: StorageShape | Record<string, unknown>): Promise<void> {
     await ensureDir(path.dirname(filePath));
     await fs.writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
 }
 
-function createTokenServer() {
-    const refreshTokenToEmail = new Map([
+function createTokenServer(): TokenServerHandle {
+    const refreshTokenToEmail = new Map<string, string>([
         ["refresh-a-0", "a@test.local"],
         ["refresh-b-0", "b@test.local"],
     ]);
-    const rotationCounters = new Map();
+    const rotationCounters = new Map<string, number>();
 
-    const server = http.createServer(async (request, response) => {
+    const server: Server = http.createServer(async (request, response) => {
         if (request.method !== "POST" || request.url !== "/v1/oauth/token") {
             response.writeHead(404, { "content-type": "application/json" });
             response.end(JSON.stringify({ error: "not_found" }));
             return;
         }
 
-        const chunks = [];
+        const chunks: Buffer[] = [];
         for await (const chunk of request) {
             chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
         }
 
-        const payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-        let email;
+        const payload = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
+            grant_type?: string;
+            code?: string;
+            refresh_token?: string;
+        };
+
+        let email = "";
 
         if (payload.grant_type === "authorization_code") {
             email = typeof payload.code === "string" ? payload.code : "";
         } else if (payload.grant_type === "refresh_token") {
-            email = refreshTokenToEmail.get(payload.refresh_token) ?? "";
+            email = typeof payload.refresh_token === "string" ? (refreshTokenToEmail.get(payload.refresh_token) ?? "") : "";
         } else {
             response.writeHead(400, { "content-type": "application/json" });
             response.end(JSON.stringify({ error: "unsupported_grant_type" }));
@@ -117,10 +216,10 @@ function createTokenServer() {
 
     return {
         rotationCounters,
-        async start() {
-            await new Promise((resolve, reject) => {
+        async start(): Promise<number> {
+            await new Promise<void>((resolve, reject) => {
                 server.once("error", reject);
-                server.listen(0, "127.0.0.1", resolve);
+                server.listen(0, "127.0.0.1", () => resolve());
             });
             const address = server.address();
             if (!address || typeof address === "string") {
@@ -128,8 +227,8 @@ function createTokenServer() {
             }
             return address.port;
         },
-        async stop() {
-            await new Promise((resolve, reject) => {
+        async stop(): Promise<void> {
+            await new Promise<void>((resolve, reject) => {
                 server.close((error) => {
                     if (error) {
                         reject(error);
@@ -142,35 +241,48 @@ function createTokenServer() {
     };
 }
 
-function createClient() {
+function createClient(): PluginClient {
     return {
         auth: {
-            set: async () => undefined,
+            set: async (): Promise<void> => undefined,
         },
         session: {
-            prompt: async () => undefined,
+            prompt: async (): Promise<void> => undefined,
         },
         tui: {
-            showToast: async () => undefined,
+            showToast: async (): Promise<void> => undefined,
         },
     };
 }
 
-async function run() {
+async function loadPluginFactory(): Promise<(options: { client: PluginClient }) => Promise<PluginInstance>> {
+    const moduleUrl = pathToFileURL(path.join(process.cwd(), "dist", "opencode-anthropic-auth-plugin.mjs")).href;
+    const pluginModule = (await import(moduleUrl)) as {
+        AnthropicAuthPlugin?: (options: { client: PluginClient }) => Promise<PluginInstance>;
+    };
+
+    if (typeof pluginModule.AnthropicAuthPlugin !== "function") {
+        throw new Error("AnthropicAuthPlugin export is unavailable in the built plugin.");
+    }
+
+    return pluginModule.AnthropicAuthPlugin;
+}
+
+async function run(): Promise<void> {
     const requestedAccountsFile = process.env.ANTHROPIC_ACCOUNTS_FILE || DEFAULT_ACCOUNTS_FILE;
     const configHome = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-rotation-"));
     const opencodeConfigDir = path.join(configHome, "opencode");
     const storagePath = path.join(opencodeConfigDir, "anthropic-accounts.json");
     const configPath = path.join(opencodeConfigDir, "anthropic-auth.json");
     const tokenServer = createTokenServer();
-    const originalFetch = globalThis.fetch;
+    const originalFetch = globalThis.fetch as FetchType;
     const originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
     const originalInitialAccount = process.env.OPENCODE_ANTHROPIC_INITIAL_ACCOUNT;
 
     process.env.XDG_CONFIG_HOME = configHome;
 
     const now = Date.now();
-    const initialStorage = {
+    const initialStorage: StorageShape = {
         version: 1,
         activeIndex: 0,
         accounts: [
@@ -209,7 +321,10 @@ async function run() {
 
     const tokenPort = await tokenServer.start();
 
-    globalThis.fetch = (input, init = {}) => {
+    const interceptedFetchImpl = async (
+        input: Parameters<FetchType>[0],
+        init?: Parameters<FetchType>[1],
+    ) => {
         const url = typeof input === "string" || input instanceof URL ? new URL(input.toString()) : new URL(input.url);
 
         if (url.hostname === "platform.claude.com" && url.pathname === "/v1/oauth/token") {
@@ -219,16 +334,21 @@ async function run() {
         throw new Error(`Unexpected network request: ${url.toString()}`);
     };
 
-    const { AnthropicAuthPlugin } = await import(
-        pathToFileURL(path.join(process.cwd(), "dist", "opencode-anthropic-auth-plugin.js")).href
-    );
+    const interceptedFetch: FetchType = Object.assign(interceptedFetchImpl, {
+        preconnect: originalFetch.preconnect,
+    });
+
+    globalThis.fetch = interceptedFetch;
+
+    const createPlugin = await loadPluginFactory();
 
     try {
-        for (const [index, email] of ["a@test.local", "b@test.local"].entries()) {
+        const expectedEmails = ["a@test.local", "b@test.local"] as const;
+        for (const [index, email] of expectedEmails.entries()) {
             process.env.OPENCODE_ANTHROPIC_INITIAL_ACCOUNT = String(index + 1);
 
-            for (let iteration = 0; iteration < 10; iteration += 1) {
-                const plugin = await AnthropicAuthPlugin({ client: createClient() });
+            for (let iteration = 0; iteration < OAUTH_ITERATIONS_PER_ACCOUNT; iteration += 1) {
+                const plugin = await createPlugin({ client: createClient() });
                 const method = plugin.auth?.methods?.[1];
                 if (!method || typeof method.authorize !== "function") {
                     throw new Error("OAuth auth method is unavailable in the built plugin.");
@@ -278,7 +398,7 @@ async function run() {
     }
 }
 
-run().catch((error) => {
+run().catch((error: unknown) => {
     console.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
     process.exit(1);
 });
