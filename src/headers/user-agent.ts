@@ -1,7 +1,7 @@
 import { CLAUDE_CODE_NPM_LATEST_URL } from "../constants.js";
 
 export function getClaudeEntrypoint(): string {
-    return process.env.CLAUDE_CODE_ENTRYPOINT || "cli";
+    return process.env.CLAUDE_CODE_ENTRYPOINT || "sdk-cli";
 }
 
 export function buildUserAgent(claudeCliVersion: string): string {

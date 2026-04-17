@@ -38,7 +38,7 @@ export function buildAnthropicBillingHeader(claudeCliVersion: string, messages: 
         }
     }
 
-    const entrypoint = process.env.CLAUDE_CODE_ENTRYPOINT ?? "cli";
+    const entrypoint = process.env.CLAUDE_CODE_ENTRYPOINT ?? "sdk-cli";
 
     return `x-anthropic-billing-header: cc_version=${claudeCliVersion}${versionSuffix}; cc_entrypoint=${entrypoint}; cch=${CCH_PLACEHOLDER};`;
 }

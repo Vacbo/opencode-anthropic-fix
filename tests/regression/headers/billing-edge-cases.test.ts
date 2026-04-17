@@ -26,11 +26,11 @@ describe("buildAnthropicBillingHeader cc_entrypoint nullish coalescing", () => {
         }
     });
 
-    it("defaults to 'cli' when CLAUDE_CODE_ENTRYPOINT is unset", () => {
+    it("defaults to 'sdk-cli' when CLAUDE_CODE_ENTRYPOINT is unset", () => {
         delete process.env.CLAUDE_CODE_ENTRYPOINT;
         delete process.env.CLAUDE_CODE_ATTRIBUTION_HEADER;
         const header = buildAnthropicBillingHeader("2.1.107", [{ role: "user", content: "hello" }]);
-        expect(header).toContain("cc_entrypoint=cli");
+        expect(header).toContain("cc_entrypoint=sdk-cli");
     });
 
     it("uses explicit value when CLAUDE_CODE_ENTRYPOINT is set to non-empty string", () => {
@@ -41,12 +41,12 @@ describe("buildAnthropicBillingHeader cc_entrypoint nullish coalescing", () => {
     });
 
     it("preserves empty string when CLAUDE_CODE_ENTRYPOINT is set to '' (?? not ||)", () => {
-        // With logical OR (||), empty string would fall through to "cli".
+        // With logical OR (||), empty string would fall through to "sdk-cli".
         // With nullish coalescing (??), empty string is kept as-is.
         process.env.CLAUDE_CODE_ENTRYPOINT = "";
         delete process.env.CLAUDE_CODE_ATTRIBUTION_HEADER;
         const header = buildAnthropicBillingHeader("2.1.107", [{ role: "user", content: "hello" }]);
-        expect(header).not.toContain("cc_entrypoint=cli");
+        expect(header).not.toContain("cc_entrypoint=sdk-cli");
     });
 });
 

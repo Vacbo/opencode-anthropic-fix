@@ -1,5 +1,5 @@
 /**
- * Side-by-side comparison: plugin output vs expected CC 2.1.107 values.
+ * Side-by-side comparison: plugin output vs the current fallback Claude Code fingerprint.
  * Run: npx vitest run tests/regression/fingerprint/cc-comparison.test.ts
  */
 import { describe, expect, it } from "vitest";
@@ -7,11 +7,12 @@ import { buildAnthropicBetaHeader } from "../../../src/betas.js";
 import { CLAUDE_CODE_IDENTITY_STRING, FALLBACK_CLAUDE_CLI_VERSION } from "../../../src/constants.js";
 import { buildAnthropicBillingHeader } from "../../../src/headers/billing.js";
 import { buildRequestHeaders } from "../../../src/headers/builder.js";
+import { getRequestProfile } from "../../../src/request/profile-resolver.js";
 import { buildUserAgent } from "../../../src/headers/user-agent.js";
 import { buildSystemPromptBlocks } from "../../../src/system-prompt/builder.js";
 
-describe("CC 2.1.107 — Full request fingerprint comparison", () => {
-    const CC_VERSION = "2.1.107";
+describe("fallback Claude Code fingerprint — full request comparison", () => {
+    const CC_VERSION = FALLBACK_CLAUDE_CLI_VERSION;
     const signature = {
         enabled: true,
         claudeCliVersion: CC_VERSION,
@@ -23,7 +24,7 @@ describe("CC 2.1.107 — Full request fingerprint comparison", () => {
     it("prints the exact fingerprint the plugin would send", () => {
         // Simulate env
         process.env.CLAUDE_CODE_ATTRIBUTION_HEADER = "true";
-        process.env.CLAUDE_CODE_ENTRYPOINT = "cli";
+        process.env.CLAUDE_CODE_ENTRYPOINT = "sdk-cli";
 
         const ua = buildUserAgent(CC_VERSION);
         const billing = buildAnthropicBillingHeader(CC_VERSION, messages);
@@ -54,10 +55,10 @@ describe("CC 2.1.107 — Full request fingerprint comparison", () => {
             console.log(`║   [${b.cache_control ? JSON.stringify(b.cache_control) : "no-cache"}] ${preview}`);
         }
         console.log("╠══════════════════════════════════════════════════════════╣");
-        console.log("║  EXPECTED CC 2.1.107 VALUES (from source code)           ║");
+        console.log("║  EXPECTED FALLBACK VALUES (from source code)             ║");
         console.log("╠══════════════════════════════════════════════════════════╣");
-        console.log(`║ CLI version:     2.1.107`);
-        console.log(`║ User-Agent:      claude-cli/2.1.107 (external, cli)`);
+        console.log(`║ CLI version:     ${CC_VERSION}`);
+        console.log(`║ User-Agent:      claude-cli/${CC_VERSION} (external, sdk-cli)`);
         console.log(`║ SDK version:     0.81.0 (x-stainless-package-version)`);
         console.log(`║ Axios version:   1.13.6 (token endpoint UA)`);
         console.log(`║ anthropic-ver:   2023-06-01`);
@@ -69,11 +70,10 @@ describe("CC 2.1.107 — Full request fingerprint comparison", () => {
         console.log("╚══════════════════════════════════════════════════════════╝");
 
         // Assertions
-        expect(FALLBACK_CLAUDE_CLI_VERSION).toBe("2.1.107");
-        expect(ua).toBe("claude-cli/2.1.107 (external, cli)");
+        expect(ua).toBe(`claude-cli/${CC_VERSION} (external, sdk-cli)`);
         expect(billing).toMatch(/cch=[0-9a-f]{5};/);
-        expect(billing).toContain("cc_entrypoint=cli;");
-        expect(billing).toMatch(/cc_version=2\.1\.107\.[0-9a-f]{3}/);
+        expect(billing).toContain("cc_entrypoint=sdk-cli;");
+        expect(billing).toMatch(new RegExp(`cc_version=${CC_VERSION.replace(/\./g, "\\.")}\\.[0-9a-f]{3}`));
         expect(betas.split(",")).toContain("oauth-2025-04-20");
         expect(betas.split(",")).not.toContain("managed-agents-2026-04-01");
         expect(CLAUDE_CODE_IDENTITY_STRING).toBe("You are Claude Code, Anthropic's official CLI for Claude.");
@@ -83,7 +83,8 @@ describe("CC 2.1.107 — Full request fingerprint comparison", () => {
     });
 
     it("builds full request headers matching CC", () => {
-        process.env.CLAUDE_CODE_ENTRYPOINT = "cli";
+        process.env.CLAUDE_CODE_ENTRYPOINT = "sdk-cli";
+        const runtimeProfile = getRequestProfile({ version: signature.claudeCliVersion, forceRefresh: true });
 
         const headers = buildRequestHeaders(
             "https://api.anthropic.com/v1/messages",
@@ -103,21 +104,70 @@ describe("CC 2.1.107 — Full request fingerprint comparison", () => {
         });
         console.log("╚══════════════════════════════════════════════════════════╝");
 
-        expect(headers.get("user-agent")).toBe("claude-cli/2.1.107 (external, cli)");
+        expect(headers.get("user-agent")).toBe(buildUserAgent(runtimeProfile.billing.ccVersion.value));
+        expect(headers.get("accept")).toBe("application/json");
         expect(headers.get("anthropic-version")).toBe("2023-06-01");
         expect(headers.get("x-app")).toBe("cli");
         expect(headers.get("x-stainless-lang")).toBe("js");
         expect(headers.get("x-stainless-runtime")).toBe("node");
+        expect(headers.get("x-stainless-runtime-version")).toBe(process.version);
         expect(headers.get("x-stainless-package-version")).toBe("0.81.0");
         expect(headers.get("x-stainless-timeout")).toBe("600");
         expect(headers.get("anthropic-dangerous-direct-browser-access")).toBe("true");
         const betaHeader = headers.get("anthropic-beta") ?? "";
-        expect(betaHeader).toContain("oauth-2025-04-20");
         expect(betaHeader).toContain("interleaved-thinking-2025-05-14");
         expect(betaHeader).toContain("context-management-2025-06-27");
         expect(betaHeader).toContain("prompt-caching-scope-2026-01-05");
         expect(betaHeader).not.toContain("advisor-tool-2026-03-01");
         expect(betaHeader).not.toContain("managed-agents-2026-04-01");
+        expect(betaHeader).toContain("oauth-2025-04-20");
         expect(headers.get("x-claude-code-session-id")).toBe("session-123");
+        expect(headers.get("x-session-affinity")).toBeNull();
+    });
+
+    it("ignores incoming anthropic-beta headers in signature mode", () => {
+        const headers = buildRequestHeaders(
+            "https://api.anthropic.com/v1/messages",
+            { headers: { "anthropic-beta": "structured-outputs-2025-11-13,my-custom-beta" } },
+            "test-access-token",
+            JSON.stringify({ model: "claude-haiku-4-5", messages }),
+            new URL("https://api.anthropic.com/v1/messages"),
+            signature,
+        );
+
+        const betaHeader = headers.get("anthropic-beta") ?? "";
+        expect(betaHeader).not.toContain("structured-outputs-2025-11-13");
+        expect(betaHeader).not.toContain("my-custom-beta");
+        expect(betaHeader).toContain("oauth-2025-04-20");
+    });
+
+    it("does not infer Files API usage from plain text that merely mentions user:file_upload", () => {
+        const headers = buildRequestHeaders(
+            "https://api.anthropic.com/v1/messages",
+            { headers: {} },
+            "test-access-token",
+            JSON.stringify({
+                model: "claude-haiku-4-5",
+                messages: [{ role: "user", content: "Explain the OAuth scope user:file_upload without using the Files API." }],
+            }),
+            new URL("https://api.anthropic.com/v1/messages"),
+            signature,
+        );
+
+        expect(headers.get("anthropic-beta") ?? "").not.toContain("files-api-2025-04-14");
+    });
+
+    it("overrides incoming accept and strips session affinity in signature mode", () => {
+        const headers = buildRequestHeaders(
+            "https://api.anthropic.com/v1/messages",
+            { headers: { accept: "*/*", "x-session-affinity": "ses_test_affinity" } },
+            "test-access-token",
+            JSON.stringify({ model: "claude-haiku-4-5", messages }),
+            new URL("https://api.anthropic.com/v1/messages"),
+            signature,
+        );
+
+        expect(headers.get("accept")).toBe("application/json");
+        expect(headers.get("x-session-affinity")).toBeNull();
     });
 });
