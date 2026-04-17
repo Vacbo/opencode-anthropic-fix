@@ -13,14 +13,43 @@ export const FAST_MODE_BETA_FLAG = "fast-mode-2026-02-01";
 export const TASK_BUDGETS_BETA_FLAG = "task-budgets-2026-03-13";
 export const TOKEN_EFFICIENT_TOOLS_BETA_FLAG = "token-efficient-tools-2026-03-28";
 export const TOKEN_COUNTING_BETA_FLAG = "token-counting-2024-11-01";
-// Source: .sisyphus/evidence/phase-1-claim-validation/2026-04-17/ (captured CC 2.1.112).
-export const CLAUDE_CODE_IDENTITY_STRING = "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
+// Three identity strings used by CC 2.1.112-2.1.113. Selection logic mirrors the
+// decompiled zN_() function from the Bun-compiled CC 2.1.113 binary — see
+// .sisyphus/evidence/phase-1-claim-validation/2026-04-17/.
+export const INTERACTIVE_CLAUDE_CODE_IDENTITY = "You are Claude Code, Anthropic's official CLI for Claude.";
+export const NON_INTERACTIVE_CLAUDE_AGENT_IDENTITY = "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
+export const NON_INTERACTIVE_CLAUDE_CODE_AGENT_SDK_IDENTITY =
+    "You are Claude Code, Anthropic's official CLI for Claude, running within the Claude Agent SDK.";
+
+export const CLAUDE_CODE_IDENTITY_STRING = INTERACTIVE_CLAUDE_CODE_IDENTITY;
 
 export const KNOWN_IDENTITY_STRINGS = new Set([
-    CLAUDE_CODE_IDENTITY_STRING,
-    "You are Claude Code, Anthropic's official CLI for Claude.",
-    "You are Claude Code, Anthropic's official CLI for Claude, running within the Claude Agent SDK.",
+    INTERACTIVE_CLAUDE_CODE_IDENTITY,
+    NON_INTERACTIVE_CLAUDE_AGENT_IDENTITY,
+    NON_INTERACTIVE_CLAUDE_CODE_AGENT_SDK_IDENTITY,
 ]);
+
+export interface IdentitySelectionContext {
+    provider?: string;
+    hasAppendSystemPrompt?: boolean;
+}
+
+export function selectClaudeCodeIdentity(context: IdentitySelectionContext): string {
+    if (context.provider === "vertex") return INTERACTIVE_CLAUDE_CODE_IDENTITY;
+
+    const nonInteractive =
+        (process.env.CI !== undefined &&
+            process.env.CI !== "" &&
+            process.env.CI !== "0" &&
+            process.env.CI !== "false") ||
+        !process.stdout.isTTY;
+
+    if (nonInteractive) {
+        if (context.hasAppendSystemPrompt) return NON_INTERACTIVE_CLAUDE_CODE_AGENT_SDK_IDENTITY;
+        return NON_INTERACTIVE_CLAUDE_AGENT_IDENTITY;
+    }
+    return INTERACTIVE_CLAUDE_CODE_IDENTITY;
+}
 
 export const BEDROCK_UNSUPPORTED_BETAS = new Set([
     "interleaved-thinking-2025-05-14",

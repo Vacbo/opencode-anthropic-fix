@@ -64,8 +64,9 @@ describe("fallback Claude Code fingerprint — full request comparison", () => {
         console.log(`║ anthropic-ver:   2023-06-01`);
         console.log(`║ x-app:           cli`);
         console.log(`║ cch:             00000 placeholder → xxHash64(serialized body, seed 0x6E52736AC806831E)`);
-        console.log(`║ Identity:        You are a Claude agent, built on Anthropic's Claude Agent SDK.`);
-        console.log(`║ Identity cache:  {"type":"ephemeral","scope":"global","ttl":"1h"}`);
+        console.log(`║ Identity (interactive): You are Claude Code, Anthropic's official CLI for Claude.`);
+        console.log(`║ Identity (non-interactive): You are a Claude agent, built on Anthropic's Claude Agent SDK.`);
+        console.log(`║ Identity cache:  {"type":"ephemeral","ttl":"1h"}`);
         console.log(`║ Client ID:       9d1c250a-e61b-44d9-88ed-5944d1962f5e`);
         console.log("╚══════════════════════════════════════════════════════════╝");
 
@@ -76,9 +77,11 @@ describe("fallback Claude Code fingerprint — full request comparison", () => {
         expect(billing).toMatch(new RegExp(`cc_version=${CC_VERSION.replace(/\./g, "\\.")}\\.[0-9a-f]{3}`));
         expect(betas.split(",")).toContain("oauth-2025-04-20");
         expect(betas.split(",")).not.toContain("managed-agents-2026-04-01");
-        expect(CLAUDE_CODE_IDENTITY_STRING).toBe("You are a Claude agent, built on Anthropic's Claude Agent SDK.");
+        expect(CLAUDE_CODE_IDENTITY_STRING).toBe("You are Claude Code, Anthropic's official CLI for Claude.");
 
-        const identityBlock = blocks.find((b) => b.text === CLAUDE_CODE_IDENTITY_STRING);
+        // buildSystemPromptBlocks picks the identity based on TTY/CI detection.
+        // In vitest (non-TTY) this will be the Doq non-interactive variant.
+        const identityBlock = blocks.find((b) => b.text?.startsWith("You are"));
         expect(identityBlock?.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
     });
 

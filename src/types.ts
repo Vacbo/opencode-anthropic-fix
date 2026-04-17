@@ -40,6 +40,8 @@ export interface SignatureConfig {
     sanitizeSystemPrompt?: boolean;
     strategy?: AccountSelectionStrategy;
     customBetas?: string[];
+    provider?: string;
+    hasAppendSystemPrompt?: boolean;
 }
 
 export interface RuntimeContext {

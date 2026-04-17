@@ -10,7 +10,7 @@ import type { CommandDeps } from "./commands/router.js";
 import { ANTHROPIC_COMMAND_HANDLED, handleAnthropicSlashCommand } from "./commands/router.js";
 import type { AnthropicAuthConfig } from "./config.js";
 import { loadConfig } from "./config.js";
-import { CLAUDE_CODE_IDENTITY_STRING, FALLBACK_CLAUDE_CLI_VERSION } from "./constants.js";
+import { FALLBACK_CLAUDE_CLI_VERSION, selectClaudeCodeIdentity } from "./constants.js";
 import { getOrCreateSignatureUserId, isTruthyEnv } from "./env.js";
 import { fetchLatestClaudeCodeVersion } from "./headers/user-agent.js";
 import { hasOneMillionContext, isOpus46Model } from "./models.js";
@@ -226,7 +226,7 @@ export async function AnthropicAuthPlugin({ client }: { client: OpenCodeClient }
 
         "experimental.chat.system.transform": (input: OpenCodeTransformInput, output: OpenCodeTransformOutput) => {
             sessionScopeTracker.observeHookInput(input);
-            const prefix = CLAUDE_CODE_IDENTITY_STRING;
+            const prefix = selectClaudeCodeIdentity({ provider: input.model?.providerID });
             if (!signatureEmulationEnabled && input.model?.providerID === "anthropic") {
                 output.system.unshift(prefix);
                 if (output.system[1]) output.system[1] = prefix + "\n\n" + output.system[1];

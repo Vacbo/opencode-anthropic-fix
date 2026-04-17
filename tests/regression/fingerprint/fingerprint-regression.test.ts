@@ -479,24 +479,24 @@ describe("fallback Claude Code fingerprint — Beta header composition (signatur
 // System prompt identity block
 // ---------------------------------------------------------------------------
 describe("fallback Claude Code fingerprint — System prompt identity string", () => {
-    it("CLAUDE_CODE_IDENTITY_STRING matches live CC 2.1.112 capture (2026-04-17)", () => {
-        expect(CLAUDE_CODE_IDENTITY_STRING).toBe("You are a Claude agent, built on Anthropic's Claude Agent SDK.");
+    it("CLAUDE_CODE_IDENTITY_STRING is the interactive-mode default (matches CC 2.1.113 zN_() default branch)", () => {
+        expect(CLAUDE_CODE_IDENTITY_STRING).toBe("You are Claude Code, Anthropic's official CLI for Claude.");
     });
 
-    it("identity string is the Claude Agent SDK phrasing, not the legacy Claude Code CLI phrasing", () => {
-        expect(CLAUDE_CODE_IDENTITY_STRING).not.toContain("official CLI for Claude");
+    it("KNOWN_IDENTITY_STRINGS contains all three CC identity variants", () => {
+        expect(CLAUDE_CODE_IDENTITY_STRING).toContain("Claude Code");
     });
 });
 
 describe("fallback Claude Code fingerprint — Identity block cache TTL", () => {
-    it("identity block has cache_control with type 'ephemeral' and ttl '1h' (matches CC 2.1.112 capture 2026-04-17)", () => {
+    it("identity block has cache_control with type 'ephemeral' and ttl '1h' (matches CC 2.1.112+ capture 2026-04-17)", () => {
         const blocks = buildSystemPromptBlocks(
             [],
             { enabled: true, claudeCliVersion: "2.1.112", promptCompactionMode: "minimal" },
             [],
         );
 
-        const identityBlock = blocks.find((b) => b.text === CLAUDE_CODE_IDENTITY_STRING);
+        const identityBlock = blocks.find((b) => b.text && b.text.startsWith("You are"));
         expect(identityBlock).toBeDefined();
         expect(identityBlock!.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
     });

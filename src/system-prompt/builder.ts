@@ -1,7 +1,7 @@
 import {
-    CLAUDE_CODE_IDENTITY_STRING,
     COMPACT_TITLE_GENERATOR_SYSTEM_PROMPT,
     KNOWN_IDENTITY_STRINGS,
+    selectClaudeCodeIdentity,
 } from "../constants.js";
 import { buildAnthropicBillingHeader } from "../headers/billing.js";
 import type { SignatureConfig, SystemBlock } from "../types.js";
@@ -43,9 +43,13 @@ export function buildSystemPromptBlocks(
         blocks.push({ type: "text", text: billingHeader });
     }
 
+    const identityText = selectClaudeCodeIdentity({
+        provider: signature.provider,
+        hasAppendSystemPrompt: signature.hasAppendSystemPrompt,
+    });
     blocks.push({
         type: "text",
-        text: CLAUDE_CODE_IDENTITY_STRING,
+        text: identityText,
         cache_control: { type: "ephemeral", ttl: "1h" },
     });
     blocks.push(...filtered);
