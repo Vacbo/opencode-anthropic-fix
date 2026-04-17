@@ -1,6 +1,6 @@
 {
     "schemaVersion": "1.0.0",
-    "lastUpdated": "2026-04-17T18:52:30.399Z",
+    "lastUpdated": "2026-04-17T20:10:12.888Z",
     "versions": [
         {
             "version": "2.1.109",
@@ -16,7 +16,12 @@
             "version": "2.1.112",
             "path": "2.1.112.json",
             "createdAt": "2026-04-17T18:52:30.399Z"
+        },
+        {
+            "version": "2.1.113",
+            "path": "2.1.113.json",
+            "createdAt": "2026-04-17T20:10:12.888Z"
         }
     ],
-    "latest": "2.1.112"
+    "latest": "2.1.113"
 }
