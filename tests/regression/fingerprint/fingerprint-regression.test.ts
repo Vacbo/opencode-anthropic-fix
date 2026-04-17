@@ -27,7 +27,7 @@ import { buildAnthropicBillingHeader } from "../../../src/headers/billing.js";
 import { isAdaptiveThinkingModel, isSonnet46Model } from "../../../src/models.js";
 import { getStainlessArch, getStainlessOs } from "../../../src/headers/stainless.js";
 import { buildUserAgent } from "../../../src/headers/user-agent.js";
-import { normalizeThinkingBlock } from "../../../src/thinking.js";
+import { normalizeThinkingBlock, normalizeThinkingConfig } from "../../../src/thinking.js";
 import { transformRequestBody } from "../../../src/request/body.js";
 import { getRequestProfile } from "../../../src/request/profile-resolver.js";
 import { buildSystemPromptBlocks } from "../../../src/system-prompt/builder.js";
@@ -665,14 +665,20 @@ describe("Sonnet 4.6 — Beta header includes effort-2025-11-24", () => {
 });
 
 describe("Sonnet 4.6 — Thinking block normalization", () => {
-    it("normalizes budget_tokens to effort for Sonnet 4.6", () => {
-        const result = normalizeThinkingBlock({ type: "enabled", budget_tokens: 8000 }, "claude-sonnet-4-6");
-        expect(result).toEqual({ type: "enabled", effort: "medium" });
+    it("normalizes budget_tokens to adaptive thinking + output_config for Sonnet 4.6", () => {
+        const result = normalizeThinkingConfig({ type: "enabled", budget_tokens: 8000 }, undefined, "claude-sonnet-4-6");
+        expect(result).toEqual({
+            thinking: { type: "adaptive" },
+            outputConfig: { effort: "medium" },
+        });
     });
 
     it("preserves existing effort for Sonnet 4.6", () => {
-        const result = normalizeThinkingBlock({ type: "enabled", effort: "high" }, "claude-sonnet-4-6");
-        expect(result).toEqual({ type: "enabled", effort: "high" });
+        const result = normalizeThinkingConfig({ type: "enabled", effort: "high" }, undefined, "claude-sonnet-4-6");
+        expect(result).toEqual({
+            thinking: { type: "adaptive" },
+            outputConfig: { effort: "high" },
+        });
     });
 
     it("passes through thinking block unchanged for non-adaptive models", () => {
@@ -682,23 +688,46 @@ describe("Sonnet 4.6 — Thinking block normalization", () => {
     });
 
     it("maps low budget_tokens to low effort for Sonnet 4.6", () => {
-        const result = normalizeThinkingBlock({ type: "enabled", budget_tokens: 500 }, "claude-sonnet-4-6");
-        expect(result).toEqual({ type: "enabled", effort: "low" });
+        const result = normalizeThinkingConfig({ type: "enabled", budget_tokens: 500 }, undefined, "claude-sonnet-4-6");
+        expect(result).toEqual({
+            thinking: { type: "adaptive" },
+            outputConfig: { effort: "low" },
+        });
     });
 
     it("maps high budget_tokens to high effort for Sonnet 4.6", () => {
-        const result = normalizeThinkingBlock({ type: "enabled", budget_tokens: 20000 }, "claude-sonnet-4-6");
-        expect(result).toEqual({ type: "enabled", effort: "high" });
+        const result = normalizeThinkingConfig({ type: "enabled", budget_tokens: 20000 }, undefined, "claude-sonnet-4-6");
+        expect(result).toEqual({
+            thinking: { type: "adaptive" },
+            outputConfig: { effort: "high" },
+        });
     });
 
-    it("normalizes budget_tokens to effort for Opus 4.7", () => {
-        const result = normalizeThinkingBlock({ type: "enabled", budget_tokens: 8000 }, "claude-opus-4-7");
-        expect(result).toEqual({ type: "enabled", effort: "medium" });
+    it("normalizes budget_tokens to adaptive thinking + output_config for Opus 4.7", () => {
+        const result = normalizeThinkingConfig({ type: "enabled", budget_tokens: 8000 }, undefined, "claude-opus-4-7");
+        expect(result).toEqual({
+            thinking: { type: "adaptive" },
+            outputConfig: { effort: "medium" },
+        });
     });
 
-    it("normalizes budget_tokens to effort for Sonnet 4.7", () => {
-        const result = normalizeThinkingBlock({ type: "enabled", budget_tokens: 20000 }, "claude-sonnet-4-7");
-        expect(result).toEqual({ type: "enabled", effort: "high" });
+    it("preserves xhigh and max effort tiers for adaptive models", () => {
+        const xhigh = normalizeThinkingConfig({ type: "enabled", effort: "xhigh" }, undefined, "claude-opus-4-7");
+        const max = normalizeThinkingConfig({ type: "adaptive" }, { effort: "max" }, "claude-opus-4-7");
+
+        expect(xhigh).toEqual({
+            thinking: { type: "adaptive" },
+            outputConfig: { effort: "xhigh" },
+        });
+        expect(max).toEqual({
+            thinking: { type: "adaptive" },
+            outputConfig: { effort: "max" },
+        });
+    });
+
+    it("normalizeThinkingBlock returns adaptive type for adaptive models", () => {
+        const result = normalizeThinkingBlock({ type: "enabled", budget_tokens: 8000 }, "claude-sonnet-4-7");
+        expect(result).toEqual({ type: "adaptive" });
     });
 });
 
@@ -752,7 +781,8 @@ describe("Speed parameter passthrough", () => {
         const result = transformRequestBody(body, mockSignature, mockRuntime);
         const parsed = JSON.parse(result!);
         expect(parsed.speed).toBe("fast");
-        expect(parsed.thinking).toEqual({ type: "enabled", effort: "high" });
+        expect(parsed.thinking).toEqual({ type: "adaptive" });
+        expect(parsed.output_config).toMatchObject({ effort: "high" });
         expect(parsed.system).toBeDefined();
     });
 });

@@ -3443,7 +3443,7 @@ describe("header handling", () => {
         expect(betaHeader).not.toContain("interleaved-thinking-2025-05-14");
     });
 
-    it("transforms budget_tokens thinking to effort for Opus 4.6", async () => {
+    it("transforms budget_tokens thinking to adaptive shape for Opus 4.6", async () => {
         mockFetch.mockResolvedValueOnce(new Response("", { status: 200 }));
 
         await fetchFn("https://api.anthropic.com/v1/messages", {
@@ -3458,8 +3458,8 @@ describe("header handling", () => {
 
         const [, init] = mockFetch.mock.calls[0];
         const parsed = JSON.parse(init.body);
-        expect(parsed.thinking).toEqual({ type: "enabled", effort: "high" });
-        expect(parsed.thinking.budget_tokens).toBeUndefined();
+        expect(parsed.thinking).toEqual({ type: "adaptive" });
+        expect(parsed.output_config.effort).toBe("high");
     });
 
     it("maps budget_tokens to effort levels correctly for Opus 4.6", async () => {
@@ -3491,8 +3491,8 @@ describe("header handling", () => {
 
             const [, init] = mockFetch.mock.calls[0];
             const parsed = JSON.parse(init.body);
-            expect(parsed.thinking.effort).toBe(expectedEffort);
-            expect(parsed.thinking.budget_tokens).toBeUndefined();
+            expect(parsed.thinking).toEqual({ type: "adaptive" });
+            expect(parsed.output_config.effort).toBe(expectedEffort);
         }
     });
 
@@ -3511,7 +3511,8 @@ describe("header handling", () => {
 
         const [, init] = mockFetch.mock.calls[0];
         const parsed = JSON.parse(init.body);
-        expect(parsed.thinking).toEqual({ type: "enabled", effort: "medium" });
+        expect(parsed.thinking).toEqual({ type: "adaptive" });
+        expect(parsed.output_config.effort).toBe("medium");
     });
 
     it("keeps effort if already provided for Opus 4.6", async () => {
@@ -3529,7 +3530,8 @@ describe("header handling", () => {
 
         const [, init] = mockFetch.mock.calls[0];
         const parsed = JSON.parse(init.body);
-        expect(parsed.thinking).toEqual({ type: "enabled", effort: "low" });
+        expect(parsed.thinking).toEqual({ type: "adaptive" });
+        expect(parsed.output_config.effort).toBe("low");
     });
 
     it("passes thinking through unchanged for older models (budget_tokens preserved)", async () => {

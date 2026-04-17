@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildAnthropicBetaHeader } from "../../../src/betas.js";
+import { getRequestProfile } from "../../../src/request/profile-resolver.js";
 import {
     DEFAULT_SIGNATURE_PROFILE_ID,
     listSignatureProfiles,
@@ -59,6 +60,44 @@ describe("signature profiles", () => {
         expect(betas).toBe(
             "oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05",
         );
+    });
+
+    it("adds the selected 2.1.109 first-party optional betas for Opus /v1/messages while filtering unrelated inventory", () => {
+        const requestProfile = getRequestProfile({ version: "2.1.109", forceRefresh: true });
+        const betas = buildAnthropicBetaHeader(
+            "",
+            true,
+            "claude-opus-4-6",
+            "anthropic",
+            undefined,
+            undefined,
+            "/v1/messages",
+            false,
+            resolveSignatureProfile(DEFAULT_SIGNATURE_PROFILE_ID),
+            false,
+            "2.1.109",
+            requestProfile,
+        ).split(",");
+
+        expect(betas).toEqual([
+            "claude-code-20250219",
+            "oauth-2025-04-20",
+            "context-1m-2025-08-07",
+            "interleaved-thinking-2025-05-14",
+            "context-management-2025-06-27",
+            "prompt-caching-scope-2026-01-05",
+            "advisor-tool-2026-03-01",
+            "advanced-tool-use-2025-11-20",
+            "effort-2025-11-24",
+        ]);
+        expect(betas).not.toContain("vertex-2023-10-16");
+        expect(betas).not.toContain("ccr-triggers-2026-01-30");
+        expect(betas).not.toContain("environments-2025-11-01");
+        expect(betas).not.toContain("ccr-byoc-2025-07-29");
+        expect(betas).not.toContain("task-budgets-2026-03-13");
+        expect(betas).not.toContain("afk-mode-2026-01-31");
+        expect(betas).not.toContain("bedrock-2023-05-31");
+        expect(betas).not.toContain("mcp-servers-2025-12-04");
     });
 
     it("adds the regex Tool Search beta only when deferred tools are present on non-Haiku models", () => {

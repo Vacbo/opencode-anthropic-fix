@@ -5,7 +5,7 @@
 import type { AccountSelectionStrategy } from "./config.js";
 import type { SignatureProfile } from "./profiles/index.js";
 
-export type ThinkingEffort = "low" | "medium" | "high";
+export type ThinkingEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
 export type Provider = "anthropic" | "bedrock" | "vertex" | "foundry";
 

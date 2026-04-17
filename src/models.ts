@@ -41,11 +41,15 @@ export function isSonnet46Model(model: string): boolean {
 }
 
 /**
- * Detects models that use adaptive thinking (effort parameter).
- * Covers Opus 4.6, Opus 4.7, Sonnet 4.6, Sonnet 4.7, and any other
- * model covered by `isOpus46Model` / `isSonnet46Model`.
+ * Detects models whose Messages API thinking block uses `effort` instead of
+ * `budget_tokens`.
+ *
+ * Real Claude Code Proxyman captures show adaptive thinking for both 4.6 and
+ * 4.7 Sonnet/Opus families. The wire shape is `thinking: { type: "adaptive" }`
+ * plus `output_config.effort`.
  */
 export function isAdaptiveThinkingModel(model: string): boolean {
+    if (!model) return false;
     return isOpus46Model(model) || isSonnet46Model(model);
 }
 

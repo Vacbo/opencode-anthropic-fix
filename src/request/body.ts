@@ -8,7 +8,7 @@ import { isAdaptiveThinkingModel, isHaikuModel } from "../models.js";
 import { getRequestProfile } from "./profile-resolver.js";
 import { buildSystemPromptBlocks } from "../system-prompt/builder.js";
 import { normalizeSystemTextBlocks } from "../system-prompt/normalize.js";
-import { normalizeThinkingBlock } from "../thinking.js";
+import { normalizeThinkingConfig } from "../thinking.js";
 import { detectLegacyDoublePrefix, toWireToolName } from "../tools/wire-names.js";
 import type { RuntimeContext, SignatureConfig } from "../types.js";
 import { buildRequestMetadata } from "./metadata.js";
@@ -383,12 +383,21 @@ export function transformRequestBody(
         }
 
         if (Object.hasOwn(parsed, "thinking")) {
-            parsed.thinking = normalizeThinkingBlock(parsed.thinking as unknown, parsed.model || "");
+            const normalizedThinking = normalizeThinkingConfig(
+                parsed.thinking as unknown,
+                parsed.output_config,
+                parsed.model || "",
+            );
+            parsed.thinking = normalizedThinking.thinking;
+            if (normalizedThinking.outputConfig) {
+                parsed.output_config = normalizedThinking.outputConfig;
+            }
         }
         const hasThinking =
             parsed.thinking &&
             typeof parsed.thinking === "object" &&
-            (parsed.thinking as { type?: string }).type === "enabled";
+            ((parsed.thinking as { type?: string }).type === "enabled" ||
+                (parsed.thinking as { type?: string }).type === "adaptive");
         if (hasThinking) {
             delete parsed.temperature;
         }

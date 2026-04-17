@@ -24,18 +24,18 @@ export const TOOL_SEARCH_SIGNATURE_PROFILE_ID = "cc-2.1.107-live-tool-search-202
 const TOOL_SEARCH_REGEX_BETA = "tool_search_tool_regex_20251119";
 
 // Two-profile model:
-// - Default stays strict 2.1.107 live parity with no Tool Search beta/config drift.
+// - Default stays strict live parity with no Tool Search beta/config drift.
 // - Tool Search is an explicit opt-in profile that enables deferred tool loading and
 //   the matching regex beta for supported non-Haiku requests.
 const DEFAULT_SIGNATURE_PROFILE: SignatureProfile = {
     id: DEFAULT_SIGNATURE_PROFILE_ID,
-    name: "Claude Code 2.1.107 live default",
-    description: "Matches the current live 2.1.107 OAuth fingerprint with no extra betas enabled.",
+    name: "Claude Code live default",
+    description: "Matches the current live OAuth fingerprint with no extra betas enabled.",
 };
 
 const TOOL_SEARCH_SIGNATURE_PROFILE: SignatureProfile = {
     id: TOOL_SEARCH_SIGNATURE_PROFILE_ID,
-    name: "Claude Code 2.1.107 tool-search",
+    name: "Claude Code tool-search",
     description:
         "Opt-in profile that enables Anthropic Tool Search request shaping with deferred tool loading on supported non-Haiku models.",
     toolConfig: {

@@ -389,6 +389,43 @@ describe("transformRequestBody - structure preservation", () => {
 });
 
 describe("transformRequestBody - verified body shaping", () => {
+    it("rewrites adaptive-thinking models to thinking.type=adaptive with output_config.effort", () => {
+        const body = JSON.stringify({
+            model: "claude-opus-4-7",
+            messages: [{ role: "user", content: "hi" }],
+            thinking: { type: "enabled", budget_tokens: 8000 },
+        });
+
+        const result = transformRequestBody(body, mockSignature, mockRuntime);
+        const parsed = JSON.parse(result!);
+
+        expect(parsed.thinking).toEqual({ type: "adaptive" });
+        expect(parsed.output_config).toEqual({ effort: "medium" });
+        expect(parsed.context_management).toEqual({
+            edits: [{ type: "clear_thinking_20251015", keep: "all" }],
+        });
+        expect(Object.prototype.hasOwnProperty.call(parsed, "temperature")).toBe(false);
+    });
+
+    it("preserves existing output_config fields while injecting adaptive effort", () => {
+        const body = JSON.stringify({
+            model: "claude-sonnet-4-7",
+            messages: [{ role: "user", content: "hi" }],
+            thinking: { type: "enabled", effort: "max" },
+            output_config: { format: { type: "json_schema" }, existing: true },
+        });
+
+        const result = transformRequestBody(body, mockSignature, mockRuntime);
+        const parsed = JSON.parse(result!);
+
+        expect(parsed.thinking).toEqual({ type: "adaptive" });
+        expect(parsed.output_config).toEqual({
+            format: { type: "json_schema" },
+            existing: true,
+            effort: "max",
+        });
+    });
+
     it("forces Claude title generation requests to stream with 32000 max tokens", () => {
         const body = JSON.stringify({
             model: "claude-haiku-4-5-20251001",
