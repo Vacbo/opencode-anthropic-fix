@@ -46,6 +46,8 @@ interface ParsedArgs {
     proxyHost: string;
     proxyPort?: number;
     commandTimeoutMs: number;
+    promptFile?: string;
+    model?: string;
     help: boolean;
 }
 
@@ -113,16 +115,21 @@ Options:
   --proxy-port <port>             Fixed proxy port (defaults to an ephemeral port)
   --command-timeout-ms <ms>       Kill OG/plugin commands that exceed this duration
                                   Default: 120000
+  --prompt-file <path>            Override scenario.prompt with the file contents.
+                                  Required for scenarios whose prompts exceed the JSON file (e.g. long-context).
+  --model <id>                    Pin a model ID for both OG and plugin commands.
+                                  Substitutes {model} in templates; auto-appends \`--model <id>\` to templates without the placeholder.
+                                  Examples: claude-haiku-4-5-20251001, claude-sonnet-4-6, claude-opus-4-7
   --help                          Show this help message
 
 Template placeholders:
   {prompt}                        Shell-escaped scenario prompt
+  {model}                         Model ID from --model (unquoted; rely on CLIs to handle spaces)
 
 Examples:
-  bun scripts/verification/run-live-verification.ts --version 2.1.109 --scenario minimal-hi
-  bun scripts/verification/run-live-verification.ts --version 2.1.109 --scenario minimal-hi,append-system-prompt
-  bun scripts/verification/run-live-verification.ts --version 2.1.109 \
-      --plugin-command-template 'opencode run {prompt}'
+  bun scripts/verification/run-live-verification.ts --version 2.1.112 --scenario minimal-hi --model claude-haiku-4-5-20251001
+  bun scripts/verification/run-live-verification.ts --version 2.1.112 --scenario long-context \\
+      --model claude-sonnet-4-6 --prompt-file /tmp/long-ctx.txt
 `);
 }
 
@@ -139,6 +146,8 @@ export function parseArgs(args: string[]): ParsedArgs {
     let proxyHost = DEFAULT_PROXY_HOST;
     let proxyPort: number | undefined;
     let commandTimeoutMs = 120_000;
+    let promptFile: string | undefined;
+    let model: string | undefined;
     let help = false;
     const scenarioIds: string[] = [];
 
@@ -217,6 +226,18 @@ export function parseArgs(args: string[]): ParsedArgs {
             index += 1;
             continue;
         }
+        if (arg === "--prompt-file" && index + 1 < args.length) {
+            const raw = args[index + 1]?.trim() ?? "";
+            promptFile = raw ? resolve(raw) : undefined;
+            index += 1;
+            continue;
+        }
+        if (arg === "--model" && index + 1 < args.length) {
+            const raw = args[index + 1]?.trim() ?? "";
+            model = raw || undefined;
+            index += 1;
+            continue;
+        }
     }
 
     if (!help && !version.trim()) {
@@ -237,6 +258,8 @@ export function parseArgs(args: string[]): ParsedArgs {
         proxyHost,
         proxyPort,
         commandTimeoutMs,
+        promptFile,
+        model,
         help,
     };
 }
@@ -302,8 +325,38 @@ function shellQuote(value: string): string {
     return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
-function renderCommand(template: string, prompt: string): string {
-    return template.split("{prompt}").join(shellQuote(prompt));
+export interface RenderCommandOptions {
+    prompt: string;
+    model?: string;
+    autoAppendModel?: boolean;
+}
+
+export function renderCommand(template: string, options: RenderCommandOptions): string {
+    let rendered = template.split("{prompt}").join(shellQuote(options.prompt));
+    if (options.model !== undefined) {
+        rendered = rendered.split("{model}").join(options.model);
+    }
+    if (options.autoAppendModel && options.model !== undefined && !template.includes("{model}")) {
+        rendered = `${rendered} --model ${options.model}`;
+    }
+    return rendered;
+}
+
+export interface ResolveScenarioPromptOptions {
+    promptFile?: string;
+}
+
+export function resolveScenarioPrompt(scenario: ScenarioDefinition, options: ResolveScenarioPromptOptions): string {
+    if (!options.promptFile) {
+        return scenario.prompt;
+    }
+    try {
+        return readFileSync(options.promptFile, "utf8");
+    } catch (err) {
+        throw new Error(
+            `Failed to read prompt file ${options.promptFile}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+    }
 }
 
 function parseJson(value: string): unknown {
@@ -320,13 +373,15 @@ export function normalizeStoredCapture(input: unknown): CaptureRecord {
     }
 
     const record = input as Record<string, unknown>;
-    const headersSource = record.headers && typeof record.headers === "object" ? (record.headers as Record<string, unknown>) : {};
+    const headersSource =
+        record.headers && typeof record.headers === "object" ? (record.headers as Record<string, unknown>) : {};
     const headers = Object.fromEntries(
         Object.entries(headersSource)
             .filter(([, value]) => typeof value === "string")
             .map(([key, value]) => [key.toLowerCase(), value as string]),
     );
-    const bodyText = typeof record.bodyText === "string" ? record.bodyText : typeof record.body === "string" ? record.body : "";
+    const bodyText =
+        typeof record.bodyText === "string" ? record.bodyText : typeof record.body === "string" ? record.body : "";
     const method = typeof record.method === "string" ? record.method : "POST";
     const path = typeof record.path === "string" ? record.path : "/";
     const url = typeof record.url === "string" ? record.url : `https://${String(record.host ?? "")}${path}`;
@@ -909,8 +964,13 @@ async function runCommand(
     env: NodeJS.ProcessEnv,
     progress?: { current: number; total: number; label: string },
     timeoutMs = 120_000,
+    renderOptions: { model?: string; autoAppendModel?: boolean } = {},
 ): Promise<CommandResult> {
-    const renderedCommand = renderCommand(template, prompt);
+    const renderedCommand = renderCommand(template, {
+        prompt,
+        model: renderOptions.model,
+        autoAppendModel: renderOptions.autoAppendModel ?? false,
+    });
 
     return await new Promise<CommandResult>((resolveCommand, rejectCommand) => {
         const child = spawn("bash", ["-lc", renderedCommand], {
@@ -1032,21 +1092,38 @@ async function runScenario(
     delete commandEnv.ALL_PROXY;
     delete commandEnv.all_proxy;
 
+    const effectivePrompt = resolveScenarioPrompt(scenario, { promptFile: args.promptFile });
+    const renderOptions = { model: args.model, autoAppendModel: true };
+
     try {
-        await runCommand(args.ogCommandTemplate, scenario.prompt, commandEnv, {
-            ...progress,
-            label: `${scenario.id}: OG capture`,
-        }, args.commandTimeoutMs);
+        await runCommand(
+            args.ogCommandTemplate,
+            effectivePrompt,
+            commandEnv,
+            {
+                ...progress,
+                label: `${scenario.id}: OG capture`,
+            },
+            args.commandTimeoutMs,
+            renderOptions,
+        );
         const ogCapture = selectCaptureForScenario(proxy.captures.slice(baseCaptureCount), scenario);
         if (!ogCapture) {
             throw new Error(`OG command did not produce a capture for ${scenario.id}`);
         }
 
         const captureCountAfterOg = proxy.captures.length;
-        await runCommand(args.pluginCommandTemplate, scenario.prompt, commandEnv, {
-            ...progress,
-            label: `${scenario.id}: plugin capture`,
-        }, args.commandTimeoutMs);
+        await runCommand(
+            args.pluginCommandTemplate,
+            effectivePrompt,
+            commandEnv,
+            {
+                ...progress,
+                label: `${scenario.id}: plugin capture`,
+            },
+            args.commandTimeoutMs,
+            renderOptions,
+        );
         const pluginCapture = selectCaptureForScenario(proxy.captures.slice(captureCountAfterOg), scenario);
         if (!pluginCapture) {
             throw new Error(`Plugin command did not produce a capture for ${scenario.id}`);
@@ -1072,7 +1149,11 @@ async function runScenario(
     }
 }
 
-function runOfflineScenario(scenario: ScenarioDefinition, ogCapture: CaptureRecord, pluginCapture: CaptureRecord): ScenarioResult {
+function runOfflineScenario(
+    scenario: ScenarioDefinition,
+    ogCapture: CaptureRecord,
+    pluginCapture: CaptureRecord,
+): ScenarioResult {
     const fieldResults = compareScenarioFields(scenario, ogCapture, pluginCapture);
     return {
         scenarioId: scenario.id,
@@ -1157,7 +1238,9 @@ async function main(): Promise<void> {
     }
 
     const verifiedAt = new Date().toISOString();
-    const offlineOgCapture = args.ogCapturePath ? normalizeStoredCapture(readJsonFile<unknown>(args.ogCapturePath)) : null;
+    const offlineOgCapture = args.ogCapturePath
+        ? normalizeStoredCapture(readJsonFile<unknown>(args.ogCapturePath))
+        : null;
     const offlinePluginCapture = args.pluginCapturePath
         ? normalizeStoredCapture(readJsonFile<unknown>(args.pluginCapturePath))
         : null;
@@ -1166,7 +1249,10 @@ async function main(): Promise<void> {
         throw new Error("--og-capture and --plugin-capture must be provided together");
     }
 
-    const proxy = offlineOgCapture && offlinePluginCapture ? null : await startCaptureProxy({ host: args.proxyHost, port: args.proxyPort });
+    const proxy =
+        offlineOgCapture && offlinePluginCapture
+            ? null
+            : await startCaptureProxy({ host: args.proxyHost, port: args.proxyPort });
 
     try {
         const scenarioResults: ScenarioResult[] = [];
@@ -1175,7 +1261,9 @@ async function main(): Promise<void> {
                 scenarioResults.push(runOfflineScenario(scenario, offlineOgCapture, offlinePluginCapture));
                 continue;
             }
-            scenarioResults.push(await runScenario(proxy!, scenario, args, { current: index + 1, total: scenarios.length }));
+            scenarioResults.push(
+                await runScenario(proxy!, scenario, args, { current: index + 1, total: scenarios.length }),
+            );
         }
 
         const report: VerificationReport = {

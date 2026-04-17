@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
     compareScenarioFields,
@@ -6,6 +10,8 @@ import {
     formatProgressLine,
     normalizeStoredCapture,
     parseArgs,
+    renderCommand,
+    resolveScenarioPrompt,
     sanitizeCapture,
     type CaptureRecord,
     type ScenarioDefinition,
@@ -189,5 +195,132 @@ describe("run-live-verification", () => {
         expect(capture.headers["x-app"]).toBe("cli");
         expect(capture.headers["content-type"]).toBe("application/json");
         expect((capture.parsedBody as Record<string, unknown>).stream).toBe(true);
+    });
+});
+
+describe("parseArgs --prompt-file and --model flags", () => {
+    it("parses --prompt-file and resolves the path", () => {
+        const args = parseArgs([
+            "--version",
+            "2.1.112",
+            "--scenario",
+            "long-context",
+            "--prompt-file",
+            "/tmp/long-ctx.txt",
+        ]);
+        expect(args.promptFile).toBe("/tmp/long-ctx.txt");
+    });
+
+    it("leaves promptFile undefined when the flag is absent", () => {
+        const args = parseArgs(["--version", "2.1.112", "--scenario", "minimal-hi"]);
+        expect(args.promptFile).toBeUndefined();
+    });
+
+    it("parses --model and keeps the exact string", () => {
+        const args = parseArgs([
+            "--version",
+            "2.1.112",
+            "--scenario",
+            "minimal-hi",
+            "--model",
+            "claude-haiku-4-5-20251001",
+        ]);
+        expect(args.model).toBe("claude-haiku-4-5-20251001");
+    });
+
+    it("leaves model undefined when the flag is absent", () => {
+        const args = parseArgs(["--version", "2.1.112", "--scenario", "minimal-hi"]);
+        expect(args.model).toBeUndefined();
+    });
+});
+
+describe("resolveScenarioPrompt", () => {
+    let tempDir: string;
+
+    beforeEach(() => {
+        tempDir = mkdtempSync(join(tmpdir(), "resolve-prompt-"));
+    });
+
+    afterEach(() => {
+        rmSync(tempDir, { recursive: true, force: true });
+    });
+
+    it("returns the scenario prompt when no promptFile is supplied", () => {
+        const scenario: ScenarioDefinition = {
+            id: "x",
+            name: "Test",
+            description: "Test scenario",
+            prompt: "hello world",
+            expectedBehavior: "",
+            requiredFields: [],
+        };
+        expect(resolveScenarioPrompt(scenario, {})).toBe("hello world");
+    });
+
+    it("overrides the scenario prompt with the file contents when promptFile is supplied", () => {
+        const promptPath = join(tempDir, "p.txt");
+        writeFileSync(promptPath, "FROM FILE\n");
+        const scenario: ScenarioDefinition = {
+            id: "x",
+            name: "Test",
+            description: "Test scenario",
+            prompt: "PLACEHOLDER",
+            expectedBehavior: "",
+            requiredFields: [],
+        };
+        expect(resolveScenarioPrompt(scenario, { promptFile: promptPath })).toBe("FROM FILE\n");
+    });
+
+    it("throws when promptFile is supplied but does not exist", () => {
+        const scenario: ScenarioDefinition = {
+            id: "x",
+            name: "Test",
+            description: "Test scenario",
+            prompt: "PLACEHOLDER",
+            expectedBehavior: "",
+            requiredFields: [],
+        };
+        expect(() => resolveScenarioPrompt(scenario, { promptFile: join(tempDir, "missing.txt") })).toThrow(
+            /prompt file/i,
+        );
+    });
+});
+
+describe("renderCommand with {model} placeholder", () => {
+    it("substitutes {prompt} only when no model is supplied", () => {
+        const cmd = renderCommand("claude --bare --print {prompt}", { prompt: "hi" });
+        expect(cmd).toContain("claude --bare --print 'hi'");
+        expect(cmd).not.toContain("{prompt}");
+    });
+
+    it("substitutes {model} when the placeholder is present and model is supplied", () => {
+        const cmd = renderCommand("claude --bare --print {prompt} --model {model}", {
+            prompt: "hi",
+            model: "claude-sonnet-4-6",
+        });
+        expect(cmd).toContain("--model claude-sonnet-4-6");
+        expect(cmd).toContain("'hi'");
+    });
+
+    it("leaves {model} placeholder unresolved if model is missing (operator typo)", () => {
+        const cmd = renderCommand("claude --bare --print {prompt} --model {model}", { prompt: "hi" });
+        expect(cmd).toContain("{model}");
+    });
+
+    it("appends --model automatically when model is provided but template omits {model}", () => {
+        const cmd = renderCommand("claude --bare --print {prompt}", {
+            prompt: "hi",
+            model: "claude-opus-4-7",
+            autoAppendModel: true,
+        });
+        expect(cmd).toContain("--model claude-opus-4-7");
+    });
+
+    it("does not auto-append when autoAppendModel is false (default)", () => {
+        const cmd = renderCommand("claude --bare --print {prompt}", {
+            prompt: "hi",
+            model: "claude-opus-4-7",
+        });
+        expect(cmd).not.toContain("--model");
     });
 });
