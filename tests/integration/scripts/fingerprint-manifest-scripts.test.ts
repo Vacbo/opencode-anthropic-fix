@@ -240,6 +240,51 @@ function createCandidateManifest(overrides?: Partial<CandidateManifest>): Candid
 }
 
 describe("fingerprint manifest scripts", () => {
+    it("build-candidate-manifest accepts a raw cli.js input and extracts the fingerprint automatically", () => {
+        const tempDir = createTempDir("fingerprint-manifest-cli-input-");
+        const cliPath = join(tempDir, "cli-2.1.109.js");
+        const outputDir = join(tempDir, "candidate-manifests");
+
+        writeFileSync(
+            cliPath,
+            [
+                'const CLIENT_ID="9d1c250a-e61b-44d9-88ed-5944d1962f5e";',
+                'const UA="claude-cli/2.1.109 (external, cli)";',
+                'const SDK="0.81.0";',
+                'const BETA="oauth-2025-04-20";',
+                'const BILLING="cch=00000";',
+                'const OAUTH="/v1/oauth/token";',
+                'const AUTH="/oauth/authorize";',
+                'const PLATFORM="https://platform.claude.com";',
+                'const CLAUDE_AI="https://claude.ai";',
+                'const SCOPE="user:inference";',
+                'const STAINLESS="x-stainless-runtime";',
+                'const PKCE="code_challenge_method";',
+                'const METHOD="S256";',
+                'const VERIFIER="code_verifier";',
+                'const CHALLENGE="code_challenge";',
+            ].join("\n"),
+            "utf8",
+        );
+
+        const stdout = runBunScript(buildManifestScriptPath, [
+            cliPath,
+            "--version",
+            "2.1.109",
+            "--output",
+            outputDir,
+        ]);
+
+        const result = JSON.parse(stdout) as { manifestPath: string; indexPath: string; version: string };
+        const manifest = readJson<CandidateManifest>(join(outputDir, "2.1.109.json"));
+
+        expect(result.version).toBe("2.1.109");
+        expect(result.manifestPath).toBe(join(outputDir, "2.1.109.json"));
+        expect(manifest.source.npmPackage).toBe("@anthropic-ai/claude-code");
+        expect(manifest.headers.userAgent.value).toContain("claude-cli/2.1.109");
+        expect(manifest.betas.requiredBaseBetas.value).toContain("oauth-2025-04-20");
+    });
+
     it("build-candidate-manifest writes a versioned manifest and updates the index", () => {
         const tempDir = createTempDir("fingerprint-manifest-build-");
         const fingerprintPath = join(tempDir, "fingerprint.json");

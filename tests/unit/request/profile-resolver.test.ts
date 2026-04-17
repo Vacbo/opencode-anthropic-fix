@@ -35,7 +35,7 @@ describe("request/profile-resolver", () => {
         expect(profile.transport.defaultHeaders.value["content-type"]).toBe("application/json");
     });
 
-    it("keeps manifest-provided runtime values when a candidate exists", () => {
+    it("keeps low-risk manifest-provided runtime values while blocking sensitive candidate headers", () => {
         const candidate = createCandidateManifest("2.1.108");
         candidate.headers.xStainlessHeaders.value["x-manifest-header"] = "enabled";
         candidate.metadata.deviceLinkage.value = "candidate-device-linkage";
@@ -47,8 +47,22 @@ describe("request/profile-resolver", () => {
         expect(profile.manifestSource).toBe("candidate");
         expect(profile.billing.ccVersion.value).toBe("2.1.108");
         expect(profile.headers.userAgent.value).toBe(buildUserAgent("2.1.108"));
-        expect(profile.headers.xStainlessHeaders.value["x-manifest-header"]).toBe("enabled");
+        expect(profile.headers.xStainlessHeaders.value["x-manifest-header"]).toBeUndefined();
         expect(profile.metadata.deviceLinkage.value).toBe("candidate-device-linkage");
+    });
+
+    it("preserves the caller-requested CLI version for runtime identity even when only an older manifest exists", () => {
+        const candidate = createCandidateManifest("2.1.109");
+
+        writeCandidateManifest(manifestRoot, candidate);
+        writeManifestIndex(manifestRoot, "candidate", ["2.1.109"]);
+
+        const profile = resolver.refreshProfile({ version: "2.1.110" });
+
+        expect(profile.manifestSource).toBe("candidate");
+        expect(profile.version).toBe("2.1.110");
+        expect(profile.billing.ccVersion.value).toBe("2.1.110");
+        expect(profile.headers.userAgent.value).toBe(buildUserAgent("2.1.110"));
     });
 
     it("refreshes cached runtime profiles when manifests change", () => {
