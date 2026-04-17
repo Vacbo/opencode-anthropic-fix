@@ -16,6 +16,8 @@ export interface AccountStats {
 
 export interface AccountMetadata {
     id: string;
+    accountUuid?: string;
+    organizationUuid?: string;
     email?: string;
     identity?: AccountIdentity;
     label?: string;
@@ -143,6 +145,8 @@ function validateAccount(raw: unknown, now: number): AccountMetadata | null {
 
     return {
         id,
+        accountUuid: typeof acc.accountUuid === "string" ? acc.accountUuid : undefined,
+        organizationUuid: typeof acc.organizationUuid === "string" ? acc.organizationUuid : undefined,
         email: typeof acc.email === "string" ? acc.email : undefined,
         identity: isAccountIdentity(acc.identity) ? acc.identity : undefined,
         label: typeof acc.label === "string" ? acc.label : undefined,

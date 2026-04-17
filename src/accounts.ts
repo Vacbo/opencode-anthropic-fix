@@ -23,6 +23,8 @@ import { createDefaultStats, loadAccounts, saveAccounts } from "./storage.js";
 
 export interface ManagedAccount {
     id: string;
+    accountUuid?: string;
+    organizationUuid?: string;
     index: number;
     email?: string;
     identity?: AccountIdentity;
@@ -113,7 +115,7 @@ export class AccountManager {
             manager.#currentIndex = loaded.currentIndex;
 
             if (authFallback && manager.#accounts.length > 0) {
-                mergeAuthFallbackIntoAccounts(manager.#accounts, authFallback);
+                mergeAuthFallbackIntoAccounts(manager.#accounts, authFallback, manager.#currentIndex);
             }
 
             // No stored accounts — bootstrap from fallback if available
@@ -169,21 +171,25 @@ export class AccountManager {
                 }
 
                 if (existingMatch) {
-                    existingMatch.refreshToken = ccCredential.refreshToken;
                     existingMatch.identity = ccIdentity;
                     existingMatch.source = ccCredential.source;
                     existingMatch.label = ccCredential.label;
                     existingMatch.enabled = true;
-                    if (ccCredential.accessToken) {
+
+                    const localAuthRecency = Math.max(existingMatch.tokenUpdatedAt || 0, existingMatch.expires || 0);
+                    const ccAuthRecency = ccCredential.expiresAt || 0;
+                    const shouldAdoptCcAuth =
+                        !existingMatch.access ||
+                        !existingMatch.expires ||
+                        ccAuthRecency >= localAuthRecency ||
+                        existingMatch.refreshToken === ccCredential.refreshToken;
+
+                    if (shouldAdoptCcAuth) {
+                        existingMatch.refreshToken = ccCredential.refreshToken;
                         existingMatch.access = ccCredential.accessToken;
-                    }
-                    if (ccCredential.expiresAt >= (existingMatch.expires ?? 0)) {
                         existingMatch.expires = ccCredential.expiresAt;
+                        existingMatch.tokenUpdatedAt = Math.max(existingMatch.tokenUpdatedAt || 0, ccCredential.expiresAt || 0);
                     }
-                    existingMatch.tokenUpdatedAt = Math.max(
-                        existingMatch.tokenUpdatedAt || 0,
-                        ccCredential.expiresAt || 0,
-                    );
                     continue;
                 }
 
@@ -254,6 +260,14 @@ export class AccountManager {
      */
     getAccountsSnapshot(): ManagedAccount[] {
         return this.#accounts.map((acc) => ({ ...acc }));
+    }
+
+    /**
+     * Get live managed-account references for CLI/admin flows that may mutate
+     * token state and then persist it back to disk.
+     */
+    getManagedAccounts(): ManagedAccount[] {
+        return this.#accounts;
     }
 
     /**

@@ -196,7 +196,13 @@ describe("createBootstrapAccountFromFallback", () => {
 describe("prepareStorageForSave", () => {
     it("converts managed accounts back to storage format", () => {
         const accounts = [
-            makeManagedAccount({ id: "a1", email: "a@b.com", refreshToken: "tok-a" }),
+            makeManagedAccount({
+                id: "a1",
+                email: "a@b.com",
+                refreshToken: "tok-a",
+                accountUuid: "account-uuid-123",
+                organizationUuid: "org-uuid-456",
+            }),
             makeManagedAccount({ id: "a2", email: "c@d.com", refreshToken: "tok-b", index: 1 }),
         ];
 
@@ -210,6 +216,8 @@ describe("prepareStorageForSave", () => {
         expect(result.storage.version).toBe(1);
         expect(result.storage.accounts).toHaveLength(2);
         expect(result.storage.accounts[0].id).toBe("a1");
+        expect(result.storage.accounts[0].accountUuid).toBe("account-uuid-123");
+        expect(result.storage.accounts[0].organizationUuid).toBe("org-uuid-456");
         expect(result.storage.accounts[1].id).toBe("a2");
         expect(result.storage.activeIndex).toBe(0);
     });

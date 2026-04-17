@@ -167,20 +167,36 @@ function readCredentialForAccount(account: ManagedAccount, preferredLabel?: stri
     return selectCCCredential(account, keychainCredentials, preferredLabel);
 }
 
+function applyCCCredential(account: ManagedAccount, credential: CCCredential): string {
+    account.access = credential.accessToken;
+    account.refreshToken = credential.refreshToken;
+    account.expires = credential.expiresAt;
+    markTokenStateUpdated(account);
+    return credential.accessToken;
+}
+
+function useCurrentAccountAccessIfStillValid(account: ManagedAccount): string | null {
+    if (!account.access || !account.expires || account.expires <= Date.now()) {
+        return null;
+    }
+    markTokenStateUpdated(account);
+    return account.access;
+}
+
 async function refreshCCAccount(account: ManagedAccount): Promise<string | null> {
     const initialCredential: CCCredential | null = readCredentialForAccount(account);
-    if (!initialCredential) return null;
+    if (!initialCredential) {
+        return useCurrentAccountAccessIfStillValid(account);
+    }
 
     if (hasFreshExpiry(initialCredential)) {
-        account.access = initialCredential.accessToken;
-        account.refreshToken = initialCredential.refreshToken;
-        account.expires = initialCredential.expiresAt;
-        markTokenStateUpdated(account);
-        return initialCredential.accessToken;
+        return applyCCCredential(account, initialCredential);
     }
 
     const claudePath = claudeBinaryPath();
-    if (!claudePath) return null;
+    if (!claudePath) {
+        return initialCredential.expiresAt > Date.now() ? applyCCCredential(account, initialCredential) : null;
+    }
 
     try {
         execSync(`${claudePath} -p . --model haiku`, {
@@ -188,17 +204,15 @@ async function refreshCCAccount(account: ManagedAccount): Promise<string | null>
             timeout: 60000,
         });
     } catch {
-        return null;
+        return initialCredential.expiresAt > Date.now() ? applyCCCredential(account, initialCredential) : null;
     }
 
     const refreshedCredential = readCredentialForAccount(account, initialCredential.label);
-    if (!isFreshCCCredential(refreshedCredential)) return null;
+    if (!isFreshCCCredential(refreshedCredential)) {
+        return initialCredential.expiresAt > Date.now() ? applyCCCredential(account, initialCredential) : null;
+    }
 
-    account.access = refreshedCredential.accessToken;
-    account.refreshToken = refreshedCredential.refreshToken;
-    account.expires = refreshedCredential.expiresAt;
-    markTokenStateUpdated(account);
-    return refreshedCredential.accessToken;
+    return applyCCCredential(account, refreshedCredential);
 }
 
 /**
@@ -283,7 +297,10 @@ export async function refreshAccountToken(
                     });
                 return accessToken;
             }
-            throw new Error("CC credential refresh failed");
+            debugLog?.("CC credential refresh did not yield a fresh token; falling back to OAuth refresh", {
+                accountIndex: account.index,
+                source: account.source,
+            });
         }
 
         const json = await refreshToken(account.refreshToken, {

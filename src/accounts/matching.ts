@@ -6,6 +6,8 @@ type ManagedAccountSource = ManagedAccount["source"];
 
 type ManagedAccountInit = {
     id?: string;
+    accountUuid?: string;
+    organizationUuid?: string;
     index: number;
     email?: string;
     identity?: AccountIdentity;
@@ -75,6 +77,8 @@ export function createManagedAccount(init: ManagedAccountInit): ManagedAccount {
 
     return {
         id: init.id ?? `${addedAt}:${init.refreshToken.slice(0, 12)}`,
+        accountUuid: init.accountUuid,
+        organizationUuid: init.organizationUuid,
         index: init.index,
         email,
         identity,
@@ -141,6 +145,8 @@ export function updateManagedAccountFromStorage(
     const email = account.email ?? existing.email;
 
     existing.id = account.id || existing.id || `${account.addedAt}:${account.refreshToken.slice(0, 12)}`;
+    existing.accountUuid = account.accountUuid ?? existing.accountUuid;
+    existing.organizationUuid = account.organizationUuid ?? existing.organizationUuid;
     existing.index = index;
     existing.email = email;
     existing.label = label;

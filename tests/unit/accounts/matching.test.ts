@@ -126,6 +126,8 @@ describe("createManagedAccount", () => {
         const now = 1000;
         const account = createManagedAccount({
             id: "custom-id",
+            accountUuid: "account-uuid-123",
+            organizationUuid: "org-uuid-456",
             index: 2,
             email: "test@example.com",
             refreshToken: "tok",
@@ -139,6 +141,8 @@ describe("createManagedAccount", () => {
         });
 
         expect(account.id).toBe("custom-id");
+        expect(account.accountUuid).toBe("account-uuid-123");
+        expect(account.organizationUuid).toBe("org-uuid-456");
         expect(account.index).toBe(2);
         expect(account.email).toBe("test@example.com");
         expect(account.access).toBe("access-tok");
@@ -171,6 +175,31 @@ describe("createManagedAccount", () => {
         expect(account.source).toBe("cc-keychain");
         expect(account.label).toBe("my-cc-label");
         expect(account.identity?.kind).toBe("cc");
+    });
+
+    it("updates account uuid fields from storage", () => {
+        const existing = createManagedAccount({ index: 0, refreshToken: "tok" });
+        updateManagedAccountFromStorage(
+            existing,
+            {
+                id: existing.id,
+                accountUuid: "account-uuid-123",
+                organizationUuid: "org-uuid-456",
+                refreshToken: existing.refreshToken,
+                token_updated_at: existing.tokenUpdatedAt,
+                addedAt: existing.addedAt,
+                lastUsed: existing.lastUsed,
+                enabled: existing.enabled,
+                rateLimitResetTimes: {},
+                consecutiveFailures: 0,
+                lastFailureTime: null,
+                stats: existing.stats,
+            },
+            0,
+        );
+
+        expect(existing.accountUuid).toBe("account-uuid-123");
+        expect(existing.organizationUuid).toBe("org-uuid-456");
     });
 });
 

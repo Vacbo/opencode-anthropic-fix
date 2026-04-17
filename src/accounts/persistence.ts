@@ -52,6 +52,8 @@ export function loadManagedAccountsFromStorage(stored: AccountStorage): {
         createManagedAccount({
             id: account.id || `${account.addedAt}:${account.refreshToken.slice(0, 12)}`,
             index,
+            accountUuid: account.accountUuid,
+            organizationUuid: account.organizationUuid,
             email: account.email,
             identity: account.identity,
             label: account.label,
@@ -77,7 +79,11 @@ export function loadManagedAccountsFromStorage(stored: AccountStorage): {
     };
 }
 
-export function mergeAuthFallbackIntoAccounts(accounts: ManagedAccount[], authFallback: AuthFallback): void {
+export function mergeAuthFallbackIntoAccounts(
+    accounts: ManagedAccount[],
+    authFallback: AuthFallback,
+    preferredIndex = -1,
+): void {
     if (accounts.length === 0) {
         return;
     }
@@ -86,26 +92,34 @@ export function mergeAuthFallbackIntoAccounts(accounts: ManagedAccount[], authFa
         refreshToken: authFallback.refresh,
         source: "oauth",
     });
-    const match = findMatchingManagedAccount(accounts, {
+    let match = findMatchingManagedAccount(accounts, {
         identity: fallbackIdentity,
         refreshToken: authFallback.refresh,
     });
+
+    const fallbackHasAccess = typeof authFallback.access === "string" && authFallback.access.length > 0;
+    const fallbackExpires = typeof authFallback.expires === "number" ? authFallback.expires : 0;
+    const fallbackLooksFresh = fallbackHasAccess && fallbackExpires > Date.now();
+
+    if (!match && fallbackLooksFresh) {
+        const preferredAccount =
+            preferredIndex >= 0 && preferredIndex < accounts.length ? accounts[preferredIndex] : accounts.length === 1 ? accounts[0] : null;
+        match = preferredAccount ?? null;
+    }
 
     if (!match) {
         return;
     }
 
-    const fallbackHasAccess = typeof authFallback.access === "string" && authFallback.access.length > 0;
-    const fallbackExpires = typeof authFallback.expires === "number" ? authFallback.expires : 0;
     const matchExpires = typeof match.expires === "number" ? match.expires : 0;
-    const fallbackLooksFresh = fallbackHasAccess && fallbackExpires > Date.now();
     const shouldAdoptFallback =
-        fallbackLooksFresh && (!match.access || !match.expires || fallbackExpires > matchExpires);
+        fallbackLooksFresh && (!match.access || !match.expires || fallbackExpires > matchExpires || match.refreshToken !== authFallback.refresh);
 
     if (!shouldAdoptFallback) {
         return;
     }
 
+    match.refreshToken = authFallback.refresh;
     match.access = authFallback.access;
     match.expires = authFallback.expires;
     match.tokenUpdatedAt = Math.max(match.tokenUpdatedAt || 0, fallbackExpires);
@@ -253,6 +267,8 @@ export function prepareStorageForSave(params: {
 
         return {
             id: account.id,
+            accountUuid: account.accountUuid,
+            organizationUuid: account.organizationUuid,
             email: account.email,
             identity: account.identity,
             label: account.label,
@@ -323,6 +339,8 @@ export function reconcileManagedAccountsWithStorage(params: {
 
         const addedAccount = createManagedAccount({
             id: storedAccount.id,
+            accountUuid: storedAccount.accountUuid,
+            organizationUuid: storedAccount.organizationUuid,
             index,
             email: storedAccount.email,
             identity: storedAccount.identity,

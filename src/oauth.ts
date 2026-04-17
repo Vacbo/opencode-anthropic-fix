@@ -78,6 +78,8 @@ export type ExchangeResult =
           access: string;
           expires: number;
           email?: string;
+          accountUuid?: string;
+          organizationUuid?: string;
       }
     | {
           type: "failed";
@@ -166,7 +168,8 @@ export async function exchange(code: string, verifier: string): Promise<Exchange
         refresh_token: string;
         access_token: string;
         expires_in: number;
-        account?: { email_address?: string };
+        account?: { email_address?: string; uuid?: string };
+        organization?: { uuid?: string };
     };
     return {
         type: "success",
@@ -174,6 +177,8 @@ export async function exchange(code: string, verifier: string): Promise<Exchange
         access: json.access_token,
         expires: Date.now() + json.expires_in * 1000,
         email: json.account?.email_address || undefined,
+        accountUuid: json.account?.uuid || undefined,
+        organizationUuid: json.organization?.uuid || undefined,
     };
 }
 

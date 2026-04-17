@@ -25,7 +25,7 @@ import { readCCCredentials } from "../../src/cc-credentials.js";
 
 const mockLoadAccounts = loadAccounts as Mock;
 const mockSaveAccounts = saveAccounts as Mock;
-const mockReadCCredentials = readCCCredentials as Mock;
+const mockCCReadCredentials = readCCCredentials as Mock;
 
 function expectAccount(account: ManagedAccount | null): ManagedAccount {
     expect(account).not.toBeNull();
@@ -85,7 +85,7 @@ describe("AccountManager.load", () => {
         vi.resetAllMocks();
         vi.useFakeTimers();
         vi.setSystemTime(new Date("2026-01-15T12:00:00Z"));
-        mockReadCCredentials.mockReturnValue([]);
+        mockCCReadCredentials.mockReturnValue([]);
     });
 
     it("creates empty manager when no stored accounts and no fallback", async () => {
@@ -132,7 +132,7 @@ describe("AccountManager.load", () => {
 
     it("auto-loads CC credentials on startup and keeps OAuth accounts available", async () => {
         mockLoadAccounts.mockResolvedValue(makeAccountsData([{ email: "oauth@example.com", source: "oauth" }]));
-        mockReadCCredentials.mockReturnValue([
+        mockCCReadCredentials.mockReturnValue([
             makeCCCredential({
                 refreshToken: "cc-refresh-1",
                 accessToken: "cc-access-1",
@@ -158,7 +158,7 @@ describe("AccountManager.load", () => {
         const manager = await AccountManager.load(config, null);
         const snapshot = manager.getAccountsSnapshot();
 
-        expect(mockReadCCredentials).toHaveBeenCalledTimes(1);
+        expect(mockCCReadCredentials).toHaveBeenCalledTimes(1);
         expect(snapshot).toHaveLength(3);
         expect(snapshot.map((account) => account.refreshToken)).toEqual(["token1", "cc-refresh-1", "cc-refresh-2"]);
         expect(manager.getOAuthAccounts()).toHaveLength(1);
@@ -168,7 +168,7 @@ describe("AccountManager.load", () => {
 
     it("prefers CC accounts over OAuth when configured", async () => {
         mockLoadAccounts.mockResolvedValue(makeAccountsData([{ email: "oauth@example.com", source: "oauth" }]));
-        mockReadCCredentials.mockReturnValue([
+        mockCCReadCredentials.mockReturnValue([
             makeCCCredential({
                 refreshToken: "cc-refresh-1",
                 accessToken: "cc-access-1",
@@ -186,12 +186,87 @@ describe("AccountManager.load", () => {
 
     it("stays graceful when CC credentials are unavailable", async () => {
         mockLoadAccounts.mockResolvedValue(makeAccountsData([{ email: "oauth@example.com", source: "oauth" }]));
-        mockReadCCredentials.mockReturnValue([]);
+        mockCCReadCredentials.mockReturnValue([]);
 
         const manager = await AccountManager.load(DEFAULT_CONFIG, null);
 
         expect(manager.getTotalAccountCount()).toBe(1);
         expect(manager.getAccountsSnapshot()[0]?.refreshToken).toBe("token1");
+    });
+
+    it("does not let stale CC credentials overwrite fresher locally persisted auth", async () => {
+        const now = Date.now();
+        mockLoadAccounts.mockResolvedValue(
+            makeAccountsData([
+                {
+                    source: "cc-keychain",
+                    label: "Claude Code-credentials:user@example.com",
+                    identity: {
+                        kind: "cc",
+                        source: "cc-keychain",
+                        label: "Claude Code-credentials:user@example.com",
+                    },
+                    refreshToken: "local-refresh-new",
+                    access: "local-access-new",
+                    expires: now + 8 * 3600_000,
+                    token_updated_at: now,
+                },
+            ]),
+        );
+        mockCCReadCredentials.mockReturnValue([
+            makeCCCredential({
+                label: "Claude Code-credentials:user@example.com",
+                refreshToken: "cc-refresh-old",
+                accessToken: "cc-access-old",
+                expiresAt: now - 20 * 60_000,
+            }),
+        ]);
+
+        const manager = await AccountManager.load(DEFAULT_CONFIG, null);
+        const snapshot = manager.getAccountsSnapshot();
+
+        expect(snapshot[0].refreshToken).toBe("local-refresh-new");
+        expect(snapshot[0].access).toBe("local-access-new");
+        expect(snapshot[0].expires).toBe(now + 8 * 3600_000);
+        expect(snapshot[0].enabled).toBe(true);
+        expect(snapshot[0].source).toBe("cc-keychain");
+        expect(snapshot[0].label).toBe("Claude Code-credentials:user@example.com");
+    });
+
+    it("adopts fresher CC credentials when they are newer than local persisted auth", async () => {
+        const now = Date.now();
+        mockLoadAccounts.mockResolvedValue(
+            makeAccountsData([
+                {
+                    source: "cc-keychain",
+                    label: "Claude Code-credentials:user@example.com",
+                    identity: {
+                        kind: "cc",
+                        source: "cc-keychain",
+                        label: "Claude Code-credentials:user@example.com",
+                    },
+                    refreshToken: "local-refresh-old",
+                    access: "local-access-old",
+                    expires: now - 60_000,
+                    token_updated_at: now - 60_000,
+                },
+            ]),
+        );
+        mockCCReadCredentials.mockReturnValue([
+            makeCCCredential({
+                label: "Claude Code-credentials:user@example.com",
+                refreshToken: "cc-refresh-new",
+                accessToken: "cc-access-new",
+                expiresAt: now + 8 * 3600_000,
+            }),
+        ]);
+
+        const manager = await AccountManager.load(DEFAULT_CONFIG, null);
+        const snapshot = manager.getAccountsSnapshot();
+
+        expect(snapshot[0].refreshToken).toBe("cc-refresh-new");
+        expect(snapshot[0].access).toBe("cc-access-new");
+        expect(snapshot[0].expires).toBe(now + 8 * 3600_000);
     });
 
     it("skips CC detection when CC credential reuse is disabled", async () => {
@@ -207,7 +282,7 @@ describe("AccountManager.load", () => {
 
         const manager = await AccountManager.load(config, null);
 
-        expect(mockReadCCredentials).not.toHaveBeenCalled();
+        expect(mockCCReadCredentials).not.toHaveBeenCalled();
         expect(manager.getTotalAccountCount()).toBe(1);
         expect(manager.getCCAccounts()).toEqual([]);
     });
@@ -246,6 +321,46 @@ describe("AccountManager.load", () => {
         expect(snapshot[0].expires).toBeGreaterThan(Date.now());
     });
 
+    it("adopts fresh auth fallback for a single CC account even when refresh tokens no longer match", async () => {
+        const now = Date.now();
+        mockLoadAccounts.mockResolvedValue(
+            makeAccountsData([
+                {
+                    source: "cc-keychain",
+                    label: "Claude Code-credentials",
+                    identity: {
+                        kind: "cc",
+                        source: "cc-keychain",
+                        label: "Claude Code-credentials",
+                    },
+                    refreshToken: "stale-cc-refresh",
+                    access: "stale-cc-access",
+                    expires: now - 60_000,
+                    token_updated_at: now - 60_000,
+                },
+            ]),
+        );
+        mockCCReadCredentials.mockReturnValue([
+            makeCCCredential({
+                label: "Claude Code-credentials",
+                refreshToken: "stale-cc-refresh",
+                accessToken: "stale-cc-access",
+                expiresAt: now - 20 * 60_000,
+            }),
+        ]);
+
+        const manager = await AccountManager.load(DEFAULT_CONFIG, {
+            refresh: "fresh-open-code-refresh",
+            access: "fresh-open-code-access",
+            expires: now + 8 * 3600_000,
+        });
+        const snapshot = manager.getAccountsSnapshot();
+
+        expect(snapshot[0].refreshToken).toBe("fresh-open-code-refresh");
+        expect(snapshot[0].access).toBe("fresh-open-code-access");
+        expect(snapshot[0].expires).toBe(now + 8 * 3600_000);
+    });
+
     it("clamps activeIndex to valid range", async () => {
         mockLoadAccounts.mockResolvedValue(makeAccountsData([{ lastUsed: 2000 }], { activeIndex: 99 }));
         const manager = await AccountManager.load(DEFAULT_CONFIG, null);
@@ -263,7 +378,7 @@ describe("AccountManager account management", () => {
 
     beforeEach(async () => {
         vi.resetAllMocks();
-        mockReadCCredentials.mockReturnValue([]);
+        mockCCReadCredentials.mockReturnValue([]);
         vi.useFakeTimers();
         vi.setSystemTime(new Date("2026-01-15T12:00:00Z"));
         mockLoadAccounts.mockResolvedValue(null);
@@ -362,7 +477,7 @@ describe("AccountManager account selection", () => {
 
     beforeEach(async () => {
         vi.resetAllMocks();
-        mockReadCCredentials.mockReturnValue([]);
+        mockCCReadCredentials.mockReturnValue([]);
         vi.useFakeTimers();
         vi.setSystemTime(new Date("2026-01-15T12:00:00Z"));
         mockLoadAccounts.mockResolvedValue(null);
@@ -403,7 +518,7 @@ describe("AccountManager rate limiting", () => {
 
     beforeEach(async () => {
         vi.resetAllMocks();
-        mockReadCCredentials.mockReturnValue([]);
+        mockCCReadCredentials.mockReturnValue([]);
         vi.useFakeTimers();
         vi.setSystemTime(new Date("2026-01-15T12:00:00Z"));
         mockLoadAccounts.mockResolvedValue(null);
@@ -469,7 +584,7 @@ describe("AccountManager persistence", () => {
 
     beforeEach(async () => {
         vi.resetAllMocks();
-        mockReadCCredentials.mockReturnValue([]);
+        mockCCReadCredentials.mockReturnValue([]);
         vi.useFakeTimers();
         vi.setSystemTime(new Date("2026-01-15T12:00:00Z"));
         mockLoadAccounts.mockResolvedValue(null);

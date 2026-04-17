@@ -135,6 +135,8 @@ export async function completeSlashOAuth(
             const accIsCC = acc.source === "cc-keychain" || acc.source === "cc-file";
             acc.access = credentials.access;
             acc.expires = credentials.expires;
+            acc.accountUuid = credentials.accountUuid ?? acc.accountUuid;
+            acc.organizationUuid = credentials.organizationUuid ?? acc.organizationUuid;
             acc.token_updated_at = Date.now();
             acc.enabled = true;
             acc.consecutiveFailures = 0;
@@ -171,6 +173,8 @@ export async function completeSlashOAuth(
             refreshToken: credentials.refresh,
             access: credentials.access,
             expires: credentials.expires,
+            accountUuid: credentials.accountUuid,
+            organizationUuid: credentials.organizationUuid,
             token_updated_at: now,
             addedAt: now,
             lastUsed: 0,
@@ -208,6 +212,8 @@ export async function completeSlashOAuth(
     existing.refreshToken = credentials.refresh;
     existing.access = credentials.access;
     existing.expires = credentials.expires;
+    existing.accountUuid = credentials.accountUuid ?? existing.accountUuid;
+    existing.organizationUuid = credentials.organizationUuid ?? existing.organizationUuid;
     existing.token_updated_at = Date.now();
     existing.enabled = true;
     existing.consecutiveFailures = 0;

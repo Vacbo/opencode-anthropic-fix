@@ -202,7 +202,7 @@ describe("refreshAccountToken", () => {
         expect(account.refreshToken).toBe("oauth-refresh-new");
     });
 
-    it("fails cleanly when the claude binary is unavailable for CC refresh", async () => {
+    it("falls back to HTTP refresh when the claude binary is unavailable for an expired CC account", async () => {
         const account = makeAccount({
             source: "cc-file",
             refreshToken: "refresh-old",
@@ -223,15 +223,123 @@ describe("refreshAccountToken", () => {
             }
             throw new Error(`unexpected command: ${command}`);
         });
+        mockRefreshToken.mockResolvedValue({
+            access_token: "oauth-access-new",
+            expires_in: 1800,
+            refresh_token: "oauth-refresh-new",
+        });
 
-        await expect(refreshAccountToken(account, {})).rejects.toThrow("CC credential refresh failed");
+        await expect(refreshAccountToken(account, {})).resolves.toBe("oauth-access-new");
 
-        expect(mockRefreshToken).not.toHaveBeenCalled();
+        expect(mockRefreshToken).toHaveBeenCalledWith("refresh-old", {
+            signal: expect.any(AbortSignal),
+        });
         expect(mockExecSync).toHaveBeenCalledTimes(1);
         expect(mockExecSync).toHaveBeenCalledWith("which claude", {
             encoding: "utf-8",
             timeout: 5000,
         });
+    });
+
+    it("keeps using a still-valid CC token when proactive refresh fails inside the 5-minute buffer", async () => {
+        const account = makeAccount({
+            source: "cc-file",
+            refreshToken: "refresh-old",
+            access: "access-buffered",
+            expires: Date.now() + 2 * 60_000,
+        });
+
+        mockReadCCCredentialsFromFile.mockReturnValue(
+            makeCredential({
+                source: "cc-file",
+                refreshToken: "refresh-old",
+                accessToken: "access-buffered",
+                expiresAt: Date.now() + 2 * 60_000,
+            }),
+        );
+        mockExecSync.mockImplementation((command: string) => {
+            if (command === "which claude") {
+                throw new Error("not found");
+            }
+            throw new Error(`unexpected command: ${command}`);
+        });
+
+        await expect(refreshAccountToken(account, {})).resolves.toBe("access-buffered");
+
+        expect(mockRefreshToken).not.toHaveBeenCalled();
+        expect(mockExecSync).toHaveBeenCalledTimes(1);
+        expect(account.access).toBe("access-buffered");
+        expect(account.refreshToken).toBe("refresh-old");
+        expect(account.expires).toBe(Date.now() + 2 * 60_000);
+    });
+
+    it("keeps using the current CC token when the credential can no longer be re-read but the token is still valid", async () => {
+        const account = makeAccount({
+            source: "cc-file",
+            refreshToken: "refresh-old",
+            access: "access-still-valid",
+            expires: Date.now() + 2 * 60_000,
+        });
+
+        mockReadCCCredentialsFromFile.mockReturnValue(null);
+
+        await expect(refreshAccountToken(account, {})).resolves.toBe("access-still-valid");
+
+        expect(mockRefreshToken).not.toHaveBeenCalled();
+        expect(mockExecSync).not.toHaveBeenCalled();
+        expect(account.access).toBe("access-still-valid");
+        expect(account.refreshToken).toBe("refresh-old");
+        expect(account.expires).toBe(Date.now() + 2 * 60_000);
+    });
+
+    it("falls back to HTTP refresh when a CC-backed account stays expired after the claude refresh trigger", async () => {
+        const account = makeAccount({
+            source: "cc-keychain",
+            refreshToken: "refresh-old",
+            access: "access-expired",
+            expires: Date.now() - 1_000,
+            label: "Claude Code-credentials",
+        });
+
+        mockReadCCCredentials
+            .mockReturnValueOnce([
+                makeCredential({
+                    source: "cc-keychain",
+                    label: "Claude Code-credentials",
+                    refreshToken: "refresh-old",
+                    accessToken: "access-expired",
+                    expiresAt: Date.now() - 5_000,
+                }),
+            ])
+            .mockReturnValueOnce([
+                makeCredential({
+                    source: "cc-keychain",
+                    label: "Claude Code-credentials",
+                    refreshToken: "refresh-old",
+                    accessToken: "access-expired",
+                    expiresAt: Date.now() - 5_000,
+                }),
+            ]);
+        mockExecSync.mockImplementation((command: string) => {
+            if (command === "which claude") return "/usr/local/bin/claude\n";
+            if (command === "/usr/local/bin/claude -p . --model haiku") return "Ready.";
+            throw new Error(`unexpected command: ${command}`);
+        });
+        mockRefreshToken.mockResolvedValue({
+            access_token: "oauth-access-new",
+            expires_in: 28800,
+            refresh_token: "oauth-refresh-new",
+        });
+
+        await expect(refreshAccountToken(account, {})).resolves.toBe("oauth-access-new");
+
+        expect(mockExecSync).toHaveBeenCalledTimes(2);
+        expect(mockRefreshToken).toHaveBeenCalledWith("refresh-old", {
+            signal: expect.any(AbortSignal),
+        });
+        expect(account.access).toBe("oauth-access-new");
+        expect(account.refreshToken).toBe("oauth-refresh-new");
+        expect(account.expires).toBe(Date.now() + 28_800_000);
     });
 
     it("reuses the first foreground retry after an idle refresh rejection", async () => {

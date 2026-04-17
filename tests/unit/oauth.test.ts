@@ -130,4 +130,29 @@ describe("oauth exchange timeout", () => {
         const [, init] = mockFetch.mock.calls[0];
         expect(init.signal).toBeDefined();
     });
+
+    it("captures account and organization UUIDs from a successful token exchange", async () => {
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({
+                refresh_token: "refresh",
+                access_token: "access",
+                expires_in: 3600,
+                account: { email_address: "user@example.com", uuid: "account-uuid-123" },
+                organization: { uuid: "org-uuid-456" },
+            }),
+        });
+
+        const result = await exchange("code#state", "verifier");
+
+        expect(result).toEqual({
+            type: "success",
+            refresh: "refresh",
+            access: "access",
+            expires: expect.any(Number),
+            email: "user@example.com",
+            accountUuid: "account-uuid-123",
+            organizationUuid: "org-uuid-456",
+        });
+    });
 });
