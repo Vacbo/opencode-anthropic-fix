@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
     compareScenarioFields,
     extractComparableFields,
+    formatProgressLine,
+    normalizeStoredCapture,
     parseArgs,
     sanitizeCapture,
     type CaptureRecord,
@@ -69,6 +71,41 @@ describe("run-live-verification", () => {
         expect(parsed.version).toBe("2.1.109");
         expect(parsed.scenarioIds).toEqual(["minimal-hi", "tool-search"]);
         expect(parsed.candidatePath).toContain("manifests/candidate/claude-code/2.1.109.json");
+        expect(parsed.commandTimeoutMs).toBe(120000);
+        expect(parsed.proxyHost).toBe("127.0.0.1");
+    });
+
+    it("parses explicit proxy host and timeout overrides", () => {
+        const parsed = parseArgs([
+            "--version",
+            "2.1.109",
+            "--proxy-host",
+            "localhost",
+            "--proxy-port",
+            "9191",
+            "--command-timeout-ms",
+            "45000",
+        ]);
+
+        expect(parsed.proxyHost).toBe("localhost");
+        expect(parsed.proxyPort).toBe(9191);
+        expect(parsed.commandTimeoutMs).toBe(45000);
+    });
+
+    it("parses offline capture artifact arguments", () => {
+        const parsed = parseArgs([
+            "--version",
+            "2.1.109",
+            "--scenario",
+            "minimal-hi",
+            "--og-capture",
+            "/tmp/cc.json",
+            "--plugin-capture",
+            "/tmp/plugin.json",
+        ]);
+
+        expect(parsed.ogCapturePath).toBe("/tmp/cc.json");
+        expect(parsed.pluginCapturePath).toBe("/tmp/plugin.json");
     });
 
     it("extracts comparable fields without leaking dynamic metadata values", () => {
@@ -117,5 +154,40 @@ describe("run-live-verification", () => {
                 }),
             }),
         );
+    });
+
+    it("formats progress output with counts, percentage, and elapsed time", () => {
+        expect(formatProgressLine({ current: 2, total: 5, label: "running OG command", elapsedMs: 12_345 })).toContain(
+            "[2/5]",
+        );
+        expect(formatProgressLine({ current: 2, total: 5, label: "running OG command", elapsedMs: 12_345 })).toContain(
+            "40%",
+        );
+        expect(formatProgressLine({ current: 2, total: 5, label: "running OG command", elapsedMs: 12_345 })).toContain(
+            "12.3s",
+        );
+    });
+
+    it("normalizes legacy passive-proxy capture artifacts", () => {
+        const capture = normalizeStoredCapture({
+            method: "POST",
+            path: "/v1/messages?beta=true",
+            url: "https://api.anthropic.com/v1/messages?beta=true",
+            headers: {
+                "User-Agent": "claude-cli/2.1.109 (external, sdk-cli)",
+                "X-App": "cli",
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                stream: true,
+                max_tokens: 32000,
+                messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+            }),
+        });
+
+        expect(capture.headers["user-agent"]).toBe("claude-cli/2.1.109 (external, sdk-cli)");
+        expect(capture.headers["x-app"]).toBe("cli");
+        expect(capture.headers["content-type"]).toBe("application/json");
+        expect((capture.parsedBody as Record<string, unknown>).stream).toBe(true);
     });
 });

@@ -5,6 +5,7 @@ import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from
 import http from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { clearLine, cursorTo } from "node:readline";
 import tls from "node:tls";
 import { fileURLToPath } from "node:url";
 
@@ -21,7 +22,7 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, "../..");
 const DEFAULT_SCENARIO_DIR = resolve(SCRIPT_DIR, "scenarios");
 const DEFAULT_REPORT_DIR = resolve(REPO_ROOT, "manifests/reports/verification");
-const DEFAULT_OG_COMMAND_TEMPLATE = "claude --print {prompt}";
+const DEFAULT_OG_COMMAND_TEMPLATE = "claude --bare --print {prompt}";
 const DEFAULT_PLUGIN_COMMAND_TEMPLATE = "opencode run {prompt}";
 const DEFAULT_PROXY_HOST = "127.0.0.1";
 
@@ -37,10 +38,14 @@ interface ParsedArgs {
     candidatePath: string;
     scenarioDir: string;
     reportPath?: string;
+    ogCapturePath?: string;
+    pluginCapturePath?: string;
     ogCommandTemplate: string;
     pluginCommandTemplate: string;
     verifiedBy: string;
+    proxyHost: string;
     proxyPort?: number;
+    commandTimeoutMs: number;
     help: boolean;
 }
 
@@ -72,6 +77,13 @@ interface CommandResult {
     stderr: string;
 }
 
+interface ProgressLineOptions {
+    current: number;
+    total: number;
+    label: string;
+    elapsedMs: number;
+}
+
 function printUsage(): void {
     console.log(`Usage: bun scripts/verification/run-live-verification.ts --version <ver> [--scenario <id>] [--scenario <id>]
 
@@ -88,13 +100,19 @@ Options:
                                   Default: scripts/verification/scenarios
   --report <path>                 Output report path
                                   Default: manifests/reports/verification/<version>-<timestamp>.json
+  --og-capture <path>             Use an existing OG capture artifact instead of spawning Claude
+  --plugin-capture <path>         Use an existing plugin capture artifact instead of spawning OpenCode
   --og-command-template <cmd>     Shell template for OG Claude Code
                                   Default: ${DEFAULT_OG_COMMAND_TEMPLATE}
   --plugin-command-template <cmd> Shell template for the plugin/OpenCode flow
                                   Default: ${DEFAULT_PLUGIN_COMMAND_TEMPLATE}
   --verified-by <label>           Runner label stored in the report
                                   Default: trusted-local-verifier
+  --proxy-host <host>             Proxy bind host and HTTPS proxy host
+                                  Default: ${DEFAULT_PROXY_HOST}
   --proxy-port <port>             Fixed proxy port (defaults to an ephemeral port)
+  --command-timeout-ms <ms>       Kill OG/plugin commands that exceed this duration
+                                  Default: 120000
   --help                          Show this help message
 
 Template placeholders:
@@ -113,10 +131,14 @@ export function parseArgs(args: string[]): ParsedArgs {
     let candidatePath = "";
     let scenarioDir = DEFAULT_SCENARIO_DIR;
     let reportPath: string | undefined;
+    let ogCapturePath: string | undefined;
+    let pluginCapturePath: string | undefined;
     let ogCommandTemplate = DEFAULT_OG_COMMAND_TEMPLATE;
     let pluginCommandTemplate = DEFAULT_PLUGIN_COMMAND_TEMPLATE;
     let verifiedBy = "trusted-local-verifier";
+    let proxyHost = DEFAULT_PROXY_HOST;
     let proxyPort: number | undefined;
+    let commandTimeoutMs = 120_000;
     let help = false;
     const scenarioIds: string[] = [];
 
@@ -151,6 +173,16 @@ export function parseArgs(args: string[]): ParsedArgs {
             index += 1;
             continue;
         }
+        if (arg === "--og-capture" && index + 1 < args.length) {
+            ogCapturePath = resolve(args[index + 1] ?? "");
+            index += 1;
+            continue;
+        }
+        if (arg === "--plugin-capture" && index + 1 < args.length) {
+            pluginCapturePath = resolve(args[index + 1] ?? "");
+            index += 1;
+            continue;
+        }
         if (arg === "--og-command-template" && index + 1 < args.length) {
             ogCommandTemplate = args[index + 1] ?? "";
             index += 1;
@@ -166,8 +198,22 @@ export function parseArgs(args: string[]): ParsedArgs {
             index += 1;
             continue;
         }
+        if (arg === "--proxy-host" && index + 1 < args.length) {
+            proxyHost = (args[index + 1] ?? "").trim() || DEFAULT_PROXY_HOST;
+            index += 1;
+            continue;
+        }
         if (arg === "--proxy-port" && index + 1 < args.length) {
             proxyPort = parsePort(args[index + 1] ?? "", "--proxy-port");
+            index += 1;
+            continue;
+        }
+        if (arg === "--command-timeout-ms" && index + 1 < args.length) {
+            const timeout = Number.parseInt(args[index + 1] ?? "", 10);
+            if (!Number.isInteger(timeout) || timeout <= 0) {
+                throw new Error("--command-timeout-ms must be a positive integer");
+            }
+            commandTimeoutMs = timeout;
             index += 1;
             continue;
         }
@@ -183,10 +229,14 @@ export function parseArgs(args: string[]): ParsedArgs {
         candidatePath: candidatePath || resolve(REPO_ROOT, `manifests/candidate/claude-code/${version}.json`),
         scenarioDir,
         reportPath,
+        ogCapturePath,
+        pluginCapturePath,
         ogCommandTemplate,
         pluginCommandTemplate,
         verifiedBy: verifiedBy.trim() || "trusted-local-verifier",
+        proxyHost,
         proxyPort,
+        commandTimeoutMs,
         help,
     };
 }
@@ -262,6 +312,34 @@ function parseJson(value: string): unknown {
     } catch {
         return null;
     }
+}
+
+export function normalizeStoredCapture(input: unknown): CaptureRecord {
+    if (!input || typeof input !== "object") {
+        throw new Error("Capture artifact must be an object");
+    }
+
+    const record = input as Record<string, unknown>;
+    const headersSource = record.headers && typeof record.headers === "object" ? (record.headers as Record<string, unknown>) : {};
+    const headers = Object.fromEntries(
+        Object.entries(headersSource)
+            .filter(([, value]) => typeof value === "string")
+            .map(([key, value]) => [key.toLowerCase(), value as string]),
+    );
+    const bodyText = typeof record.bodyText === "string" ? record.bodyText : typeof record.body === "string" ? record.body : "";
+    const method = typeof record.method === "string" ? record.method : "POST";
+    const path = typeof record.path === "string" ? record.path : "/";
+    const url = typeof record.url === "string" ? record.url : `https://${String(record.host ?? "")}${path}`;
+
+    return {
+        capturedAt: typeof record.capturedAt === "string" ? record.capturedAt : new Date().toISOString(),
+        method,
+        url,
+        path,
+        headers,
+        bodyText,
+        parsedBody: parseJson(bodyText),
+    };
 }
 
 function normalizeVersion(value: string | null): string | null {
@@ -506,6 +584,37 @@ function createTimestampSlug(timestamp: string): string {
     return timestamp.replace(/[:.]/g, "-");
 }
 
+export function formatProgressLine({ current, total, label, elapsedMs }: ProgressLineOptions): string {
+    const safeTotal = total > 0 ? total : 1;
+    const boundedCurrent = Math.min(Math.max(current, 0), safeTotal);
+    const percentage = Math.round((boundedCurrent / safeTotal) * 100);
+    const filled = Math.min(20, Math.round((boundedCurrent / safeTotal) * 20));
+    const bar = `${"#".repeat(filled)}${"-".repeat(20 - filled)}`;
+    return `[${boundedCurrent}/${safeTotal}] ${percentage}% [${bar}] ${label} (${(elapsedMs / 1000).toFixed(1)}s)`;
+}
+
+function writeProgressLine(line: string): void {
+    if (!process.stderr.isTTY) {
+        console.error(line);
+        return;
+    }
+
+    clearLine(process.stderr, 0);
+    cursorTo(process.stderr, 0);
+    process.stderr.write(line);
+}
+
+function finishProgressLine(line: string): void {
+    if (!process.stderr.isTTY) {
+        console.error(line);
+        return;
+    }
+
+    clearLine(process.stderr, 0);
+    cursorTo(process.stderr, 0);
+    process.stderr.write(`${line}\n`);
+}
+
 function deriveDefaultReportPath(version: string, verifiedAt: string): string {
     return resolve(DEFAULT_REPORT_DIR, `${version}-${createTimestampSlug(verifiedAt)}.json`);
 }
@@ -644,7 +753,7 @@ function readableFileExists(filePath: string): boolean {
     }
 }
 
-async function startCaptureProxy(options: { port?: number }): Promise<CaptureProxy> {
+async function startCaptureProxy(options: { host: string; port?: number }): Promise<CaptureProxy> {
     const captures: CaptureRecord[] = [];
     const certDir = mkdtempSync(join(tmpdir(), "verification-proxy-certs-"));
     const certs = ensureCerts(certDir);
@@ -689,7 +798,7 @@ async function startCaptureProxy(options: { port?: number }): Promise<CapturePro
             tlsSocket.write(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
         });
         upstream.on("end", () => {
-            tlsSocket.end();
+            tlsSocket.destroy();
         });
         upstream.on("error", () => {
             tlsSocket.destroy();
@@ -705,7 +814,7 @@ async function startCaptureProxy(options: { port?: number }): Promise<CapturePro
             }
         });
         tlsSocket.on("end", () => {
-            upstream.end();
+            upstream.destroy();
         });
         tlsSocket.on("error", () => {
             upstream.destroy();
@@ -716,7 +825,7 @@ async function startCaptureProxy(options: { port?: number }): Promise<CapturePro
         server.once("error", (error) => {
             reject(new Error(`Failed to start proxy capture server: ${error.message}`));
         });
-        server.listen(options.port ?? 0, DEFAULT_PROXY_HOST, () => {
+        server.listen(options.port ?? 0, options.host, () => {
             const address = server.address();
             if (!address || typeof address === "string") {
                 reject(new Error("Proxy listen address was unavailable"));
@@ -794,7 +903,13 @@ export function selectCaptureForScenario(
     });
 }
 
-async function runCommand(template: string, prompt: string, env: NodeJS.ProcessEnv): Promise<CommandResult> {
+async function runCommand(
+    template: string,
+    prompt: string,
+    env: NodeJS.ProcessEnv,
+    progress?: { current: number; total: number; label: string },
+    timeoutMs = 120_000,
+): Promise<CommandResult> {
     const renderedCommand = renderCommand(template, prompt);
 
     return await new Promise<CommandResult>((resolveCommand, rejectCommand) => {
@@ -802,10 +917,59 @@ async function runCommand(template: string, prompt: string, env: NodeJS.ProcessE
             cwd: REPO_ROOT,
             env,
             stdio: ["ignore", "pipe", "pipe"],
+            detached: true,
         });
 
         let stdout = "";
         let stderr = "";
+        let didTimeout = false;
+        const killProcessGroup = (signal: NodeJS.Signals) => {
+            if (!child.pid) {
+                return;
+            }
+            try {
+                process.kill(-child.pid, signal);
+            } catch {
+                child.kill(signal);
+            }
+        };
+        const startedAt = Date.now();
+        const interval =
+            progress == null
+                ? null
+                : setInterval(() => {
+                      writeProgressLine(
+                          formatProgressLine({
+                              current: progress.current,
+                              total: progress.total,
+                              label: progress.label,
+                              elapsedMs: Date.now() - startedAt,
+                          }),
+                      );
+                  }, 1000);
+
+        const stopProgress = (suffix: string) => {
+            if (interval) {
+                clearInterval(interval);
+            }
+            if (progress) {
+                finishProgressLine(
+                    formatProgressLine({
+                        current: progress.current,
+                        total: progress.total,
+                        label: `${progress.label} ${suffix}`,
+                        elapsedMs: Date.now() - startedAt,
+                    }),
+                );
+            }
+        };
+        const timeout = setTimeout(() => {
+            didTimeout = true;
+            killProcessGroup("SIGTERM");
+            setTimeout(() => {
+                killProcessGroup("SIGKILL");
+            }, 2000).unref();
+        }, timeoutMs);
 
         child.stdout.on("data", (chunk) => {
             stdout += chunk.toString();
@@ -814,16 +978,23 @@ async function runCommand(template: string, prompt: string, env: NodeJS.ProcessE
             stderr += chunk.toString();
         });
         child.on("error", (error) => {
+            clearTimeout(timeout);
+            stopProgress("failed");
             rejectCommand(new Error(`Failed to start command: ${error.message}`));
         });
-        child.on("close", (code) => {
+        child.on("close", (code, signal) => {
+            clearTimeout(timeout);
             if (code === 0) {
+                stopProgress("done");
                 resolveCommand({ stdout, stderr });
                 return;
             }
+            stopProgress("failed");
             rejectCommand(
                 new Error(
-                    `Command failed with exit ${code}: ${renderedCommand}\n${stderr.trim() || stdout.trim() || "(no output)"}`,
+                    didTimeout || signal === "SIGTERM" || signal === "SIGKILL"
+                        ? `Command timed out after ${timeoutMs}ms: ${renderedCommand}\n${stderr.trim() || stdout.trim() || "(no output)"}`
+                        : `Command failed with exit ${code}: ${renderedCommand}\n${stderr.trim() || stdout.trim() || "(no output)"}`,
                 ),
             );
         });
@@ -834,6 +1005,7 @@ async function runScenario(
     proxy: CaptureProxy,
     scenario: ScenarioDefinition,
     args: ParsedArgs,
+    progress: { current: number; total: number },
 ): Promise<ScenarioResult> {
     if (scenario.runnerMode === "manual") {
         return {
@@ -847,24 +1019,34 @@ async function runScenario(
     }
 
     const baseCaptureCount = proxy.captures.length;
-    const proxyUrl = `http://${DEFAULT_PROXY_HOST}:${proxy.port}`;
-    const commandEnv = {
+    const proxyUrl = `http://${args.proxyHost}:${proxy.port}`;
+    const commandEnv: NodeJS.ProcessEnv = {
         ...process.env,
         HTTPS_PROXY: proxyUrl,
-        HTTP_PROXY: proxyUrl,
+        https_proxy: proxyUrl,
         BUN_TLS_REJECT_UNAUTHORIZED: "0",
         NODE_TLS_REJECT_UNAUTHORIZED: "0",
     };
+    delete commandEnv.HTTP_PROXY;
+    delete commandEnv.http_proxy;
+    delete commandEnv.ALL_PROXY;
+    delete commandEnv.all_proxy;
 
     try {
-        await runCommand(args.ogCommandTemplate, scenario.prompt, commandEnv);
+        await runCommand(args.ogCommandTemplate, scenario.prompt, commandEnv, {
+            ...progress,
+            label: `${scenario.id}: OG capture`,
+        }, args.commandTimeoutMs);
         const ogCapture = selectCaptureForScenario(proxy.captures.slice(baseCaptureCount), scenario);
         if (!ogCapture) {
             throw new Error(`OG command did not produce a capture for ${scenario.id}`);
         }
 
         const captureCountAfterOg = proxy.captures.length;
-        await runCommand(args.pluginCommandTemplate, scenario.prompt, commandEnv);
+        await runCommand(args.pluginCommandTemplate, scenario.prompt, commandEnv, {
+            ...progress,
+            label: `${scenario.id}: plugin capture`,
+        }, args.commandTimeoutMs);
         const pluginCapture = selectCaptureForScenario(proxy.captures.slice(captureCountAfterOg), scenario);
         if (!pluginCapture) {
             throw new Error(`Plugin command did not produce a capture for ${scenario.id}`);
@@ -888,6 +1070,17 @@ async function runScenario(
             error: error instanceof Error ? error.message : String(error),
         };
     }
+}
+
+function runOfflineScenario(scenario: ScenarioDefinition, ogCapture: CaptureRecord, pluginCapture: CaptureRecord): ScenarioResult {
+    const fieldResults = compareScenarioFields(scenario, ogCapture, pluginCapture);
+    return {
+        scenarioId: scenario.id,
+        passed: fieldResults.every((result) => result.match),
+        ogCapture: sanitizeCapture(ogCapture),
+        pluginCapture: sanitizeCapture(pluginCapture),
+        fieldResults,
+    };
 }
 
 function buildSummary(scenarioResults: ScenarioResult[]): VerificationReport["summary"] {
@@ -964,12 +1157,25 @@ async function main(): Promise<void> {
     }
 
     const verifiedAt = new Date().toISOString();
-    const proxy = await startCaptureProxy({ port: args.proxyPort });
+    const offlineOgCapture = args.ogCapturePath ? normalizeStoredCapture(readJsonFile<unknown>(args.ogCapturePath)) : null;
+    const offlinePluginCapture = args.pluginCapturePath
+        ? normalizeStoredCapture(readJsonFile<unknown>(args.pluginCapturePath))
+        : null;
+
+    if ((offlineOgCapture && !offlinePluginCapture) || (!offlineOgCapture && offlinePluginCapture)) {
+        throw new Error("--og-capture and --plugin-capture must be provided together");
+    }
+
+    const proxy = offlineOgCapture && offlinePluginCapture ? null : await startCaptureProxy({ host: args.proxyHost, port: args.proxyPort });
 
     try {
         const scenarioResults: ScenarioResult[] = [];
-        for (const scenario of scenarios) {
-            scenarioResults.push(await runScenario(proxy, scenario, args));
+        for (const [index, scenario] of scenarios.entries()) {
+            if (offlineOgCapture && offlinePluginCapture) {
+                scenarioResults.push(runOfflineScenario(scenario, offlineOgCapture, offlinePluginCapture));
+                continue;
+            }
+            scenarioResults.push(await runScenario(proxy!, scenario, args, { current: index + 1, total: scenarios.length }));
         }
 
         const report: VerificationReport = {
@@ -987,7 +1193,9 @@ async function main(): Promise<void> {
             process.exitCode = 2;
         }
     } finally {
-        await proxy.close();
+        if (proxy) {
+            await proxy.close();
+        }
     }
 }
 
