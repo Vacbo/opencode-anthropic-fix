@@ -54,13 +54,15 @@ export function isAdaptiveThinkingModel(model: string): boolean {
 }
 
 export function hasOneMillionContext(model: string): boolean {
-    // Models with explicit 1m suffix, or Opus 4.6+ (1M by default since v2.1.75).
-    return /(^|[-_ ])1m($|[-_ ])|context[-_]?1m/i.test(model) || isOpus46Model(model);
+    // Sonnet 4.6+ and Opus 4.6+ have 1M context by default (verified via live /v1/models capability API 2026-04-17).
+    return /(^|[-_ ])1m($|[-_ ])|context[-_]?1m/i.test(model) || isOpus46Model(model) || isSonnet46Model(model);
 }
 
 export function supportsStructuredOutputs(model: string): boolean {
     if (!/claude|sonnet|opus|haiku/i.test(model)) return false;
-    return !isHaikuModel(model);
+    // Only Claude 3 Haiku variants lack structured-output support. Haiku 4.5+ supports it
+    // per live /v1/models capability API (capabilities.structured_outputs.supported=true).
+    return !/claude-3(?:-\d+)?-haiku|haiku-3/i.test(model);
 }
 
 /**
