@@ -40,9 +40,9 @@ import {
 
 // Re-export for backward compatibility (tests and external consumers import from cli.ts)
 export { formatDuration, formatTimeAgo, renderBar, formatResetTime, renderUsageLines } from "./cli/formatting.js";
+export { fetchProfile, fetchUsage } from "./cli/status-api.js";
 export {
     ensureTokenAndFetchUsage,
-    fetchUsage,
     refreshAccessToken,
     cmdDisable,
     cmdEnable,

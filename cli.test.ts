@@ -574,11 +574,11 @@ describe("fetchUsage", () => {
         };
         mockFetch.mockResolvedValueOnce({
             ok: true,
-            json: async () => usageData,
+            text: async () => JSON.stringify(usageData),
         });
 
         const result = await fetchUsage("valid-token");
-        expect(result).toEqual(usageData);
+        expect(result).toEqual({ data: usageData, error: null });
 
         const [url, opts] = mockFetch.mock.calls[0];
         expect(url).toBe("https://api.anthropic.com/api/oauth/usage");
@@ -587,8 +587,8 @@ describe("fetchUsage", () => {
     });
 
     it("returns null on failure", async () => {
-        mockFetch.mockResolvedValueOnce({ ok: false, status: 403 });
-        expect(await fetchUsage("bad-token")).toBeNull();
+        mockFetch.mockResolvedValueOnce({ ok: false, status: 403, text: async () => JSON.stringify({ error: { message: "forbidden" } }) });
+        expect(await fetchUsage("bad-token")).toEqual({ data: null, error: "forbidden" });
     });
 });
 
@@ -599,7 +599,13 @@ describe("ensureTokenAndFetchUsage", () => {
             refreshToken: "x",
             token_updated_at: 0,
         });
-        expect(result).toEqual({ usage: null, tokenRefreshed: false });
+        expect(result).toEqual({
+            usage: null,
+            error: null,
+            profile: null,
+            profileError: null,
+            tokenRefreshed: false,
+        });
         expect(mockFetch).not.toHaveBeenCalled();
     });
 
@@ -614,13 +620,18 @@ describe("ensureTokenAndFetchUsage", () => {
         const usageData = {
             five_hour: { utilization: 5.0, resets_at: "2026-01-01T00:00:00Z" },
         };
-        mockFetch.mockResolvedValueOnce({ ok: true, json: async () => usageData });
+        mockFetch
+            .mockResolvedValueOnce({ ok: true, text: async () => JSON.stringify(usageData) })
+            .mockResolvedValueOnce({
+                ok: true,
+                text: async () => JSON.stringify({ account: { email: "claude@example.com" } }),
+            });
 
         const result = await ensureTokenAndFetchUsage(account);
         expect(result.usage).toEqual(usageData);
+        expect(result.profile).toEqual({ account: { email: "claude@example.com" } });
         expect(result.tokenRefreshed).toBe(false);
-        // Only 1 fetch call (usage), no token refresh
-        expect(mockFetch).toHaveBeenCalledTimes(1);
+        expect(mockFetch).toHaveBeenCalledTimes(2);
     });
 
     it("refreshes expired token before fetching usage", async () => {
@@ -644,12 +655,18 @@ describe("ensureTokenAndFetchUsage", () => {
         const usageData = {
             five_hour: { utilization: 20.0, resets_at: "2026-01-01T00:00:00Z" },
         };
-        mockFetch.mockResolvedValueOnce({ ok: true, json: async () => usageData });
+        mockFetch
+            .mockResolvedValueOnce({ ok: true, text: async () => JSON.stringify(usageData) })
+            .mockResolvedValueOnce({
+                ok: true,
+                text: async () => JSON.stringify({ account: { display_name: "Claude Example" } }),
+            });
 
         const result = await ensureTokenAndFetchUsage(account);
         expect(result.usage).toEqual(usageData);
+        expect(result.profile).toEqual({ account: { display_name: "Claude Example" } });
         expect(result.tokenRefreshed).toBe(true);
-        expect(mockFetch).toHaveBeenCalledTimes(2);
+        expect(mockFetch).toHaveBeenCalledTimes(3);
     });
 
     it("returns null usage when token refresh fails", async () => {
@@ -664,6 +681,7 @@ describe("ensureTokenAndFetchUsage", () => {
 
         const result = await ensureTokenAndFetchUsage(account);
         expect(result.usage).toBeNull();
+        expect(result.profile).toBeNull();
         expect(result.tokenRefreshed).toBe(false);
     });
 });
@@ -672,10 +690,10 @@ describe("ensureTokenAndFetchUsage", () => {
 // cmdList
 // ---------------------------------------------------------------------------
 
-/** Helper to mock usage fetch for cmdList tests. */
-function mockUsageForAccounts(...usages: Array<Record<string, unknown> | null>) {
-    const queue = [...usages];
-    const usageByToken = new Map<string, Record<string, unknown>>();
+/** Helper to mock usage/profile fetch for cmdList tests. */
+function mockUsageForAccounts(...entries: Array<{ usage: Record<string, unknown>; profile?: Record<string, unknown> } | null>) {
+    const queue = [...entries];
+    const statusByToken = new Map<string, { usage: Record<string, unknown>; profile?: Record<string, unknown> }>();
     let tokenCounter = 0;
 
     mockFetch.mockImplementation((url, opts = {}) => {
@@ -684,17 +702,17 @@ function mockUsageForAccounts(...usages: Array<Record<string, unknown> | null>) 
         if (target.includes("/v1/oauth/token")) {
             if (queue.length === 0) return Promise.resolve({ ok: false, status: 500 });
 
-            const usage = queue.shift();
-            if (usage === null) {
+            const status = queue.shift();
+            if (status === null) {
                 return Promise.resolve({ ok: false, status: 401 });
             }
-            if (typeof usage === "undefined") {
+            if (typeof status === "undefined") {
                 return Promise.resolve({ ok: false, status: 500 });
             }
 
             tokenCounter += 1;
             const token = `access-${tokenCounter}`;
-            usageByToken.set(token, usage);
+            statusByToken.set(token, status);
             return Promise.resolve({
                 ok: true,
                 json: async () => ({
@@ -709,15 +727,27 @@ function mockUsageForAccounts(...usages: Array<Record<string, unknown> | null>) 
             const auth = opts.headers?.authorization || opts.headers?.Authorization;
             const token = typeof auth === "string" ? auth.replace(/^Bearer\s+/i, "") : "";
 
-            if (!usageByToken.has(token)) {
+            if (!statusByToken.has(token)) {
                 return Promise.resolve({ ok: false, status: 401 });
             }
 
-            const usage = usageByToken.get(token);
-            return Promise.resolve({ ok: true, json: async () => usage });
+            const usage = statusByToken.get(token)?.usage;
+            return Promise.resolve({ ok: true, text: async () => JSON.stringify(usage) });
         }
 
-        return Promise.resolve({ ok: false, status: 500 });
+        if (target.includes("/api/oauth/profile")) {
+            const auth = opts.headers?.authorization || opts.headers?.Authorization;
+            const token = typeof auth === "string" ? auth.replace(/^Bearer\s+/i, "") : "";
+
+            if (!statusByToken.has(token)) {
+                return Promise.resolve({ ok: false, status: 401, text: async () => JSON.stringify({ error: { message: "unauthorized" } }) });
+            }
+
+            const profile = statusByToken.get(token)?.profile ?? null;
+            return Promise.resolve({ ok: true, text: async () => JSON.stringify(profile) });
+        }
+
+        return Promise.resolve({ ok: false, status: 500, text: async () => JSON.stringify({ error: { message: "unexpected endpoint" } }) });
     });
 }
 
@@ -822,7 +852,7 @@ describe("cmdList", () => {
             seven_day_opus: null,
         };
         // Only 2 enabled accounts need mocking (account 3 is disabled, skips fetch)
-        mockUsageForAccounts(usage, usage);
+        mockUsageForAccounts({ usage }, { usage });
 
         const code = await cmdList();
         expect(code).toBe(0);
@@ -855,15 +885,19 @@ describe("cmdList", () => {
         // Account 1 and 2 (enabled) get usage; account 3 is disabled and skips fetch entirely
         mockUsageForAccounts(
             {
-                five_hour: {
-                    utilization: 5.0,
-                    resets_at: new Date(Date.now() + 1000).toISOString(),
+                usage: {
+                    five_hour: {
+                        utilization: 5.0,
+                        resets_at: new Date(Date.now() + 1000).toISOString(),
+                    },
                 },
             },
             {
-                five_hour: {
-                    utilization: 15.0,
-                    resets_at: new Date(Date.now() + 1000).toISOString(),
+                usage: {
+                    five_hour: {
+                        utilization: 15.0,
+                        resets_at: new Date(Date.now() + 1000).toISOString(),
+                    },
                 },
             },
         );
@@ -890,15 +924,19 @@ describe("cmdList", () => {
         // Only 2 enabled accounts need mocking (account 3 is disabled)
         mockUsageForAccounts(
             {
-                five_hour: {
-                    utilization: 1.0,
-                    resets_at: new Date(Date.now() + 1000).toISOString(),
+                usage: {
+                    five_hour: {
+                        utilization: 1.0,
+                        resets_at: new Date(Date.now() + 1000).toISOString(),
+                    },
                 },
             },
             {
-                five_hour: {
-                    utilization: 2.0,
-                    resets_at: new Date(Date.now() + 1000).toISOString(),
+                usage: {
+                    five_hour: {
+                        utilization: 2.0,
+                        resets_at: new Date(Date.now() + 1000).toISOString(),
+                    },
                 },
             },
         );
