@@ -55,6 +55,14 @@ describe("DEFAULT_CONFIG", () => {
         expect(DEFAULT_CONFIG.signature_profile).toBe(DEFAULT_SIGNATURE_PROFILE_ID);
     });
 
+    it("enables third-party prompt relocation by default", () => {
+        expect(DEFAULT_CONFIG.relocate_third_party_prompts).toBe(true);
+    });
+
+    it("disables title-generation requests by default", () => {
+        expect(DEFAULT_CONFIG.disable_title_generation_request).toBe(true);
+    });
+
     it("has toast defaults", () => {
         expect(DEFAULT_CONFIG.toasts.quiet).toBe(false);
         expect(DEFAULT_CONFIG.toasts.debounce_seconds).toBe(30);

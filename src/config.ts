@@ -58,6 +58,7 @@ export interface AnthropicAuthConfig {
     account_selection_strategy: AccountSelectionStrategy;
     signature_profile: string;
     relocate_third_party_prompts?: boolean;
+    disable_title_generation_request?: boolean;
     failure_ttl_seconds: number;
     debug: boolean;
     signature_emulation: {
@@ -83,6 +84,8 @@ export interface AnthropicAuthConfig {
 export const DEFAULT_CONFIG: AnthropicAuthConfig = {
     account_selection_strategy: "sticky",
     signature_profile: DEFAULT_SIGNATURE_PROFILE_ID,
+    relocate_third_party_prompts: true,
+    disable_title_generation_request: true,
     failure_ttl_seconds: 3600,
     debug: false,
     signature_emulation: {
@@ -190,6 +193,14 @@ function validateConfig(raw: Record<string, unknown>): AnthropicAuthConfig {
 
     if (typeof raw.debug === "boolean") {
         config.debug = raw.debug;
+    }
+
+    if (typeof raw.relocate_third_party_prompts === "boolean") {
+        config.relocate_third_party_prompts = raw.relocate_third_party_prompts;
+    }
+
+    if (typeof raw.disable_title_generation_request === "boolean") {
+        config.disable_title_generation_request = raw.disable_title_generation_request;
     }
 
     if (raw.signature_emulation && typeof raw.signature_emulation === "object") {

@@ -37,6 +37,7 @@ vi.mock("../../../src/storage.js", () => ({
 vi.mock("../../../src/config.js", () => {
     const DEFAULT_CONFIG = {
         account_selection_strategy: "sticky",
+        relocate_third_party_prompts: true,
         failure_ttl_seconds: 3600,
         debug: false,
         signature_emulation: {
@@ -107,6 +108,7 @@ vi.mock("../../../src/config.js", () => {
 
 vi.mock("../../../src/cc-credentials.js", () => ({
     readCCCredentials: vi.fn(() => []),
+    readCCCredentialsFromFile: vi.fn(() => []),
 }));
 
 vi.mock("../../../src/refresh-lock.js", () => ({
