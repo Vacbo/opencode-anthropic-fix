@@ -2,8 +2,10 @@
 // MCP prefix stripping for SSE responses
 // ---------------------------------------------------------------------------
 
+import { toInternalToolName } from "../tools/wire-names.js";
+
 /**
- * Strip `mcp_` prefix from tool_use `name` fields in SSE data lines.
+ * Rewrite wire-visible tool names back to internal opencode tool names.
  * Only modifies `name` values inside content blocks with `"type": "tool_use"`.
  * Non-JSON lines and text blocks are left untouched.
  */
@@ -21,21 +23,17 @@ export function stripMcpPrefixFromSSE(text: string): string {
     });
 }
 
-function stripMcpPrefix(value: string): string | null {
-    return value.startsWith("mcp_") ? value.slice(4) : null;
-}
-
-function stripMcpPrefixFromToolNameField(block: Record<string, unknown>, field: "name" | "tool_name"): boolean {
+function rewriteWireToolNameField(block: Record<string, unknown>, field: "name" | "tool_name"): boolean {
     if (typeof block[field] !== "string") {
         return false;
     }
 
-    const strippedName = stripMcpPrefix(block[field]);
-    if (!strippedName) {
+    const internalName = toInternalToolName(block[field]);
+    if (internalName === block[field]) {
         return false;
     }
 
-    block[field] = strippedName;
+    block[field] = internalName;
     return true;
 }
 
@@ -47,7 +45,7 @@ function stripMcpPrefixFromToolUseBlock(block: unknown): boolean {
         return false;
     }
 
-    return stripMcpPrefixFromToolNameField(parsedBlock, "name");
+    return rewriteWireToolNameField(parsedBlock, "name");
 }
 
 function stripMcpPrefixFromToolReferenceBlock(block: unknown): boolean {
@@ -58,7 +56,7 @@ function stripMcpPrefixFromToolReferenceBlock(block: unknown): boolean {
         return false;
     }
 
-    return stripMcpPrefixFromToolNameField(parsedBlock, "tool_name");
+    return rewriteWireToolNameField(parsedBlock, "tool_name");
 }
 
 function stripMcpPrefixFromToolSearchToolResultBlock(block: unknown): boolean {
