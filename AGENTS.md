@@ -34,3 +34,17 @@ These guarantees ensure that parallel requests (for example, multiple concurrent
 - Preserve the per-instance proxy lifecycle: each OpenCode instance gets its own proxy that dies with the parent process.
 - Maintain concurrency guarantees: single proxy handles N concurrent requests, circuit breaker is per-request not global, no restart-kill behavior, stable identity dedup.
 - Keep graceful fallback to native fetch when Bun is unavailable.
+
+## Dev sandbox (prefer for breaking changes)
+
+`bun run install:link` symlinks `src/index.ts` into `~/.config/opencode/plugin/`, which means parse-time errors kill every live OpenCode session. Before changing wire-visible behavior (headers, betas, system prompt, request body shape, OAuth flow), use the sandbox:
+
+1. `bun run sandbox:up` — builds and installs the plugin into `./.sandbox/`, no symlinks.
+2. `source scripts/sandbox-env.sh` — points the current shell at the sandbox plugin/CLI/XDG paths.
+3. `opencode` — now runs against the sandbox, with `OPENCODE_ANTHROPIC_DEBUG=1` for verbose logging.
+4. `bun run sandbox:reinstall` — after each edit, rebuild dist and copy into the sandbox; state is preserved.
+5. `bun run sandbox:down` when done.
+
+`bun run test tests/integration/scripts/sandbox.test.ts` covers the isolation invariants (plugin/CLI are copies, live `~/.config/opencode/` stays untouched, reinstall preserves state). Re-run any time you touch `scripts/sandbox.ts` or the XDG plumbing.
+
+Full operator docs: [`docs/dev-sandbox.md`](docs/dev-sandbox.md).

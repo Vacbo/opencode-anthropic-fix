@@ -155,6 +155,22 @@ This creates:
 - **Plugin:** `~/.config/opencode/plugin/opencode-anthropic-auth-plugin.js` &rarr; `./src/index.ts`
 - **CLI:** `~/.local/bin/opencode-anthropic-auth` &rarr; `./src/cli.ts`
 
+> **Heads up**: the symlink means every edit to `src/` hot-reloads into every running OpenCode session. A parse-time error kills live sessions. For wire-visible or experimental changes, prefer the sandbox below.
+
+### Sandbox (for breaking changes)
+
+An isolated OpenCode tree under `./.sandbox/` that runs the plugin as a copied bundle instead of a live symlink. Edits to `src/` do not reach the sandbox until you explicitly rebuild, so live OpenCode sessions are protected.
+
+```bash
+bun run sandbox:up                   # build + install into .sandbox/
+source scripts/sandbox-env.sh        # activate sandbox in this shell
+opencode                             # runs against the sandbox plugin
+bun run sandbox:reinstall            # after each src/ edit
+bun run sandbox:down                 # wipe the sandbox when done
+```
+
+Full guide: [`docs/dev-sandbox.md`](docs/dev-sandbox.md).
+
 ### Stable (copy)
 
 Bundles the plugin and CLI into self-contained single files (via esbuild) and copies them. No symlinks, no `node_modules` needed at the destination.
