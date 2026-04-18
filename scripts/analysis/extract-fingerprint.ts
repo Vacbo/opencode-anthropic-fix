@@ -33,6 +33,7 @@ const endpointPatterns: Record<string, RegExp> = {
 
 // Headers patterns
 const uaRe = /["'`](claude-cli\/[^"'`]*)["'`]/g;
+const versionLiteralRe = /VERSION:"(\d+\.\d+\.\d+)"/;
 const sdkVersionRe = /\beo="(0\.[0-9]+\.[0-9]+)"/;
 const sdkVersionGeneralRe = /"(0\.\d+\.\d+)"/g;
 const axiosVersionRe = /["'`]axios\/([0-9]+\.[0-9]+\.[0-9]+)/;
@@ -78,16 +79,48 @@ function firstMatch(source: string, re: RegExp, group = 1): string | null {
     return m ? (m[group] ?? null) : null;
 }
 
+function extractBunCompiledUserAgentTemplate(source: string): string | null {
+    const idx = source.indexOf("claude-cli/${");
+    if (idx === -1) {
+        return null;
+    }
+
+    const version = firstMatch(source, versionLiteralRe);
+    if (!version) {
+        return null;
+    }
+
+    const window = source.substring(idx, idx + 500);
+    if (!window.includes("external")) {
+        return null;
+    }
+
+    const entrypoint =
+        window.includes("sdk-cli") || window.includes('CLAUDE_CODE_ENTRYPOINT??"cli"') ? "sdk-cli" : "cli";
+    return `claude-cli/${version} (external, ${entrypoint})`;
+}
+
+function extractBunCompiledBillingTemplate(source: string): string | null {
+    const idx = source.indexOf("x-anthropic-billing-header:");
+    if (idx === -1) {
+        return null;
+    }
+
+    const start = source.lastIndexOf("`", idx);
+    const end = source.indexOf("`", idx);
+    if (start === -1 || end === -1 || end <= start) {
+        return null;
+    }
+
+    return source.slice(start + 1, end);
+}
+
 function collectQuotedLiterals(source: string): string[] {
     return collectMatches(source, quotedLiteralRe);
 }
 
 function isCodeLikeFragment(value: string): boolean {
-    return (
-        value.includes("${") ||
-        /\b(function|return|class|const|let|var|if)\b/.test(value) ||
-        /[{};$]/.test(value)
-    );
+    return value.includes("${") || /\b(function|return|class|const|let|var|if)\b/.test(value) || /[{};$]/.test(value);
 }
 
 function isPlausibleUserAgentTemplate(value: string): boolean {
@@ -205,10 +238,12 @@ export function extractOAuth(source: string): OAuthFingerprint {
 export function extractHeaders(source: string): HeadersFingerprint {
     // User-Agent
     const uaMatches = collectMatches(source, uaRe);
-    const uaTemplate = uaMatches
-        .filter(isPlausibleUserAgentTemplate)
-        .sort((left, right) => scoreUserAgentTemplate(right) - scoreUserAgentTemplate(left))[0];
-    const hasExternal = uaMatches.length > 0;
+    const uaTemplate =
+        uaMatches
+            .filter(isPlausibleUserAgentTemplate)
+            .sort((left, right) => scoreUserAgentTemplate(right) - scoreUserAgentTemplate(left))[0] ??
+        extractBunCompiledUserAgentTemplate(source);
+    const hasExternal = uaMatches.length > 0 || (uaTemplate?.includes("(external") ?? false);
 
     // SDK version — try specific pattern first, then general near "anthropic"
     let sdkVersion = firstMatch(source, sdkVersionRe);
@@ -305,6 +340,13 @@ export function extractBilling(source: string): BillingFingerprint {
     const templateRe = /`(cch=\$\{[^`]+\})`/g;
     const templates = collectMatches(source, templateRe);
     allTemplates.push(...templates);
+
+    if (allTemplates.length === 0) {
+        const bunTemplate = extractBunCompiledBillingTemplate(source);
+        if (bunTemplate) {
+            allTemplates.push(bunTemplate);
+        }
+    }
 
     return {
         cch,

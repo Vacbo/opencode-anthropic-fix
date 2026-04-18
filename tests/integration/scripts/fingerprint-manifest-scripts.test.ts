@@ -267,13 +267,7 @@ describe("fingerprint manifest scripts", () => {
             "utf8",
         );
 
-        const stdout = runBunScript(buildManifestScriptPath, [
-            cliPath,
-            "--version",
-            "2.1.109",
-            "--output",
-            outputDir,
-        ]);
+        const stdout = runBunScript(buildManifestScriptPath, [cliPath, "--version", "2.1.109", "--output", outputDir]);
 
         const result = JSON.parse(stdout) as { manifestPath: string; indexPath: string; version: string };
         const manifest = readJson<CandidateManifest>(join(outputDir, "2.1.109.json"));
@@ -438,6 +432,7 @@ describe("fingerprint manifest scripts", () => {
         const oldManifestPath = join(tempDir, "old.json");
         const newManifestPath = join(tempDir, "new.json");
         const jsonOutputPath = join(tempDir, "diff.json");
+        const markdownOutputPath = join(tempDir, "diff.md");
 
         const oldManifest = createCandidateManifest();
         const newManifest = createCandidateManifest({
@@ -466,7 +461,15 @@ describe("fingerprint manifest scripts", () => {
 
         const result = spawnSync(
             "bun",
-            [diffManifestScriptPath, oldManifestPath, newManifestPath, "--json-output", jsonOutputPath],
+            [
+                diffManifestScriptPath,
+                oldManifestPath,
+                newManifestPath,
+                "--json-output",
+                jsonOutputPath,
+                "--markdown-output",
+                markdownOutputPath,
+            ],
             {
                 cwd: projectRoot,
                 encoding: "utf8",

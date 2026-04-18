@@ -13,3 +13,5 @@ scripts/validation/proxy-certs/
 scorecard.png
 manifests/reports/proxyman/
 manifests/reports/verification/
+manifests/reports/diffs/*.json
+.sandbox/

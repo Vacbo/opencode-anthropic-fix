@@ -2,7 +2,7 @@
     "id": "adaptive-thinking-shared",
     "name": "Adaptive Thinking with Effort (Sonnet 4.6, Wave 2)",
     "description": "Triggers adaptive thinking (shared across Sonnet 4.6 and Opus 4.6/4.7). Verifies the wire shape of thinking: {type: 'adaptive'} + output_config.effort, and the interaction with interleaved-thinking beta (which per Anthropic docs is auto-enabled with adaptive thinking and no longer needs the beta header).",
-    "prompt": "Think step by step: what is 17 times 23? Explain your reasoning.",
+    "prompt": "What is 17 times 23? Think briefly and answer in one short sentence.",
     "expectedBehavior": "body.thinking = {type: 'adaptive'} (no budget_tokens). body.output_config.effort is 'low', 'medium', 'high', or 'max'. Response includes thinking content block with display: 'summarized' (default on Sonnet 4.6) or 'omitted' (unlikely on Sonnet 4.6 but possible).",
     "requiredFields": ["body.thinking", "body.thinking.type", "body.output_config.effort", "headers.anthropic-beta"],
     "runnerMode": "prompt",

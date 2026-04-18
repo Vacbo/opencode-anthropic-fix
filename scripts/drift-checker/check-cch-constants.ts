@@ -3,7 +3,7 @@
 /// <reference types="bun-types" />
 
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -73,36 +73,16 @@ async function resolveLatestNpmVersion(): Promise<string> {
 }
 
 async function downloadCliBundle(version: string): Promise<string> {
-    const tarballUrl = `${REGISTRY_BASE}/-/claude-code-${version}.tgz`;
-    const response = await fetch(tarballUrl);
-    if (!response.ok) {
-        throw new Error(`Failed to download tarball: ${response.status} ${response.statusText} (${tarballUrl})`);
-    }
+    const outputDir = join(tmpdir(), `claude-cli-${version}-extract-${Date.now()}`);
+    mkdirSync(outputDir, { recursive: true });
 
-    const tarballPath = join(tmpdir(), `claude-code-${version}-${Date.now()}.tgz`);
-    writeFileSync(tarballPath, Buffer.from(await response.arrayBuffer()));
+    const extractScriptPath = resolve(process.cwd(), "scripts/analysis/extract-cc-bundle.ts");
+    execFileSync("bun", [extractScriptPath, version, "--output", outputDir], {
+        stdio: "ignore",
+        maxBuffer: 512 * 1024 * 1024,
+    });
 
-    const extractDir = join(tmpdir(), `claude-cli-${version}-extract-${Date.now()}`);
-    mkdirSync(extractDir, { recursive: true });
-
-    const cliOutputPath = join(tmpdir(), `claude-cli-${version}-${Date.now()}.js`);
-    try {
-        execFileSync("tar", ["-xzf", tarballPath, "-C", extractDir], { stdio: "ignore" });
-        const directCliPath = join(extractDir, "package", "cli.js");
-        copyFileSync(directCliPath, cliOutputPath);
-    } catch {
-        const extracted = execFileSync("tar", ["-tzf", tarballPath], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-        const cliPathInTar = extracted
-            .split("\n")
-            .find((entry) => entry.endsWith("/cli.js") || entry === "package/cli.js");
-        if (!cliPathInTar) {
-            throw new Error(`cli.js not found in npm tarball for ${version}`);
-        }
-        execFileSync("tar", ["-xzf", tarballPath, "-C", extractDir], { stdio: "ignore", maxBuffer: 64 * 1024 * 1024 });
-        copyFileSync(join(extractDir, cliPathInTar), cliOutputPath);
-    } finally {
-        rmSync(extractDir, { recursive: true, force: true });
-    }
+    const cliOutputPath = join(outputDir, `cli-${version}.js`);
     return cliOutputPath;
 }
 
