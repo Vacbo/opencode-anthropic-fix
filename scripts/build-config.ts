@@ -22,21 +22,43 @@ export type CliBinaryTarget = {
     id: CliBinaryTargetId;
     bunTarget: `bun-${string}`;
     platform: "darwin" | "linux" | "windows";
+    // libc=musl binaries cannot run on glibc Linux hosts (and vice versa).
+    // Default "glibc" for linux targets without an explicit suffix;
+    // darwin/windows don't use the concept.
+    libc?: "glibc" | "musl";
 };
 
 export const CLI_BINARY_TARGETS: readonly CliBinaryTarget[] = [
     { id: "darwin-x64", bunTarget: "bun-darwin-x64", platform: "darwin" },
     { id: "darwin-arm64", bunTarget: "bun-darwin-arm64", platform: "darwin" },
-    { id: "linux-x64", bunTarget: "bun-linux-x64", platform: "linux" },
-    { id: "linux-x64-baseline", bunTarget: "bun-linux-x64-baseline", platform: "linux" },
-    { id: "linux-x64-modern", bunTarget: "bun-linux-x64-modern", platform: "linux" },
-    { id: "linux-arm64", bunTarget: "bun-linux-arm64", platform: "linux" },
-    { id: "linux-x64-musl", bunTarget: "bun-linux-x64-musl", platform: "linux" },
-    { id: "linux-arm64-musl", bunTarget: "bun-linux-arm64-musl", platform: "linux" },
+    { id: "linux-x64", bunTarget: "bun-linux-x64", platform: "linux", libc: "glibc" },
+    { id: "linux-x64-baseline", bunTarget: "bun-linux-x64-baseline", platform: "linux", libc: "glibc" },
+    { id: "linux-x64-modern", bunTarget: "bun-linux-x64-modern", platform: "linux", libc: "glibc" },
+    { id: "linux-arm64", bunTarget: "bun-linux-arm64", platform: "linux", libc: "glibc" },
+    { id: "linux-x64-musl", bunTarget: "bun-linux-x64-musl", platform: "linux", libc: "musl" },
+    { id: "linux-arm64-musl", bunTarget: "bun-linux-arm64-musl", platform: "linux", libc: "musl" },
     { id: "windows-x64", bunTarget: "bun-windows-x64", platform: "windows" },
     { id: "windows-x64-baseline", bunTarget: "bun-windows-x64-baseline", platform: "windows" },
     { id: "windows-x64-modern", bunTarget: "bun-windows-x64-modern", platform: "windows" },
 ] as const;
+
+/**
+ * A target is "runnable on this host" when its platform + libc match.
+ * GitHub's ubuntu-* runners use glibc, not musl — so musl-targeted
+ * binaries must never be smoke-tested there.
+ */
+export function isTargetRunnableOnHost(
+    target: Pick<CliBinaryTarget, "platform" | "libc">,
+    host: { platform: NodeJS.Platform } = { platform: process.platform },
+): boolean {
+    if (host.platform === "darwin") return target.platform === "darwin";
+    if (host.platform === "win32") return target.platform === "windows";
+    if (host.platform === "linux") {
+        if (target.platform !== "linux") return false;
+        return (target.libc ?? "glibc") === "glibc";
+    }
+    return false;
+}
 
 const CLI_BINARY_TARGETS_BY_ID = new Map(CLI_BINARY_TARGETS.map((target) => [target.id, target]));
 

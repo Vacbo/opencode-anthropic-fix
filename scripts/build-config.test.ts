@@ -4,6 +4,7 @@ import {
     CLI_BINARY_TARGETS,
     getCliBinaryBuildArgs,
     getCliBinaryFilename,
+    isTargetRunnableOnHost,
     parseBuildArguments,
     resolveCliBinaryTargets,
 } from "./build-config";
@@ -58,5 +59,39 @@ describe("build-config", () => {
 
     it("rejects unknown target ids", () => {
         expect(() => resolveCliBinaryTargets(["plan9-x64"])).toThrowError(/Unknown CLI binary target 'plan9-x64'/);
+    });
+
+    describe("isTargetRunnableOnHost", () => {
+        const darwin = { platform: "darwin" } as const;
+        const linux = { platform: "linux" } as const;
+        const win32 = { platform: "win32" } as const;
+
+        it("runs darwin targets only on darwin hosts", () => {
+            expect(isTargetRunnableOnHost({ platform: "darwin" }, darwin)).toBe(true);
+            expect(isTargetRunnableOnHost({ platform: "darwin" }, linux)).toBe(false);
+            expect(isTargetRunnableOnHost({ platform: "darwin" }, win32)).toBe(false);
+        });
+
+        it("runs windows targets only on win32 hosts", () => {
+            expect(isTargetRunnableOnHost({ platform: "windows" }, win32)).toBe(true);
+            expect(isTargetRunnableOnHost({ platform: "windows" }, linux)).toBe(false);
+            expect(isTargetRunnableOnHost({ platform: "windows" }, darwin)).toBe(false);
+        });
+
+        it("runs glibc linux targets on linux hosts", () => {
+            expect(isTargetRunnableOnHost({ platform: "linux", libc: "glibc" }, linux)).toBe(true);
+            expect(isTargetRunnableOnHost({ platform: "linux" }, linux)).toBe(true);
+        });
+
+        it("refuses to run musl linux targets on linux hosts (glibc assumed on CI)", () => {
+            expect(isTargetRunnableOnHost({ platform: "linux", libc: "musl" }, linux)).toBe(false);
+        });
+
+        it("classifies every CLI_BINARY_TARGETS entry for a linux host", () => {
+            const runnable = CLI_BINARY_TARGETS.filter((target) => isTargetRunnableOnHost(target, linux)).map(
+                ({ id }) => id,
+            );
+            expect(runnable).toEqual(["linux-x64", "linux-x64-baseline", "linux-x64-modern", "linux-arm64"]);
+        });
     });
 });

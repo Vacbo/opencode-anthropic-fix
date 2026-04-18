@@ -9,7 +9,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { mkdir } from "node:fs/promises";
+import { mkdir, rm, stat } from "node:fs/promises";
 
 import { build, type BuildOptions } from "esbuild";
 
@@ -24,6 +24,8 @@ import {
     getCliBinaryOutfile,
     parseBuildArguments,
 } from "./build-config";
+
+const COMPILE_MAX_ATTEMPTS = 3;
 
 const shared: BuildOptions = {
     bundle: true,
@@ -41,10 +43,7 @@ await bundleJavaScriptArtifacts();
 
 if (options.buildCliBinaries) {
     for (const target of options.cliBinaryTargets) {
-        const args = getCliBinaryBuildArgs(target);
-        console.log(`Compiling ${target.id} -> ${getCliBinaryOutfile(target)}`);
-        await run("bun", args);
-        await repairMacOSBinary(target);
+        await compileCliBinary(target);
     }
 
     const compiledTargets = options.cliBinaryTargets.map(({ id }) => id).join(", ");
@@ -81,6 +80,51 @@ async function repairMacOSBinary(target: CliBinaryTarget) {
     await run("codesign", ["--remove-signature", binaryPath]).catch(() => undefined);
     await run("codesign", ["--force", "--sign", "-", binaryPath]);
     console.log(`Re-signed ${target.id} for local macOS execution`);
+}
+
+async function compileCliBinary(target: CliBinaryTarget): Promise<void> {
+    const outfile = getCliBinaryOutfile(target);
+    const args = getCliBinaryBuildArgs(target);
+
+    for (let attempt = 1; attempt <= COMPILE_MAX_ATTEMPTS; attempt += 1) {
+        console.log(
+            `Compiling ${target.id} -> ${outfile}${attempt > 1 ? ` (retry ${attempt}/${COMPILE_MAX_ATTEMPTS})` : ""}`,
+        );
+
+        await rm(outfile, { force: true });
+
+        try {
+            await run("bun", args);
+        } catch (error) {
+            if (attempt === COMPILE_MAX_ATTEMPTS) throw error;
+            console.warn(
+                `bun compile failed for ${target.id}; retrying (${error instanceof Error ? error.message : error})`,
+            );
+            continue;
+        }
+
+        // Bun 1.3.12 can exit 0 for --compile without producing an output file
+        // (observed on GitHub's ubuntu runners for musl cross-compile targets
+        // and on the Bun CDN extract path for windows-x64-baseline). Verify
+        // the file exists so we fail loudly instead of ENOENTing later.
+        const exists = await stat(outfile).then(
+            (info) => info.isFile() && info.size > 0,
+            () => false,
+        );
+
+        if (exists) {
+            await repairMacOSBinary(target);
+            return;
+        }
+
+        if (attempt === COMPILE_MAX_ATTEMPTS) {
+            throw new Error(
+                `bun compile for ${target.id} exited 0 but did not produce ${outfile}. ` +
+                    `This is a known Bun 1.3.12 issue with some cross-compile targets on CI runners.`,
+            );
+        }
+        console.warn(`bun compile for ${target.id} produced no output; retrying`);
+    }
 }
 
 function run(command: string, args: string[]) {

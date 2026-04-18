@@ -3,7 +3,12 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 
-import { getCliBinaryOutfile, parseCliBinaryTargetArgs, resolveCliBinaryTargets } from "./build-config";
+import {
+    getCliBinaryOutfile,
+    isTargetRunnableOnHost,
+    parseCliBinaryTargetArgs,
+    resolveCliBinaryTargets,
+} from "./build-config";
 
 const requestedTargetIds = parseCliBinaryTargetArgs(process.argv.slice(2));
 const targets = resolveCliBinaryTargets(requestedTargetIds);
@@ -12,7 +17,20 @@ if (targets.length === 0) {
     throw new Error("No CLI binary targets resolved for smoke test.");
 }
 
-for (const target of targets) {
+const runnable = targets.filter((target) => isTargetRunnableOnHost(target));
+const skipped = targets.filter((target) => !isTargetRunnableOnHost(target));
+
+for (const target of skipped) {
+    console.log(`Skipping smoke test for ${target.id} (cannot execute on ${process.platform})`);
+}
+
+if (runnable.length === 0) {
+    throw new Error(
+        `None of the requested targets are runnable on ${process.platform}: ${targets.map(({ id }) => id).join(", ")}`,
+    );
+}
+
+for (const target of runnable) {
     const binaryPath = resolve(getCliBinaryOutfile(target));
 
     await run(binaryPath, ["--help"]);
