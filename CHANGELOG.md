@@ -5,6 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-04-17
+
+This release hardens wire-level parity with real Claude Code 2.1.113, introduces a dev sandbox for safe iteration, ports a per-model smoke harness from griffinmartin/opencode-claude-auth, and adds a structured logger with OAuth-token redaction. CHANGELOG entries for 0.1.5 through 0.1.9 were skipped; this version consolidates all changes since 0.1.4.
+
+### Added
+
+- **Dev sandbox** (`scripts/sandbox.ts`): isolated OpenCode tree under `.sandbox/` that runs a copied plugin bundle instead of the live symlink, so parse-time errors during iteration no longer kill live OpenCode sessions. Commands: `bun run sandbox:up|down|reinstall|run|status`. Full guide at [`docs/dev-sandbox.md`](docs/dev-sandbox.md).
+- **Per-model smoke test** (`scripts/smoke/test-models.ts`): hits `/v1/messages` once per model with a minimal prompt, records failures in `manifests/smoke/failed-models.json`, and on re-run skips models that have never passed. Opt in to Opus with `--all` or `--model claude-opus-4-7`. Ported from griffinmartin/opencode-claude-auth with our canonical model list and no OpenCode-SDK dependency.
+- **Structured JSON logger** (`src/logger.ts`): `debug`, `info`, `warn`, `error` levels with auto-redaction of bearer tokens (`sk-ant-oat01-...`) and common credential keys (`access`, `access_token`, `refresh`, `refreshToken`, `token`, `bearer`, `authorization`). Debug output is gated on the pre-existing `OPENCODE_ANTHROPIC_DEBUG` env var.
+- **Candidate manifest ingestion for CC 2.1.109, 2.1.111, 2.1.112, and 2.1.113** under `manifests/candidate/claude-code/` with per-version notes in `docs/cc-versions/`.
+- **Bun-native binary extraction** (`scripts/analysis/extract-cc-bundle.ts`): CC 2.1.113 ships as a Bun-compiled native binary instead of `cli.js`. The extractor now pulls strings/patterns from the native binary so drift checking and fingerprint extraction continue working. Template-literal fallbacks recover user-agent and billing templates when `cli.js` is unavailable.
+- **Adaptive thinking wire shape** (`src/request/body.ts`): rewrote thinking body to match CC's native shape (`thinking: { type: "adaptive" }` + `output_config.effort`) with `xhigh`/`max` tiers for Opus 4.6+ and Sonnet 4.6+.
+- **Context-aware identity selector** (`src/constants.ts::selectClaudeCodeIdentity`): mirrors CC 2.1.113's decompiled `zN_()` — emits the interactive identity on TTY, the Claude-Agent-SDK identity for non-interactive runs, and the Vertex identity for first-party Vertex. See `.sisyphus/evidence/phase-1-claim-validation/2026-04-17/` for the captures that proved the selector logic.
+- **Phase 1 validation scenarios** (`scripts/verification/scenarios/*.json`) and `scripts/verification/run-live-verification.ts --prompt-file` / `--model` flags for running Proxyman-backed capture comparisons against the live API.
+- **One-shot beta-order verifier** (`scripts/verification/check-beta-order.ts`): extracts `anthropic-beta` from two capture JSONs and asserts equality by content AND order. Exits 0 on match, 1 on mismatch with a side-by-side diff.
+- **Proxyman HAR workflow** (`scripts/proxyman/`): canonical live-capture runner for Wave 1/2/3 reproducibility.
+- **Capabilities snapshot tool** (`scripts/capabilities/snapshot.ts`): per-model `/v1/models/{id}` snapshot used to validate model-specific claims in `src/models.ts`.
+- **`CLAUDE_CODE_ENTRYPOINT` default flipped to `sdk-cli`** (`src/headers/builder.ts`): matches real CC 2.1.113 emission for the non-interactive common case.
+- **Progressive long-context retry** (`src/request/long-context-retry.ts`): mirrors CC's automatic beta exclusion on long-context 400/429.
+- **Wire-visible tool-name rewriting** (`src/tools/wire-names.ts`): rewrites internal OpenCode tool names to Claude Code wire names so tool-use blocks look like CC emitted them.
+- **Anthropic account/org UUIDs surfaced** through the full OAuth stack for metadata.user_id composition consistency.
+
+### Changed
+
+- **`anthropic-beta` emission order now matches CC 2.1.113 byte-for-byte** on Haiku 4.5 minimal-hi. The plugin previously emitted `claude-code-20250219` at position 0; CC emits it at position 4, between `prompt-caching-scope-2026-01-05` and `advisor-tool-2026-03-01`. See `.sisyphus/evidence/phase-1-claim-validation/2026-04-17/proxyman-minimal-hi-2.1.113/minimal-hi-og-capture.json:20` for the reference capture. Sonnet 4.6 and Opus 4.7 ordering validation is deferred because their Phase-1 captures have a separate beta-membership gap (`context-1m-2025-08-07`).
+- **`src/betas.ts` `buildAnthropicBetaHeader()`** reorders signature-branch pushes so the final output matches CC's live emission. Two golden-order tests (`tests/unit/profiles/index.test.ts`, `tests/regression/fingerprint/fingerprint-regression.test.ts`) were updated to reflect the new authoritative order.
+- **19 silent error-swallowing catch blocks** across `src/oauth.ts`, `src/storage.ts`, `src/backoff.ts`, `src/token-refresh.ts`, `src/request-orchestration-helpers.ts`, `src/accounts.ts`, `src/env.ts`, `src/refresh-lock.ts`, `src/response/streaming.ts`, and `src/response/mcp.ts` now emit `logger.debug()` calls. Runtime behavior is unchanged — each catch keeps its original "continue, don't throw" intent — but the errors are now observable under `OPENCODE_ANTHROPIC_DEBUG=1`. A new regression test (`tests/unit/no-empty-catches.test.ts`) prevents future silent swallows from landing.
+- **Plugin bundle renamed** `dist/opencode-anthropic-auth-plugin.js` → `dist/opencode-anthropic-auth-plugin.mjs`.
+- **Capture tooling migrated from shell + JavaScript to TypeScript** (`scripts/proxyman/`, `scripts/verification/`, `scripts/analysis/`).
+
+### Fixed
+
+- **Haiku 4.5 now receives `claude-code-20250219` and `advisor-tool-2026-03-01`** (`src/betas.ts`). Both were previously excluded by a `!haiku` guard; live CC 2.1.112 capture on 2026-04-17 proved CC sends them on Haiku too.
+- **Identity string is context-aware** (`src/constants.ts`, `src/system-prompt/builder.ts`): matches decompiled CC 2.1.113 `zN_()` logic instead of hard-coding a single string that was wrong for either interactive or non-interactive flows.
+- **Cache-control TTL on the identity block is 1h** (matches CC 2.1.112 on-wire value).
+- **Sonnet 4.6+ correctly treated as 1M-context** and Haiku 4.5+ correctly allowed structured outputs (`src/models.ts`). Proven via the new capabilities snapshot tool.
+- **Account selection when OAuth refresh succeeds but a single-account sticky setup hits a transient failure**: the "All accounts exhausted" message no longer implies real quota exhaustion — the underlying per-request backoff was tightening before the first request finished.
+- **Test suite stability across account persistence, CLI, and integration suites**; 80 test files / 1369 tests + 5 skipped currently green.
+- **cli.js import support** — `scripts/analysis/build-candidate-manifest.ts` now accepts a raw `cli.js` input and extracts the fingerprint automatically.
+
+### Known issues
+
+- **`cc_version` suffix algorithm is incorrect**. The existing `src/headers/billing.ts` computes `SHA-256(salt + text[4,7,20] + version).slice(0, 3)` with `salt = "59cf53e54c78"`. Validated against 5 real CC 2.1.113 OG captures and **0/5 match**: all 5 captures have identical first-user-message text but CC emits 5 distinct suffixes, so the text alone is not a sufficient input. Additional inputs tested and ruled out: session_id, request_id, their sha256 variants, literal substrings of both, sha256(bodyText), sha256(messagesJson), substrings of the `cch` field. **Impact: LOW** — Anthropic accepts the request regardless of suffix match; the field is a billing/tracing hint, not an auth check. Golden-pair tests shipped under `tests/unit/headers/billing-suffix.test.ts` with `describe.skip` for future work. See `docs/mimese-http-header-system-prompt.md` line 399 for the full investigation.
+
+### Notes
+
+- CHANGELOG entries for 0.1.5, 0.1.6, 0.1.7, 0.1.8, and 0.1.9 were skipped in the repo. The changes in those versions are consolidated under this 0.2.0 entry.
+- Phase-1 evidence captures under `.sisyphus/evidence/phase-1-claim-validation/2026-04-17/` are intentionally gitignored; use them for local reference, not PRs.
+- Sandbox integration test (`tests/integration/scripts/sandbox.test.ts`) must remain green before shipping any wire-level change that touches the plugin's XDG plumbing.
+
 ## [0.1.4] - 2026-04-11
 
 ### Changed
