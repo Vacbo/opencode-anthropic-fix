@@ -477,15 +477,15 @@ A custom provider requires `opencode.json` config with at least one model defini
 
 ### Test Structure
 
-| File                | Tests                                                       | Coverage                     |
-| ------------------- | ----------------------------------------------------------- | ---------------------------- |
-| `tests/unit/backoff.test.ts`  | Rate limit parsing, backoff calculation                     | `src/backoff.ts`             |
-| `tests/unit/rotation.test.ts` | Health scores, token buckets, selection algorithms          | `src/rotation.ts`            |
-| `tests/unit/config.test.ts`   | Config loading, validation, env overrides                   | `src/config.ts`              |
-| `tests/unit/storage.test.ts`  | Account persistence, deduplication, atomic writes           | `src/storage.ts`             |
-| `tests/unit/accounts.test.ts` | AccountManager lifecycle, pool management, empty bootstrap  | `src/accounts.ts`            |
+| File                          | Tests                                                       | Coverage                       |
+| ----------------------------- | ----------------------------------------------------------- | ------------------------------ |
+| `tests/unit/backoff.test.ts`  | Rate limit parsing, backoff calculation                     | `src/backoff.ts`               |
+| `tests/unit/rotation.test.ts` | Health scores, token buckets, selection algorithms          | `src/rotation.ts`              |
+| `tests/unit/config.test.ts`   | Config loading, validation, env overrides                   | `src/config.ts`                |
+| `tests/unit/storage.test.ts`  | Account persistence, deduplication, atomic writes           | `src/storage.ts`               |
+| `tests/unit/accounts.test.ts` | AccountManager lifecycle, pool management, empty bootstrap  | `src/accounts.ts`              |
 | `index.test.ts`               | Plugin lifecycle, fetch interceptor, transforms, slash cmds | `src/index.ts`, `src/oauth.ts` |
-| `cli.test.ts`                 | CLI auth + account commands, IO capture, live usage quotas  | `src/cli.ts`                 |
+| `cli.test.ts`                 | CLI auth + account commands, IO capture, live usage quotas  | `src/cli.ts`                   |
 
 ### Writing Tests
 

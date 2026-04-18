@@ -388,9 +388,9 @@ describe("index.parallel RED", () => {
         );
 
         const transformedNames = harness.mockFetch.mock.calls.map((call) => {
-            const assistantMsg = (parseSentBody(call).messages as Array<{ role?: string; content: Array<{ name?: string }> }>).find(
-                (msg) => msg.role === "assistant",
-            );
+            const assistantMsg = (
+                parseSentBody(call).messages as Array<{ role?: string; content: Array<{ name?: string }> }>
+            ).find((msg) => msg.role === "assistant");
             return assistantMsg?.content[0].name;
         });
         transformedNames.forEach((name, index) => {

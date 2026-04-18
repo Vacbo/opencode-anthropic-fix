@@ -97,13 +97,13 @@ That remote-session setup matters because later requests in the same HAR used a 
 
 Observed login-only endpoints and likely purpose:
 
-| Endpoint | Observed auth | Why it exists |
-|---|---|---|
-| `/api/oauth/usage` | Bearer + `oauth-2025-04-20` | Returns the quota buckets used for CLI bars |
-| `/api/oauth/profile` | Bearer | Returns account/org/application metadata |
+| Endpoint                      | Observed auth               | Why it exists                                |
+| ----------------------------- | --------------------------- | -------------------------------------------- |
+| `/api/oauth/usage`            | Bearer + `oauth-2025-04-20` | Returns the quota buckets used for CLI bars  |
+| `/api/oauth/profile`          | Bearer                      | Returns account/org/application metadata     |
 | `/api/oauth/account/settings` | Bearer + `oauth-2025-04-20` | Returns account-level feature/settings flags |
-| `/api/oauth/claude_cli/roles` | Bearer | Returns role/permission context |
-| `/api/claude_cli/bootstrap` | Bearer + `oauth-2025-04-20` | Returns CLI bootstrap/config features |
+| `/api/oauth/claude_cli/roles` | Bearer                      | Returns role/permission context              |
+| `/api/claude_cli/bootstrap`   | Bearer + `oauth-2025-04-20` | Returns CLI bootstrap/config features        |
 
 The key point is that **quota bars** come from `/api/oauth/usage`, not from `settings` or `policy_limits`, because it is the only observed endpoint returning the bucket shape:
 

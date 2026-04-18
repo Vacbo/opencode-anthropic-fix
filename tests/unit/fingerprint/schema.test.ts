@@ -563,7 +563,9 @@ describe("fingerprint/schema", () => {
             expect(result.metadata.deviceLinkage.value).toBe("device-candidate");
             expect(result.metadata.accountLinkage.value).toBe("account-candidate");
             // Sensitive fields remain fallback-only until live verification promotes them.
-            expect(result.headers.xStainlessHeaders.value).toEqual(DEFAULT_FALLBACK_PROFILE.headers.xStainlessHeaders.value);
+            expect(result.headers.xStainlessHeaders.value).toEqual(
+                DEFAULT_FALLBACK_PROFILE.headers.xStainlessHeaders.value,
+            );
         });
     });
 

@@ -4,10 +4,7 @@ const LONG_CONTEXT_ERROR_MARKERS = [
     "long_context_beta",
 ] as const;
 
-const LONG_CONTEXT_EXCLUSION_ORDER = [
-    "context-1m-2025-08-07",
-    "interleaved-thinking-2025-05-14",
-] as const;
+const LONG_CONTEXT_EXCLUSION_ORDER = ["context-1m-2025-08-07", "interleaved-thinking-2025-05-14"] as const;
 
 export type LongContextExcludableBeta = (typeof LONG_CONTEXT_EXCLUSION_ORDER)[number];
 

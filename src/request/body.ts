@@ -97,7 +97,11 @@ function isTitleGeneratorRequest(parsed: RequestBodyShape): boolean {
         haystack.includes("generate a brief title") ||
         haystack.includes("generate a concise, sentence-case title");
 
-    if (isHaikuModel(typeof parsed.model === "string" ? parsed.model : "") && hasTitleGeneratorInstruction && hasTitlePrompt) {
+    if (
+        isHaikuModel(typeof parsed.model === "string" ? parsed.model : "") &&
+        hasTitleGeneratorInstruction &&
+        hasTitlePrompt
+    ) {
         return true;
     }
 
@@ -116,19 +120,17 @@ function isTitleGeneratorRequest(parsed: RequestBodyShape): boolean {
     }
 
     return Array.isArray(parsed.system)
-        ? parsed.system.some(
-               (block) => {
-                   if (!block || typeof block !== "object") {
-                       return false;
-                   }
+        ? parsed.system.some((block) => {
+              if (!block || typeof block !== "object") {
+                  return false;
+              }
 
-                   const systemBlock = block as { text?: unknown };
-                   return (
-                       typeof systemBlock.text === "string" &&
-                       systemBlock.text.includes("Generate a concise, sentence-case title")
-                   );
-               },
-           )
+              const systemBlock = block as { text?: unknown };
+              return (
+                  typeof systemBlock.text === "string" &&
+                  systemBlock.text.includes("Generate a concise, sentence-case title")
+              );
+          })
         : false;
 }
 
@@ -150,7 +152,11 @@ export function isTitleGeneratorRequestBody(body: string | undefined): boolean {
             return true;
         }
 
-        return isHaikuModel(typeof parsed.model === "string" ? parsed.model : "") && mentionsTitleGenerator && mentionsTitlePrompt;
+        return (
+            isHaikuModel(typeof parsed.model === "string" ? parsed.model : "") &&
+            mentionsTitleGenerator &&
+            mentionsTitlePrompt
+        );
     } catch {
         return mentionsTitleGenerator && mentionsTitlePrompt;
     }

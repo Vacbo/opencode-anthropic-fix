@@ -179,7 +179,8 @@ function createTokenServer(): TokenServerHandle {
         if (payload.grant_type === "authorization_code") {
             email = typeof payload.code === "string" ? payload.code : "";
         } else if (payload.grant_type === "refresh_token") {
-            email = typeof payload.refresh_token === "string" ? (refreshTokenToEmail.get(payload.refresh_token) ?? "") : "";
+            email =
+                typeof payload.refresh_token === "string" ? (refreshTokenToEmail.get(payload.refresh_token) ?? "") : "";
         } else {
             response.writeHead(400, { "content-type": "application/json" });
             response.end(JSON.stringify({ error: "unsupported_grant_type" }));
@@ -321,10 +322,7 @@ async function run(): Promise<void> {
 
     const tokenPort = await tokenServer.start();
 
-    const interceptedFetchImpl = async (
-        input: Parameters<FetchType>[0],
-        init?: Parameters<FetchType>[1],
-    ) => {
+    const interceptedFetchImpl = async (input: Parameters<FetchType>[0], init?: Parameters<FetchType>[1]) => {
         const url = typeof input === "string" || input instanceof URL ? new URL(input.toString()) : new URL(input.url);
 
         if (url.hostname === "platform.claude.com" && url.pathname === "/v1/oauth/token") {

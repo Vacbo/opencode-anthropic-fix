@@ -10,25 +10,25 @@ Source captures:
 ### Present on Claude Code, missing on plugin
 
 - `anthropic-beta` members:
-  - `context-1m-2025-08-07`
-  - `redact-thinking-2026-02-12`
-  - `advisor-tool-2026-03-01`
-  - `advanced-tool-use-2025-11-20`
+    - `context-1m-2025-08-07`
+    - `redact-thinking-2026-02-12`
+    - `advisor-tool-2026-03-01`
+    - `advanced-tool-use-2025-11-20`
 
 ### Present on plugin, not on Claude Code
 
 - `anthropic-beta` members:
-  - `files-api-2025-04-14`
-  - `fine-grained-tool-streaming-2025-05-14`
-  - `structured-outputs-2025-11-13`
+    - `files-api-2025-04-14`
+    - `fine-grained-tool-streaming-2025-05-14`
+    - `structured-outputs-2025-11-13`
 - `x-stainless-helper: )}}function pZ7(q){if(gO8(q))return{`
 - `x-session-affinity: ses_...`
 
 ### Same header, different value
 
 - `Accept`
-  - Claude Code: `application/json`
-  - Plugin: `*/*`
+    - Claude Code: `application/json`
+    - Plugin: `*/*`
 
 ## Body diff
 
@@ -44,7 +44,13 @@ Source captures:
 - failed with:
 
 ```json
-{"type":"error","error":{"type":"invalid_request_error","message":"You're out of extra usage. Add more at claude.ai/settings/usage and keep going."}}
+{
+    "type": "error",
+    "error": {
+        "type": "invalid_request_error",
+        "message": "You're out of extra usage. Add more at claude.ai/settings/usage and keep going."
+    }
+}
 ```
 
 ## Practical interpretation

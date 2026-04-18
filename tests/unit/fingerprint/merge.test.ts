@@ -78,12 +78,12 @@ describe("fingerprint/merge resolveRequestProfile", () => {
     it("prefers verified manifest fields over fallback values", () => {
         const verified = createVerifiedManifest("2.1.111", [
             {
-                            path: "headers.xApp",
-                            value: "cli-verified",
-                            verifiedAt: "2026-04-15T17:32:35.000Z",
-                            verifiedBy: "unit-test-runner",
-                            scenarioIds: ["minimal-hi"],
-                        },
+                path: "headers.xApp",
+                value: "cli-verified",
+                verifiedAt: "2026-04-15T17:32:35.000Z",
+                verifiedBy: "unit-test-runner",
+                scenarioIds: ["minimal-hi"],
+            },
         ]);
         writeVerifiedManifest(manifestRoot, verified);
 
@@ -151,12 +151,12 @@ describe("fingerprint/merge resolveRequestProfile", () => {
 
         const verified = createVerifiedManifest("2.1.111", [
             {
-                            path: "headers.xApp",
-                            value: "cli-verified",
-                            verifiedAt: "2026-04-15T17:32:35.000Z",
-                            verifiedBy: "unit-test-runner",
-                            scenarioIds: ["minimal-hi"],
-                        },
+                path: "headers.xApp",
+                value: "cli-verified",
+                verifiedAt: "2026-04-15T17:32:35.000Z",
+                verifiedBy: "unit-test-runner",
+                scenarioIds: ["minimal-hi"],
+            },
         ]);
         writeVerifiedManifest(manifestRoot, verified);
 

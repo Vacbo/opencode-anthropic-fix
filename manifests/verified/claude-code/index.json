@@ -1,12 +1,12 @@
 {
-  "schemaVersion": "1.0.0",
-  "lastUpdated": "2026-04-15T19:39:27.989Z",
-  "versions": [
-    {
-      "version": "2.1.109",
-      "path": "manifests/verified/claude-code/2.1.109.json",
-      "createdAt": "2026-04-15T19:39:27.989Z"
-    }
-  ],
-  "latest": "2.1.109"
+    "schemaVersion": "1.0.0",
+    "lastUpdated": "2026-04-15T19:39:27.989Z",
+    "versions": [
+        {
+            "version": "2.1.109",
+            "path": "manifests/verified/claude-code/2.1.109.json",
+            "createdAt": "2026-04-15T19:39:27.989Z"
+        }
+    ],
+    "latest": "2.1.109"
 }

@@ -1,110 +1,98 @@
 {
-  "version": "2.1.109",
-  "verifiedAt": "2026-04-15T19:39:27.989Z",
-  "verifiedBy": "trusted-local-verifier",
-  "scenarioIds": [
-    "minimal-hi"
-  ],
-  "promotedFields": [
-    {
-      "path": "headers.xApp",
-      "value": "cli",
-      "verifiedAt": "2026-04-15T19:39:27.989Z",
-      "verifiedBy": "trusted-local-verifier",
-      "scenarioIds": [
-        "minimal-hi"
-      ],
-      "evidenceRef": "manifests/reports/verification/2.1.109-minimal-hi.json"
-    },
-    {
-      "path": "transport.pathStyle",
-      "value": "/v1/messages?beta=true",
-      "verifiedAt": "2026-04-15T19:39:27.989Z",
-      "verifiedBy": "trusted-local-verifier",
-      "scenarioIds": [
-        "minimal-hi"
-      ],
-      "evidenceRef": "manifests/reports/verification/2.1.109-minimal-hi.json"
-    }
-  ],
-  "rejectedCandidateFields": [
-    {
-      "path": "betas.requiredBaseBetas",
-      "candidateValue": [
-        "oauth-2025-04-20"
-      ],
-      "rejectionReason": "Observed OG/plugin mismatch during live verification",
-      "mismatches": [
+    "version": "2.1.109",
+    "verifiedAt": "2026-04-15T19:39:27.989Z",
+    "verifiedBy": "trusted-local-verifier",
+    "scenarioIds": ["minimal-hi"],
+    "promotedFields": [
         {
-          "scenarioId": "minimal-hi",
-          "expected": [],
-          "actual": [
-            "oauth-2025-04-20"
-          ]
-        }
-      ]
-    },
-    {
-      "path": "body.defaultMaxTokens",
-      "candidateValue": 4096,
-      "rejectionReason": "Observed OG/plugin mismatch during live verification",
-      "mismatches": [
+            "path": "headers.xApp",
+            "value": "cli",
+            "verifiedAt": "2026-04-15T19:39:27.989Z",
+            "verifiedBy": "trusted-local-verifier",
+            "scenarioIds": ["minimal-hi"],
+            "evidenceRef": "manifests/reports/verification/2.1.109-minimal-hi.json"
+        },
         {
-          "scenarioId": "minimal-hi",
-          "expected": 32000,
-          "actual": 1024
+            "path": "transport.pathStyle",
+            "value": "/v1/messages?beta=true",
+            "verifiedAt": "2026-04-15T19:39:27.989Z",
+            "verifiedBy": "trusted-local-verifier",
+            "scenarioIds": ["minimal-hi"],
+            "evidenceRef": "manifests/reports/verification/2.1.109-minimal-hi.json"
         }
-      ]
-    },
-    {
-      "path": "body.defaultStream",
-      "candidateValue": true,
-      "rejectionReason": "Observed OG/plugin mismatch during live verification",
-      "mismatches": [
+    ],
+    "rejectedCandidateFields": [
         {
-          "scenarioId": "minimal-hi",
-          "expected": true,
-          "actual": false
-        }
-      ]
-    },
-    {
-      "path": "headers.userAgent",
-      "candidateValue": "claude-cli/${{ISSUES_EXPLAINER:",
-      "rejectionReason": "Observed OG/plugin mismatch during live verification",
-      "mismatches": [
+            "path": "betas.requiredBaseBetas",
+            "candidateValue": ["oauth-2025-04-20"],
+            "rejectionReason": "Observed OG/plugin mismatch during live verification",
+            "mismatches": [
+                {
+                    "scenarioId": "minimal-hi",
+                    "expected": [],
+                    "actual": ["oauth-2025-04-20"]
+                }
+            ]
+        },
         {
-          "scenarioId": "minimal-hi",
-          "expected": "claude-cli/2.1.109 (external, sdk-cli)",
-          "actual": "claude-cli/2.1.109 (external, cli)"
-        }
-      ]
-    },
-    {
-      "path": "transport.defaultHeaders",
-      "candidateValue": {
-        "content-type": "application/json",
-        "anthropic-version": "2023-06-01",
-        "anthropic-dangerous-direct-browser-access": "true"
-      },
-      "rejectionReason": "Observed OG/plugin mismatch during live verification",
-      "mismatches": [
+            "path": "body.defaultMaxTokens",
+            "candidateValue": 4096,
+            "rejectionReason": "Observed OG/plugin mismatch during live verification",
+            "mismatches": [
+                {
+                    "scenarioId": "minimal-hi",
+                    "expected": 32000,
+                    "actual": 1024
+                }
+            ]
+        },
         {
-          "scenarioId": "minimal-hi",
-          "expected": {
-            "content-type": "application/json",
-            "anthropic-version": "2023-06-01",
-            "anthropic-dangerous-direct-browser-access": "true"
-          },
-          "actual": {
-            "anthropic-version": "2023-06-01",
-            "anthropic-dangerous-direct-browser-access": "true"
-          }
+            "path": "body.defaultStream",
+            "candidateValue": true,
+            "rejectionReason": "Observed OG/plugin mismatch during live verification",
+            "mismatches": [
+                {
+                    "scenarioId": "minimal-hi",
+                    "expected": true,
+                    "actual": false
+                }
+            ]
+        },
+        {
+            "path": "headers.userAgent",
+            "candidateValue": "claude-cli/${{ISSUES_EXPLAINER:",
+            "rejectionReason": "Observed OG/plugin mismatch during live verification",
+            "mismatches": [
+                {
+                    "scenarioId": "minimal-hi",
+                    "expected": "claude-cli/2.1.109 (external, sdk-cli)",
+                    "actual": "claude-cli/2.1.109 (external, cli)"
+                }
+            ]
+        },
+        {
+            "path": "transport.defaultHeaders",
+            "candidateValue": {
+                "content-type": "application/json",
+                "anthropic-version": "2023-06-01",
+                "anthropic-dangerous-direct-browser-access": "true"
+            },
+            "rejectionReason": "Observed OG/plugin mismatch during live verification",
+            "mismatches": [
+                {
+                    "scenarioId": "minimal-hi",
+                    "expected": {
+                        "content-type": "application/json",
+                        "anthropic-version": "2023-06-01",
+                        "anthropic-dangerous-direct-browser-access": "true"
+                    },
+                    "actual": {
+                        "anthropic-version": "2023-06-01",
+                        "anthropic-dangerous-direct-browser-access": "true"
+                    }
+                }
+            ]
         }
-      ]
-    }
-  ],
-  "evidenceArtifacts": [
-    "manifests/reports/verification/2.1.109-minimal-hi.json"
-  ]
+    ],
+    "evidenceArtifacts": ["manifests/reports/verification/2.1.109-minimal-hi.json"]
 }

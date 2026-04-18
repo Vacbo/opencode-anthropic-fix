@@ -87,12 +87,9 @@ export async function fetchUsage(accessToken: string) {
 }
 
 export async function fetchProfile(accessToken: string) {
-    return fetchStatusJson<OAuthProfilePayload>(
-        OAUTH_PROFILE_ENDPOINT,
-        {
-            ...buildOAuthStatusHeaders(accessToken, false),
-            accept: "application/json, text/plain, */*",
-            "user-agent": "axios/1.13.6",
-        },
-    );
+    return fetchStatusJson<OAuthProfilePayload>(OAUTH_PROFILE_ENDPOINT, {
+        ...buildOAuthStatusHeaders(accessToken, false),
+        accept: "application/json, text/plain, */*",
+        "user-agent": "axios/1.13.6",
+    });
 }

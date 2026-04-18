@@ -158,16 +158,19 @@ server.on("connection", (socket: Socket) => {
     });
 });
 
-const idleTimer = setInterval(() => {
-    if (Date.now() - lastActivityAt < idleShutdownMs) {
-        return;
-    }
+const idleTimer = setInterval(
+    () => {
+        if (Date.now() - lastActivityAt < idleShutdownMs) {
+            return;
+        }
 
-    clearInterval(idleTimer);
-    server.close(() => {
-        process.exit(0);
-    });
-}, Math.min(idleShutdownMs, 1_000));
+        clearInterval(idleTimer);
+        server.close(() => {
+            process.exit(0);
+        });
+    },
+    Math.min(idleShutdownMs, 1_000),
+);
 
 idleTimer.unref();
 

@@ -57,14 +57,13 @@ export function normalizeThinkingConfig(
         return { thinking, outputConfig };
     }
 
-    const effort: ThinkingEffort =
-        isValidEffort(t.effort)
-            ? t.effort
-            : isValidEffort(outputConfig?.effort)
-              ? outputConfig.effort
-              : typeof t.budget_tokens === "number"
-                ? budgetTokensToEffort(t.budget_tokens)
-                : "medium";
+    const effort: ThinkingEffort = isValidEffort(t.effort)
+        ? t.effort
+        : isValidEffort(outputConfig?.effort)
+          ? outputConfig.effort
+          : typeof t.budget_tokens === "number"
+            ? budgetTokensToEffort(t.budget_tokens)
+            : "medium";
 
     return {
         thinking: { type: "adaptive" },

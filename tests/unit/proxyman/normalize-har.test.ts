@@ -4,7 +4,12 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { loadHarCaptures, normalizeHarEntry, parseArgs, selectCapture } from "../../../scripts/proxyman/normalize-har.ts";
+import {
+    loadHarCaptures,
+    normalizeHarEntry,
+    parseArgs,
+    selectCapture,
+} from "../../../scripts/proxyman/normalize-har.ts";
 
 const tempDirs = new Set<string>();
 

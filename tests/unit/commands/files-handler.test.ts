@@ -120,10 +120,7 @@ describe("handleFilesCommand", () => {
             },
         });
         expect(deps.fileAccountMap.get("file_1")).toBe(0);
-        expect(deps.sendCommandMessage).toHaveBeenCalledWith(
-            "sess-1",
-            expect.stringContaining("report.pdf"),
-        );
+        expect(deps.sendCommandMessage).toHaveBeenCalledWith("sess-1", expect.stringContaining("report.pdf"));
     });
 
     it("uploads a file with multipart form data and records the owning account", async () => {
@@ -140,10 +137,7 @@ describe("handleFilesCommand", () => {
         expect(init.method).toBe("POST");
         expect(init.body).toBeInstanceOf(FormData);
         expect(deps.fileAccountMap.get("file_up")).toBe(0);
-        expect(deps.sendCommandMessage).toHaveBeenCalledWith(
-            "sess-1",
-            expect.stringContaining("Uploaded: file_up"),
-        );
+        expect(deps.sendCommandMessage).toHaveBeenCalledWith("sess-1", expect.stringContaining("Uploaded: file_up"));
     });
 
     it("gets file metadata for the selected file id", async () => {
@@ -170,10 +164,7 @@ describe("handleFilesCommand", () => {
             },
         });
         expect(deps.fileAccountMap.get("file_meta")).toBe(0);
-        expect(deps.sendCommandMessage).toHaveBeenCalledWith(
-            "sess-1",
-            expect.stringContaining("Filename: meta.json"),
-        );
+        expect(deps.sendCommandMessage).toHaveBeenCalledWith("sess-1", expect.stringContaining("Filename: meta.json"));
     });
 
     it("deletes a file and removes its account pin", async () => {
@@ -202,10 +193,7 @@ describe("handleFilesCommand", () => {
         await handleFilesCommand("sess-1", ["files", "list", "--account", "ghost@example.com"], deps);
 
         expect(fetchMock).not.toHaveBeenCalled();
-        expect(deps.sendCommandMessage).toHaveBeenCalledWith(
-            "sess-1",
-            expect.stringContaining("not found"),
-        );
+        expect(deps.sendCommandMessage).toHaveBeenCalledWith("sess-1", expect.stringContaining("not found"));
     });
 
     it("downloads file content and writes it to the requested output path", async () => {

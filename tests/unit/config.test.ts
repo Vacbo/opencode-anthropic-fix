@@ -1,6 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
-import { ConfigCorruptReadError, DEFAULT_CONFIG, getConfigDir, getConfigPath, loadConfig, saveConfig } from "../../src/config.js";
+import {
+    ConfigCorruptReadError,
+    DEFAULT_CONFIG,
+    getConfigDir,
+    getConfigPath,
+    loadConfig,
+    saveConfig,
+} from "../../src/config.js";
 import { DEFAULT_SIGNATURE_PROFILE_ID } from "../../src/profiles/index.js";
 
 vi.mock("node:fs", () => ({

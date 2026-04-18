@@ -13,9 +13,7 @@ describe("request/metadata", () => {
     });
 
     it("falls back to account id when no uuid is available", () => {
-        expect(getAccountIdentifier({ id: "cc-cc-keychain-123:sk-ant-ort01" })).toBe(
-            "cc-cc-keychain-123:sk-ant-ort01",
-        );
+        expect(getAccountIdentifier({ id: "cc-cc-keychain-123:sk-ant-ort01" })).toBe("cc-cc-keychain-123:sk-ant-ort01");
     });
 
     it("builds metadata.user_id with the resolved uuid source", () => {

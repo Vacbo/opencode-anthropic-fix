@@ -57,7 +57,9 @@ describe("fetchUsage / fetchProfile error extraction", () => {
     }
 
     it("returns the nested error.message verbatim on error responses", async () => {
-        fetchSpy.mockResolvedValueOnce(mockResponse(403, JSON.stringify({ error: { message: "forbidden by policy" } })));
+        fetchSpy.mockResolvedValueOnce(
+            mockResponse(403, JSON.stringify({ error: { message: "forbidden by policy" } })),
+        );
         const result = await fetchUsage("token-a");
         expect(result.data).toBeNull();
         expect(result.error).toBe("forbidden by policy");
@@ -89,9 +91,7 @@ describe("fetchUsage / fetchProfile error extraction", () => {
     });
 
     it("returns parsed JSON on success with no error", async () => {
-        fetchSpy.mockResolvedValueOnce(
-            mockResponse(200, JSON.stringify({ five_hour: { utilization: 0.25 } })),
-        );
+        fetchSpy.mockResolvedValueOnce(mockResponse(200, JSON.stringify({ five_hour: { utilization: 0.25 } })));
         const result = await fetchUsage("token-a");
         expect(result.error).toBeNull();
         expect(result.data).toEqual({ five_hour: { utilization: 0.25 } });

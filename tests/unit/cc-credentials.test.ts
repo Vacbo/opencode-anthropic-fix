@@ -243,7 +243,9 @@ describe("readCCCredentialsFromKeychain", () => {
             });
 
             expect(readCCCredentialsFromKeychain()).toBeNull();
-            expect(warnings.some((w) => w.includes("keychain lookup failed") && w.includes("handled exit code 44"))).toBe(true);
+            expect(
+                warnings.some((w) => w.includes("keychain lookup failed") && w.includes("handled exit code 44")),
+            ).toBe(true);
         });
 
         it("logs timeout with timeout duration when OPENCODE_ANTHROPIC_DEBUG=1", () => {

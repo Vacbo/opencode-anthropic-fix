@@ -111,7 +111,11 @@ export function mergeAuthFallbackIntoAccounts(
 
     const matchExpires = typeof match.expires === "number" ? match.expires : 0;
     const shouldAdoptFallback =
-        fallbackLooksFresh && (!match.access || !match.expires || fallbackExpires > matchExpires || match.refreshToken !== authFallback.refresh);
+        fallbackLooksFresh &&
+        (!match.access ||
+            !match.expires ||
+            fallbackExpires > matchExpires ||
+            match.refreshToken !== authFallback.refresh);
 
     if (!shouldAdoptFallback) {
         return;

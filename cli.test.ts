@@ -114,7 +114,12 @@ vi.mock("./src/oauth.js", () => ({
     refreshToken: vi.fn(async (refreshTokenValue: string, options: { signal?: AbortSignal } = {}) => {
         // Delegate to the shared mockFetch so tests can queue HTTP responses via
         // mockResolvedValueOnce and mockUsageForAccounts just like the real fetch.
-        const resp = await (globalThis.fetch as (url: string, init: unknown) => Promise<{ ok: boolean; status: number; json?: () => Promise<unknown>; text?: () => Promise<string> }>)("https://console.anthropic.com/v1/oauth/token", {
+        const resp = await (
+            globalThis.fetch as (
+                url: string,
+                init: unknown,
+            ) => Promise<{ ok: boolean; status: number; json?: () => Promise<unknown>; text?: () => Promise<string> }>
+        )("https://console.anthropic.com/v1/oauth/token", {
             method: "POST",
             headers: {},
             body: JSON.stringify({ refresh_token: refreshTokenValue }),
@@ -602,7 +607,11 @@ describe("fetchUsage", () => {
     });
 
     it("returns null on failure", async () => {
-        mockFetch.mockResolvedValueOnce({ ok: false, status: 403, text: async () => JSON.stringify({ error: { message: "forbidden" } }) });
+        mockFetch.mockResolvedValueOnce({
+            ok: false,
+            status: 403,
+            text: async () => JSON.stringify({ error: { message: "forbidden" } }),
+        });
         expect(await fetchUsage("bad-token")).toEqual({ data: null, error: "forbidden" });
     });
 });
@@ -706,7 +715,9 @@ describe("ensureTokenAndFetchUsage", () => {
 // ---------------------------------------------------------------------------
 
 /** Helper to mock usage/profile fetch for cmdList tests. */
-function mockUsageForAccounts(...entries: Array<{ usage: Record<string, unknown>; profile?: Record<string, unknown> } | null>) {
+function mockUsageForAccounts(
+    ...entries: Array<{ usage: Record<string, unknown>; profile?: Record<string, unknown> } | null>
+) {
     const queue = [...entries];
     const statusByToken = new Map<string, { usage: Record<string, unknown>; profile?: Record<string, unknown> }>();
     let tokenCounter = 0;
@@ -755,14 +766,22 @@ function mockUsageForAccounts(...entries: Array<{ usage: Record<string, unknown>
             const token = typeof auth === "string" ? auth.replace(/^Bearer\s+/i, "") : "";
 
             if (!statusByToken.has(token)) {
-                return Promise.resolve({ ok: false, status: 401, text: async () => JSON.stringify({ error: { message: "unauthorized" } }) });
+                return Promise.resolve({
+                    ok: false,
+                    status: 401,
+                    text: async () => JSON.stringify({ error: { message: "unauthorized" } }),
+                });
             }
 
             const profile = statusByToken.get(token)?.profile ?? null;
             return Promise.resolve({ ok: true, text: async () => JSON.stringify(profile) });
         }
 
-        return Promise.resolve({ ok: false, status: 500, text: async () => JSON.stringify({ error: { message: "unexpected endpoint" } }) });
+        return Promise.resolve({
+            ok: false,
+            status: 500,
+            text: async () => JSON.stringify({ error: { message: "unexpected endpoint" } }),
+        });
     });
 }
 

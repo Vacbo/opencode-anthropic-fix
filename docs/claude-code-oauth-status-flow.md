@@ -44,14 +44,14 @@ Observed adjacent login/session endpoints:
 
 ## How each endpoint links into the user flow
 
-| User-visible phase | Endpoint | Why it appears there |
-|---|---|---|
-| Login completed, account context loads | `/api/oauth/profile` | Identifies the user/account/org/application behind the OAuth credential |
-| Login completed, account flags load | `/api/oauth/account/settings` | Pulls account-level settings and feature flags |
-| Login completed, CLI entitlement/role context loads | `/api/oauth/claude_cli/roles` | Gives the CLI role/permission context after login |
-| Login completed, quota/status UI loads | `/api/oauth/usage` | Returns the bucket data that powers the quota bars |
-| Login completed, CLI feature/bootstrap state loads | `/api/claude_cli/bootstrap` | Initializes CLI-side runtime feature/config state |
-| CLI starts or resumes a remote coding session | `/v1/code/sessions` and `/v1/code/sessions/...` | Establishes and maintains the remote session/worker graph |
+| User-visible phase                                  | Endpoint                                        | Why it appears there                                                    |
+| --------------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------- |
+| Login completed, account context loads              | `/api/oauth/profile`                            | Identifies the user/account/org/application behind the OAuth credential |
+| Login completed, account flags load                 | `/api/oauth/account/settings`                   | Pulls account-level settings and feature flags                          |
+| Login completed, CLI entitlement/role context loads | `/api/oauth/claude_cli/roles`                   | Gives the CLI role/permission context after login                       |
+| Login completed, quota/status UI loads              | `/api/oauth/usage`                              | Returns the bucket data that powers the quota bars                      |
+| Login completed, CLI feature/bootstrap state loads  | `/api/claude_cli/bootstrap`                     | Initializes CLI-side runtime feature/config state                       |
+| CLI starts or resumes a remote coding session       | `/v1/code/sessions` and `/v1/code/sessions/...` | Establishes and maintains the remote session/worker graph               |
 
 ## Why `/api/oauth/usage` is the quota endpoint
 

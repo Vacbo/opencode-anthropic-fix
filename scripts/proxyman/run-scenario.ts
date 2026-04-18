@@ -82,12 +82,9 @@ function renderCommand(template: string, prompt: string): string {
 
 function renderSourcedCommand(envScriptPath: string, command: string): string {
     const quotedEnvScriptPath = shellQuote(envScriptPath);
-    return [
-        "set -a 2>/dev/null || true",
-        `source ${quotedEnvScriptPath}`,
-        "set +a 2>/dev/null || true",
-        command,
-    ].join("; ");
+    return ["set -a 2>/dev/null || true", `source ${quotedEnvScriptPath}`, "set +a 2>/dev/null || true", command].join(
+        "; ",
+    );
 }
 
 function parseArgs(args: string[]): ParsedArgs {
@@ -174,7 +171,10 @@ function parseArgs(args: string[]): ParsedArgs {
         throw new Error("--settle-ms must be a non-negative integer");
     }
 
-    const defaultOutputDir = resolve(DEFAULT_REPORT_DIR, `${scenarioId}-${createTimestampSlug(new Date().toISOString())}`);
+    const defaultOutputDir = resolve(
+        DEFAULT_REPORT_DIR,
+        `${scenarioId}-${createTimestampSlug(new Date().toISOString())}`,
+    );
 
     return {
         version,
@@ -348,20 +348,34 @@ async function captureRun(
 ): Promise<string> {
     clearSession(args.proxymanCliPath);
 
-    await runCommand(commandTemplate, scenarioPrompt, args.proxymanEnvScript, args.commandTimeoutMs, `${args.scenarioId}: ${label}`);
+    await runCommand(
+        commandTemplate,
+        scenarioPrompt,
+        args.proxymanEnvScript,
+        args.commandTimeoutMs,
+        `${args.scenarioId}: ${label}`,
+    );
     await sleep(args.settleMs);
 
     const harPath = join(args.outputDir, `${args.scenarioId}-${label}.har`);
     const capturePath = join(args.outputDir, `${args.scenarioId}-${label}-capture.json`);
     exportHar(args.proxymanCliPath, harPath);
 
-    const normalized = selectCapture(loadHarCaptures(harPath), createNormalizeArgs(harPath, capturePath, args.scenarioId, args.scenarioDir));
+    const normalized = selectCapture(
+        loadHarCaptures(harPath),
+        createNormalizeArgs(harPath, capturePath, args.scenarioId, args.scenarioDir),
+    );
     mkdirSync(dirname(capturePath), { recursive: true });
     writeFileSync(capturePath, `${JSON.stringify(normalized, null, 2)}\n`, "utf8");
     return capturePath;
 }
 
-function runOfflineVerification(args: ParsedArgs, ogCapturePath: string, pluginCapturePath: string, reportPath: string): void {
+function runOfflineVerification(
+    args: ParsedArgs,
+    ogCapturePath: string,
+    pluginCapturePath: string,
+    reportPath: string,
+): void {
     try {
         execFileSync(
             process.execPath,

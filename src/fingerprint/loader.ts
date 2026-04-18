@@ -92,7 +92,9 @@ function logManifestValidationFailure(
 ): void {
     const rootCause = error.cause instanceof Error ? `: ${error.cause.message}` : "";
     // eslint-disable-next-line no-console -- operator diagnostic: surfaces corrupt-manifest fallback cause at load time
-    console.warn(`[opencode-anthropic-auth] manifest validation failed (${tier}/${subject}): ${error.message}${rootCause}`);
+    console.warn(
+        `[opencode-anthropic-auth] manifest validation failed (${tier}/${subject}): ${error.message}${rootCause}`,
+    );
 }
 
 export function loadManifestIndex(tier: ManifestTier, options?: ManifestLoaderOptions): ManifestIndex | null {

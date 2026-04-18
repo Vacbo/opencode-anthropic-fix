@@ -65,11 +65,7 @@ function parseCCCredentialWithMeta(raw: string, meta: CredentialParseMeta): CCCr
         if (!isRecord(parsed)) return null;
 
         const wrapped = parsed.claudeAiOauth;
-        const candidate = isValidCredentialShape(wrapped)
-            ? wrapped
-            : isValidCredentialShape(parsed)
-              ? parsed
-              : null;
+        const candidate = isValidCredentialShape(wrapped) ? wrapped : isValidCredentialShape(parsed) ? parsed : null;
 
         if (!candidate) return null;
 

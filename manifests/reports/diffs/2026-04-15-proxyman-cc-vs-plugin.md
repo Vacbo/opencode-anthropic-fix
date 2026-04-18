@@ -11,7 +11,13 @@ This report compares a successful Claude Code request against a failed plugin re
 The plugin failure response body was:
 
 ```json
-{"type":"error","error":{"type":"invalid_request_error","message":"You're out of extra usage. Add more at claude.ai/settings/usage and keep going."}}
+{
+    "type": "error",
+    "error": {
+        "type": "invalid_request_error",
+        "message": "You're out of extra usage. Add more at claude.ai/settings/usage and keep going."
+    }
+}
 ```
 
 ## Highest-confidence wire gaps
@@ -20,10 +26,10 @@ The plugin failure response body was:
 
 Observed on the wire:
 
-| Side | `anthropic-beta` |
-| --- | --- |
+| Side                | `anthropic-beta`                                                                                                                                                                                                                                              |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Claude Code (`658`) | `claude-code-20250219,oauth-2025-04-20,context-1m-2025-08-07,interleaved-thinking-2025-05-14,redact-thinking-2026-02-12,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advisor-tool-2026-03-01,advanced-tool-use-2025-11-20,effort-2025-11-24` |
-| Plugin (`803`) | `oauth-2025-04-20,claude-code-20250219,files-api-2025-04-14,effort-2025-11-24,context-management-2025-06-27,prompt-caching-scope-2026-01-05,fine-grained-tool-streaming-2025-05-14,structured-outputs-2025-11-13,interleaved-thinking-2025-05-14` |
+| Plugin (`803`)      | `oauth-2025-04-20,claude-code-20250219,files-api-2025-04-14,effort-2025-11-24,context-management-2025-06-27,prompt-caching-scope-2026-01-05,fine-grained-tool-streaming-2025-05-14,structured-outputs-2025-11-13,interleaved-thinking-2025-05-14`             |
 
 Concrete drift:
 
@@ -74,7 +80,7 @@ Why this looks like a real bug, not just drift:
 ```
 
 - `src/fingerprint/schema.ts` currently allows **sensitive** candidate fields through when `allowCandidateLowRisk` is true:
-  - `mergeFieldMetadata(...)` lines `433-439`
+    - `mergeFieldMetadata(...)` lines `433-439`
 - `headers.xStainlessHeaders` is classified as **sensitive**, so this candidate-only garbage should not be making it into runtime.
 
 This is the clearest repo-local parity bug found in this capture pass.
@@ -152,9 +158,9 @@ Why first:
 Fix targets:
 
 - `src/fingerprint/schema.ts`
-  - stop merging **sensitive** candidate fields when only low-risk candidate usage was intended
+    - stop merging **sensitive** candidate fields when only low-risk candidate usage was intended
 - `src/request/profile-resolver.ts`
-  - verify normalized profile cannot reintroduce bad manifest header state
+    - verify normalized profile cannot reintroduce bad manifest header state
 
 Expected outcome:
 

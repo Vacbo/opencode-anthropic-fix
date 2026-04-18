@@ -22,9 +22,7 @@ export interface RepairResult {
     removedToolResults: string[];
 }
 
-export function repairToolPairs(
-    messages: Message[],
-): { messages: Message[]; repair: RepairResult } {
+export function repairToolPairs(messages: Message[]): { messages: Message[]; repair: RepairResult } {
     const toolUseIds = new Set<string>();
     const toolResultIds = new Set<string>();
 

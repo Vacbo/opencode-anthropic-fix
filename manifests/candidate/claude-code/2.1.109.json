@@ -1,253 +1,249 @@
 {
-  "version": "2.1.109",
-  "source": {
-    "npmPackage": "@anthropic-ai/claude-code",
-    "tarballUrl": "https://registry.npmjs.org/@anthropic-ai/claude-code/-claude-code-2.1.109.tgz",
-    "tarballHash": "0449b9d05b2141ba51c7a5262a7c62e68c73098b87e4fc97b5e1a517aaaf7128",
-    "extractionTimestamp": "2026-04-15T19:04:11.243Z"
-  },
-  "transport": {
-    "pathStyle": {
-      "value": "/v1/messages?beta=true",
-      "risk": "sensitive",
-      "origin": "bundle-heuristic",
-      "confidence": "medium",
-      "extractedAt": "2026-04-15T19:04:11.243Z"
+    "version": "2.1.109",
+    "source": {
+        "npmPackage": "@anthropic-ai/claude-code",
+        "tarballUrl": "https://registry.npmjs.org/@anthropic-ai/claude-code/-claude-code-2.1.109.tgz",
+        "tarballHash": "0449b9d05b2141ba51c7a5262a7c62e68c73098b87e4fc97b5e1a517aaaf7128",
+        "extractionTimestamp": "2026-04-15T19:04:11.243Z"
     },
-    "defaultHeaders": {
-      "value": {
-        "content-type": "application/json",
-        "anthropic-version": "2023-06-01",
-        "anthropic-dangerous-direct-browser-access": "true"
-      },
-      "risk": "sensitive",
-      "origin": "bundle-heuristic",
-      "confidence": "medium",
-      "extractedAt": "2026-04-15T19:04:11.243Z"
+    "transport": {
+        "pathStyle": {
+            "value": "/v1/messages?beta=true",
+            "risk": "sensitive",
+            "origin": "bundle-heuristic",
+            "confidence": "medium",
+            "extractedAt": "2026-04-15T19:04:11.243Z"
+        },
+        "defaultHeaders": {
+            "value": {
+                "content-type": "application/json",
+                "anthropic-version": "2023-06-01",
+                "anthropic-dangerous-direct-browser-access": "true"
+            },
+            "risk": "sensitive",
+            "origin": "bundle-heuristic",
+            "confidence": "medium",
+            "extractedAt": "2026-04-15T19:04:11.243Z"
+        },
+        "authHeaderMode": {
+            "value": "bearer",
+            "risk": "critical",
+            "origin": "bundle-heuristic",
+            "confidence": "high",
+            "extractedAt": "2026-04-15T19:04:11.243Z"
+        }
     },
-    "authHeaderMode": {
-      "value": "bearer",
-      "risk": "critical",
-      "origin": "bundle-heuristic",
-      "confidence": "high",
-      "extractedAt": "2026-04-15T19:04:11.243Z"
-    }
-  },
-  "headers": {
-    "userAgent": {
-      "value": "claude-cli/${{ISSUES_EXPLAINER:",
-      "risk": "critical",
-      "origin": "bundle-string",
-      "confidence": "high",
-      "extractedAt": "2026-04-15T19:04:11.243Z"
+    "headers": {
+        "userAgent": {
+            "value": "claude-cli/${{ISSUES_EXPLAINER:",
+            "risk": "critical",
+            "origin": "bundle-string",
+            "confidence": "high",
+            "extractedAt": "2026-04-15T19:04:11.243Z"
+        },
+        "xApp": {
+            "value": "cli",
+            "risk": "critical",
+            "origin": "bundle-heuristic",
+            "confidence": "medium",
+            "extractedAt": "2026-04-15T19:04:11.243Z"
+        },
+        "xStainlessHeaders": {
+            "value": {
+                "x-stainless-helper": ")}}function pZ7(q){if(gO8(q))return{"
+            },
+            "risk": "sensitive",
+            "origin": "bundle-string",
+            "confidence": "high",
+            "extractedAt": "2026-04-15T19:04:11.243Z"
+        },
+        "xClientRequestId": {
+            "value": "x-client-request-id",
+            "risk": "sensitive",
+            "origin": "bundle-heuristic",
+            "confidence": "medium",
+            "extractedAt": "2026-04-15T19:04:11.243Z"
+        },
+        "xClaudeCodeSessionId": {
+            "value": "X-Claude-Code-Session-Id",
+            "risk": "sensitive",
+            "origin": "bundle-heuristic",
+            "confidence": "medium",
+            "extractedAt": "2026-04-15T19:04:11.243Z"
+        }
     },
-    "xApp": {
-      "value": "cli",
-      "risk": "critical",
-      "origin": "bundle-heuristic",
-      "confidence": "medium",
-      "extractedAt": "2026-04-15T19:04:11.243Z"
+    "betas": {
+        "requiredBaseBetas": {
+            "value": ["oauth-2025-04-20"],
+            "risk": "critical",
+            "origin": "bundle-string",
+            "confidence": "high",
+            "extractedAt": "2026-04-15T19:04:11.243Z"
+        },
+        "optionalBetas": {
+            "value": [
+                "files-api-2025-04-14",
+                "message-batches-2024-09-24",
+                "structured-outputs-2025-12-15",
+                "token-counting-2024-11-01",
+                "skills-2025-10-02",
+                "interleaved-thinking-2025-05-14",
+                "context-1m-2025-08-07",
+                "context-management-2025-06-27",
+                "web-search-2025-03-05",
+                "advanced-tool-use-2025-11-20",
+                "tool-search-tool-2025-10-19",
+                "effort-2025-11-24",
+                "task-budgets-2026-03-13",
+                "prompt-caching-scope-2026-01-05",
+                "fast-mode-2026-02-01",
+                "redact-thinking-2026-02-12",
+                "afk-mode-2026-01-31",
+                "advisor-tool-2026-03-01",
+                "bedrock-2023-05-31",
+                "vertex-2023-10-16",
+                "mcp-servers-2025-12-04",
+                "ccr-byoc-2025-07-29",
+                "ccr-triggers-2026-01-30",
+                "environments-2025-11-01",
+                "compact-2026-01-12",
+                "structured-outputs-2025-11-13",
+                "mcp-client-2025-11-20",
+                "managed-agents-2026-04-01"
+            ],
+            "risk": "sensitive",
+            "origin": "bundle-string",
+            "confidence": "high",
+            "extractedAt": "2026-04-15T19:04:11.243Z"
+        },
+        "authModeBetas": {
+            "value": ["oauth-2025-04-20"],
+            "risk": "critical",
+            "origin": "bundle-string",
+            "confidence": "high",
+            "extractedAt": "2026-04-15T19:04:11.243Z"
+        }
     },
-    "xStainlessHeaders": {
-      "value": {
-        "x-stainless-helper": ")}}function pZ7(q){if(gO8(q))return{"
-      },
-      "risk": "sensitive",
-      "origin": "bundle-string",
-      "confidence": "high",
-      "extractedAt": "2026-04-15T19:04:11.243Z"
+    "billing": {
+        "ccVersion": {
+            "value": "2.1.109",
+            "risk": "low-risk",
+            "origin": "bundle-heuristic",
+            "confidence": "high",
+            "extractedAt": "2026-04-15T19:04:11.243Z"
+        },
+        "ccEntrypoint": {
+            "value": "cli",
+            "risk": "critical",
+            "origin": "bundle-heuristic",
+            "confidence": "medium",
+            "extractedAt": "2026-04-15T19:04:11.243Z"
+        },
+        "cchStrategy": {
+            "value": "xxhash64-5hex",
+            "risk": "low-risk",
+            "origin": "bundle-string",
+            "confidence": "medium",
+            "extractedAt": "2026-04-15T19:04:11.243Z"
+        }
     },
-    "xClientRequestId": {
-      "value": "x-client-request-id",
-      "risk": "sensitive",
-      "origin": "bundle-heuristic",
-      "confidence": "medium",
-      "extractedAt": "2026-04-15T19:04:11.243Z"
+    "body": {
+        "defaultStream": {
+            "value": true,
+            "risk": "critical",
+            "origin": "bundle-heuristic",
+            "confidence": "medium",
+            "extractedAt": "2026-04-15T19:04:11.243Z"
+        },
+        "defaultMaxTokens": {
+            "value": 4096,
+            "risk": "critical",
+            "origin": "bundle-heuristic",
+            "confidence": "medium",
+            "extractedAt": "2026-04-15T19:04:11.243Z"
+        },
+        "temperaturePresence": {
+            "value": false,
+            "risk": "low-risk",
+            "origin": "bundle-heuristic",
+            "confidence": "low",
+            "extractedAt": "2026-04-15T19:04:11.243Z"
+        },
+        "thinkingKey": {
+            "value": true,
+            "risk": "low-risk",
+            "origin": "bundle-heuristic",
+            "confidence": "low",
+            "extractedAt": "2026-04-15T19:04:11.243Z"
+        },
+        "contextManagementKey": {
+            "value": true,
+            "risk": "low-risk",
+            "origin": "bundle-heuristic",
+            "confidence": "low",
+            "extractedAt": "2026-04-15T19:04:11.243Z"
+        },
+        "toolsKey": {
+            "value": true,
+            "risk": "low-risk",
+            "origin": "bundle-heuristic",
+            "confidence": "low",
+            "extractedAt": "2026-04-15T19:04:11.243Z"
+        }
     },
-    "xClaudeCodeSessionId": {
-      "value": "X-Claude-Code-Session-Id",
-      "risk": "sensitive",
-      "origin": "bundle-heuristic",
-      "confidence": "medium",
-      "extractedAt": "2026-04-15T19:04:11.243Z"
-    }
-  },
-  "betas": {
-    "requiredBaseBetas": {
-      "value": [
-        "oauth-2025-04-20"
-      ],
-      "risk": "critical",
-      "origin": "bundle-string",
-      "confidence": "high",
-      "extractedAt": "2026-04-15T19:04:11.243Z"
+    "prompt": {
+        "identityString": {
+            "value": "You are Claude Code, Anthropic's official CLI for Claude.",
+            "risk": "critical",
+            "origin": "bundle-heuristic",
+            "confidence": "medium",
+            "extractedAt": "2026-04-15T19:04:11.243Z"
+        },
+        "billingBlockPlacement": {
+            "value": "prepend",
+            "risk": "critical",
+            "origin": "bundle-heuristic",
+            "confidence": "medium",
+            "extractedAt": "2026-04-15T19:04:11.243Z"
+        },
+        "appendMode": {
+            "value": false,
+            "risk": "low-risk",
+            "origin": "bundle-heuristic",
+            "confidence": "low",
+            "extractedAt": "2026-04-15T19:04:11.243Z"
+        },
+        "cacheControlBehavior": {
+            "value": "ephemeral-identity-block",
+            "risk": "critical",
+            "origin": "bundle-heuristic",
+            "confidence": "low",
+            "extractedAt": "2026-04-15T19:04:11.243Z"
+        }
     },
-    "optionalBetas": {
-      "value": [
-        "files-api-2025-04-14",
-        "message-batches-2024-09-24",
-        "structured-outputs-2025-12-15",
-        "token-counting-2024-11-01",
-        "skills-2025-10-02",
-        "interleaved-thinking-2025-05-14",
-        "context-1m-2025-08-07",
-        "context-management-2025-06-27",
-        "web-search-2025-03-05",
-        "advanced-tool-use-2025-11-20",
-        "tool-search-tool-2025-10-19",
-        "effort-2025-11-24",
-        "task-budgets-2026-03-13",
-        "prompt-caching-scope-2026-01-05",
-        "fast-mode-2026-02-01",
-        "redact-thinking-2026-02-12",
-        "afk-mode-2026-01-31",
-        "advisor-tool-2026-03-01",
-        "bedrock-2023-05-31",
-        "vertex-2023-10-16",
-        "mcp-servers-2025-12-04",
-        "ccr-byoc-2025-07-29",
-        "ccr-triggers-2026-01-30",
-        "environments-2025-11-01",
-        "compact-2026-01-12",
-        "structured-outputs-2025-11-13",
-        "mcp-client-2025-11-20",
-        "managed-agents-2026-04-01"
-      ],
-      "risk": "sensitive",
-      "origin": "bundle-string",
-      "confidence": "high",
-      "extractedAt": "2026-04-15T19:04:11.243Z"
+    "metadata": {
+        "userIdShape": {
+            "value": "user_<persistentUserId>_account_<accountId>_session_<sessionId>",
+            "risk": "critical",
+            "origin": "bundle-heuristic",
+            "confidence": "low",
+            "extractedAt": "2026-04-15T19:04:11.243Z"
+        },
+        "deviceLinkage": {
+            "value": "persistentUserId",
+            "risk": "low-risk",
+            "origin": "bundle-heuristic",
+            "confidence": "low",
+            "extractedAt": "2026-04-15T19:04:11.243Z"
+        },
+        "accountLinkage": {
+            "value": "accountUuid-or-id",
+            "risk": "low-risk",
+            "origin": "bundle-heuristic",
+            "confidence": "low",
+            "extractedAt": "2026-04-15T19:04:11.243Z"
+        }
     },
-    "authModeBetas": {
-      "value": [
-        "oauth-2025-04-20"
-      ],
-      "risk": "critical",
-      "origin": "bundle-string",
-      "confidence": "high",
-      "extractedAt": "2026-04-15T19:04:11.243Z"
-    }
-  },
-  "billing": {
-    "ccVersion": {
-      "value": "2.1.109",
-      "risk": "low-risk",
-      "origin": "bundle-heuristic",
-      "confidence": "high",
-      "extractedAt": "2026-04-15T19:04:11.243Z"
-    },
-    "ccEntrypoint": {
-      "value": "cli",
-      "risk": "critical",
-      "origin": "bundle-heuristic",
-      "confidence": "medium",
-      "extractedAt": "2026-04-15T19:04:11.243Z"
-    },
-    "cchStrategy": {
-      "value": "xxhash64-5hex",
-      "risk": "low-risk",
-      "origin": "bundle-string",
-      "confidence": "medium",
-      "extractedAt": "2026-04-15T19:04:11.243Z"
-    }
-  },
-  "body": {
-    "defaultStream": {
-      "value": true,
-      "risk": "critical",
-      "origin": "bundle-heuristic",
-      "confidence": "medium",
-      "extractedAt": "2026-04-15T19:04:11.243Z"
-    },
-    "defaultMaxTokens": {
-      "value": 4096,
-      "risk": "critical",
-      "origin": "bundle-heuristic",
-      "confidence": "medium",
-      "extractedAt": "2026-04-15T19:04:11.243Z"
-    },
-    "temperaturePresence": {
-      "value": false,
-      "risk": "low-risk",
-      "origin": "bundle-heuristic",
-      "confidence": "low",
-      "extractedAt": "2026-04-15T19:04:11.243Z"
-    },
-    "thinkingKey": {
-      "value": true,
-      "risk": "low-risk",
-      "origin": "bundle-heuristic",
-      "confidence": "low",
-      "extractedAt": "2026-04-15T19:04:11.243Z"
-    },
-    "contextManagementKey": {
-      "value": true,
-      "risk": "low-risk",
-      "origin": "bundle-heuristic",
-      "confidence": "low",
-      "extractedAt": "2026-04-15T19:04:11.243Z"
-    },
-    "toolsKey": {
-      "value": true,
-      "risk": "low-risk",
-      "origin": "bundle-heuristic",
-      "confidence": "low",
-      "extractedAt": "2026-04-15T19:04:11.243Z"
-    }
-  },
-  "prompt": {
-    "identityString": {
-      "value": "You are Claude Code, Anthropic's official CLI for Claude.",
-      "risk": "critical",
-      "origin": "bundle-heuristic",
-      "confidence": "medium",
-      "extractedAt": "2026-04-15T19:04:11.243Z"
-    },
-    "billingBlockPlacement": {
-      "value": "prepend",
-      "risk": "critical",
-      "origin": "bundle-heuristic",
-      "confidence": "medium",
-      "extractedAt": "2026-04-15T19:04:11.243Z"
-    },
-    "appendMode": {
-      "value": false,
-      "risk": "low-risk",
-      "origin": "bundle-heuristic",
-      "confidence": "low",
-      "extractedAt": "2026-04-15T19:04:11.243Z"
-    },
-    "cacheControlBehavior": {
-      "value": "ephemeral-identity-block",
-      "risk": "critical",
-      "origin": "bundle-heuristic",
-      "confidence": "low",
-      "extractedAt": "2026-04-15T19:04:11.243Z"
-    }
-  },
-  "metadata": {
-    "userIdShape": {
-      "value": "user_<persistentUserId>_account_<accountId>_session_<sessionId>",
-      "risk": "critical",
-      "origin": "bundle-heuristic",
-      "confidence": "low",
-      "extractedAt": "2026-04-15T19:04:11.243Z"
-    },
-    "deviceLinkage": {
-      "value": "persistentUserId",
-      "risk": "low-risk",
-      "origin": "bundle-heuristic",
-      "confidence": "low",
-      "extractedAt": "2026-04-15T19:04:11.243Z"
-    },
-    "accountLinkage": {
-      "value": "accountUuid-or-id",
-      "risk": "low-risk",
-      "origin": "bundle-heuristic",
-      "confidence": "low",
-      "extractedAt": "2026-04-15T19:04:11.243Z"
-    }
-  },
-  "parserWarnings": [],
-  "unknownFields": []
+    "parserWarnings": [],
+    "unknownFields": []
 }
