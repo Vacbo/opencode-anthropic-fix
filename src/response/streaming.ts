@@ -3,8 +3,11 @@
 // ---------------------------------------------------------------------------
 
 import { isAccountSpecificError, parseRateLimitReason } from "../backoff.js";
+import { createLogger } from "../logger.js";
 import type { UsageStats } from "../types.js";
 import { stripMcpPrefixFromParsedEvent } from "./mcp.js";
+
+const streamingLogger = createLogger("response/streaming");
 
 const MAX_UNTERMINATED_SSE_BUFFER = 256 * 1024;
 
@@ -200,8 +203,8 @@ function getBufferedEventContext(eventBlock: string, lastEventType: string | nul
         if (eventType) {
             context.inFlightEvent = getEventLabel(parsed, eventType);
         }
-    } catch {
-        // JSON parse failed; context will be returned without inFlightEvent
+    } catch (error) {
+        streamingLogger.debug("SSE event payload is not JSON; context returned without inFlightEvent", { error });
     }
 
     return context;
@@ -473,15 +476,17 @@ export function transformResponse(
         if (onStreamError) {
             try {
                 onStreamError(streamError);
-            } catch {
-                // Error handler failed; continue with cleanup
+            } catch (handlerError) {
+                streamingLogger.debug("onStreamError handler threw; continuing with cleanup", {
+                    error: handlerError,
+                });
             }
         }
 
         try {
             await reader.cancel(streamError);
-        } catch {
-            // Reader cancel failed; stream may already be closed
+        } catch (cancelError) {
+            streamingLogger.debug("reader.cancel() threw; stream may already be closed", { error: cancelError });
         }
 
         controller.error(streamError);

@@ -17,9 +17,12 @@ import {
 } from "./accounts/matching.js";
 import { inferCCSourceFromId, repairCorruptedCCAccounts } from "./accounts/repair.js";
 import type { AnthropicAuthConfig } from "./config.js";
+import { createLogger } from "./logger.js";
 import { HealthScoreTracker, selectAccount, TokenBucketTracker } from "./rotation.js";
 import type { AccountStats, AccountStorage } from "./storage.js";
 import { createDefaultStats, loadAccounts, saveAccounts } from "./storage.js";
+
+const accountsLogger = createLogger("accounts");
 
 export interface ManagedAccount {
     id: string;
@@ -188,7 +191,10 @@ export class AccountManager {
                         existingMatch.refreshToken = ccCredential.refreshToken;
                         existingMatch.access = ccCredential.accessToken;
                         existingMatch.expires = ccCredential.expiresAt;
-                        existingMatch.tokenUpdatedAt = Math.max(existingMatch.tokenUpdatedAt || 0, ccCredential.expiresAt || 0);
+                        existingMatch.tokenUpdatedAt = Math.max(
+                            existingMatch.tokenUpdatedAt || 0,
+                            ccCredential.expiresAt || 0,
+                        );
                     }
                     continue;
                 }
@@ -558,8 +564,8 @@ export class AccountManager {
         let diskData: AccountStorage | null = null;
         try {
             diskData = await loadAccounts();
-        } catch {
-            // If we can't read, fall through to writing absolute values
+        } catch (error) {
+            accountsLogger.debug("saveToDisk read-from-disk failed; writing absolute values", { error });
         }
 
         const droppedIdsSnapshot = new Set(this.#pendingDroppedIds);

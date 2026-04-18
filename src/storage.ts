@@ -4,6 +4,9 @@ import { dirname, join } from "node:path";
 import type { AccountIdentity } from "./account-identity.js";
 import { findByIdentity } from "./account-identity.js";
 import { getConfigDir } from "./config.js";
+import { createLogger } from "./logger.js";
+
+const storageLogger = createLogger("storage");
 
 export interface AccountStats {
     requests: number;
@@ -110,8 +113,8 @@ export function ensureGitignore(configDir: string): void {
             const suffix = content.endsWith("\n") ? "" : "\n";
             appendFileSync(gitignorePath, suffix + missingEntries.join("\n") + "\n", "utf-8");
         }
-    } catch {
-        // Ignore gitignore errors
+    } catch (error) {
+        storageLogger.debug("failed to update .gitignore; continuing", { error });
     }
 }
 
@@ -418,8 +421,8 @@ export async function saveAccounts(
     try {
         const disk = await loadAccounts();
         storageToWrite = unionAccountsWithDisk(storageToWrite, disk, { droppedIds: options.droppedIds });
-    } catch {
-        // If merge read fails, continue with caller-provided storage payload.
+    } catch (error) {
+        storageLogger.debug("saveAccounts merge-from-disk failed; writing caller-provided payload", { error });
     }
 
     const tempPath = `${storagePath}.${randomBytes(6).toString("hex")}.tmp`;
@@ -431,8 +434,11 @@ export async function saveAccounts(
     } catch (error) {
         try {
             await fs.unlink(tempPath);
-        } catch {
-            // Ignore cleanup errors
+        } catch (cleanupError) {
+            storageLogger.debug("failed to remove temp accounts file after write error", {
+                tempPath,
+                error: cleanupError,
+            });
         }
         throw error;
     }

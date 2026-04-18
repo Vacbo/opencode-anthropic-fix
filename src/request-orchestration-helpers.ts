@@ -5,6 +5,9 @@ import type { AnthropicAuthConfig } from "./config.js";
 import { FOREGROUND_EXPIRY_BUFFER_MS } from "./constants.js";
 import { logTransformedSystemPrompt } from "./env.js";
 import { buildRequestHeaders } from "./headers/builder.js";
+import { createLogger } from "./logger.js";
+
+const orchestrationLogger = createLogger("request-orchestration");
 import type { PluginHelpers } from "./plugin-helpers.js";
 import { resolveSignatureProfile } from "./profiles/index.js";
 import { cloneBodyForRetry, isTitleGeneratorRequestBody, transformRequestBody } from "./request/body.js";
@@ -225,8 +228,8 @@ function resolvePinnedAccount(
             });
             return pinnedAccount;
         }
-    } catch {
-        // Non-JSON body
+    } catch (error) {
+        orchestrationLogger.debug("file-id pinning: request body is not JSON; skipping pin lookup", { error });
     }
 
     return null;
@@ -392,8 +395,8 @@ function logFingerprintSnapshot(
                               typeof block.text === "string" && block.text.startsWith("x-anthropic-billing-header:"),
                       )?.text;
                   }
-              } catch {
-                  // JSON parse failed — body is not valid JSON
+              } catch (error) {
+                  orchestrationLogger.debug("billing-header extraction: request body is not JSON", { error });
               }
 
               return undefined;
@@ -806,8 +809,11 @@ export function createRequestOrchestrationHelpers(deps: RequestOrchestrationDeps
                 let errorBody: string | null = null;
                 try {
                     errorBody = await response.clone().text();
-                } catch {
-                    // Ignore clone/read failures for best-effort diagnostics.
+                } catch (error) {
+                    orchestrationLogger.debug("failed to clone/read error response body for diagnostics", {
+                        status: response.status,
+                        error,
+                    });
                 }
 
                 if (isAccountSpecificError(response.status, errorBody)) {

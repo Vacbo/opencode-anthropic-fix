@@ -1,5 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import { CLIENT_ID } from "./config.js";
+import { createLogger } from "./logger.js";
+
+const oauthLogger = createLogger("oauth");
 
 // ---------------------------------------------------------------------------
 // OAuth helpers — shared between plugin (index.ts) and CLI (cli.ts)
@@ -108,8 +111,11 @@ export async function exchange(code: string, verifier: string): Promise<Exchange
                 } else if (typeof parsed.message === "string" && parsed.message) {
                     reason = parsed.message;
                 }
-            } catch {
-                // Body is not JSON — use raw text as the reason, trimmed to strip whitespace
+            } catch (parseError) {
+                oauthLogger.debug("exchange error body is not JSON; using raw text as reason", {
+                    status,
+                    error: parseError,
+                });
                 reason = rawText.trim() || undefined;
             }
         }
@@ -253,8 +259,11 @@ export async function refreshToken(
         try {
             const parsed = JSON.parse(text);
             if (parsed.error) error.code = parsed.error;
-        } catch {
-            // Body may not be valid JSON — leave error.code unset, the HTTP status is still attached
+        } catch (parseError) {
+            oauthLogger.debug("token refresh error body is not JSON; leaving error.code unset", {
+                status: resp.status,
+                error: parseError,
+            });
         }
         throw error;
     }

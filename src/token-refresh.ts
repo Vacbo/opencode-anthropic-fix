@@ -9,8 +9,11 @@ import type { CCCredential } from "./cc-credentials.js";
 import { readCCCredentials, readCCCredentialsFromFile } from "./cc-credentials.js";
 import { FOREGROUND_EXPIRY_BUFFER_MS } from "./constants.js";
 import { refreshToken } from "./oauth.js";
+import { createLogger } from "./logger.js";
 import { acquireRefreshLock, releaseRefreshLock } from "./refresh-lock.js";
 import { loadAccounts } from "./storage.js";
+
+const tokenRefreshLogger = createLogger("token-refresh");
 
 export type { ManagedAccount };
 
@@ -321,8 +324,10 @@ export async function refreshAccountToken(
         if (onTokensUpdated) {
             try {
                 await onTokensUpdated();
-            } catch {
-                // Best-effort: in-memory tokens remain valid for this process.
+            } catch (persistError) {
+                tokenRefreshLogger.debug("onTokensUpdated callback threw; in-memory tokens still valid", {
+                    error: persistError,
+                });
             }
         }
 
@@ -337,8 +342,10 @@ export async function refreshAccountToken(
                     expires: account.expires,
                 },
             });
-        } catch {
-            // Ignore persistence errors; in-memory tokens remain valid for this request.
+        } catch (persistError) {
+            tokenRefreshLogger.debug("OpenCode auth.set persistence failed; in-memory tokens still valid", {
+                error: persistError,
+            });
         }
 
         return json.access_token;

@@ -2,7 +2,10 @@
 // MCP prefix stripping for SSE responses
 // ---------------------------------------------------------------------------
 
+import { createLogger } from "../logger.js";
 import { toInternalToolName } from "../tools/wire-names.js";
+
+const mcpLogger = createLogger("response/mcp");
 
 /**
  * Rewrite wire-visible tool names back to internal opencode tool names.
@@ -16,8 +19,8 @@ export function stripMcpPrefixFromSSE(text: string): string {
             if (stripMcpPrefixFromParsedEvent(parsed)) {
                 return `data: ${JSON.stringify(parsed)}`;
             }
-        } catch {
-            // Not valid JSON — pass through unchanged.
+        } catch (error) {
+            mcpLogger.debug("SSE data payload is not JSON; passing through unchanged", { error });
         }
         return _match;
     });

@@ -7,6 +7,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getConfigDir } from "./config.js";
 import { DEBUG_SYSTEM_PROMPT_ENV, USER_ID_STORAGE_FILE } from "./constants.js";
+import { createLogger } from "./logger.js";
+
+const envLogger = createLogger("env");
 
 export function isTruthyEnv(value: string | undefined): boolean {
     if (!value) return false;
@@ -62,8 +65,8 @@ export function getOrCreateSignatureUserId(): string {
             // regenerate if we find an old UUID-format ID.
             if (existing && /^[0-9a-f]{64}$/.test(existing)) return existing;
         }
-    } catch {
-        // fall through and generate a new id
+    } catch (error) {
+        envLogger.debug("failed to read existing signature user-id; regenerating", { error });
     }
 
     // CC generates device_id as randomBytes(32).toString("hex") → 64-char hex
@@ -74,8 +77,10 @@ export function getOrCreateSignatureUserId(): string {
             encoding: "utf-8",
             mode: 0o600,
         });
-    } catch {
-        // Ignore filesystem errors; caller still gets generated ID for this runtime.
+    } catch (error) {
+        envLogger.debug("failed to persist signature user-id; caller still gets generated ID for this runtime", {
+            error,
+        });
     }
     return generated;
 }
@@ -139,7 +144,7 @@ export function logTransformedSystemPrompt(body: string | undefined): void {
             "[opencode-anthropic-auth][system-debug] transformed system:",
             JSON.stringify(parsed.system, null, 2),
         );
-    } catch {
-        // Ignore parse errors in debug logging path.
+    } catch (error) {
+        envLogger.debug("failed to parse body in debug logging path", { error });
     }
 }

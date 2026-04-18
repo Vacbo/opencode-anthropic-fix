@@ -1,7 +1,10 @@
 import { createHash, randomBytes } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { dirname, join } from "node:path";
+import { createLogger } from "./logger.js";
 import { getStoragePath } from "./storage.js";
+
+const refreshLockLogger = createLogger("refresh-lock");
 
 const DEFAULT_LOCK_TIMEOUT_MS = 15_000;
 const DEFAULT_LOCK_BACKOFF_MS = 50;
@@ -68,8 +71,11 @@ export async function acquireRefreshLock(
                     await fs.unlink(lockPath);
                     continue;
                 }
-            } catch {
-                // Lock may have been released concurrently; retry.
+            } catch (staleError) {
+                refreshLockLogger.debug("lock stat/unlink failed; assuming concurrent release and retrying", {
+                    lockPath,
+                    error: staleError,
+                });
             }
 
             const remaining = deadline - Date.now();

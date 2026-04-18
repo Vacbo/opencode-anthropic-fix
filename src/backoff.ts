@@ -1,3 +1,7 @@
+import { createLogger } from "./logger.js";
+
+const backoffLogger = createLogger("backoff");
+
 export type RateLimitReason = "AUTH_FAILED" | "QUOTA_EXHAUSTED" | "RATE_LIMIT_EXCEEDED";
 
 const QUOTA_EXHAUSTED_BACKOFFS = [60_000, 300_000, 1_800_000, 7_200_000];
@@ -93,8 +97,8 @@ function extractErrorSignals(body: string | object | null | undefined): ErrorSig
             const parsed = JSON.parse(body);
             errorType = String(parsed?.error?.type || "").toLowerCase();
             message = String(parsed?.error?.message || "").toLowerCase();
-        } catch {
-            // Not JSON — use raw text only.
+        } catch (parseError) {
+            backoffLogger.debug("rate-limit body is not JSON; falling back to raw text match", { error: parseError });
         }
         return { errorType, message, text };
     }
