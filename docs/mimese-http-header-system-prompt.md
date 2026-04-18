@@ -396,7 +396,7 @@ x-anthropic-billing-header: cc_version=<version>.<hash>; cc_entrypoint=<entrypoi
 
 Where:
 
-- `cc_version`: CLI version with a 3-char hash suffix derived from the first user message. The hash is computed as: SHA-256(salt + chars at positions [4,7,20] from first user message), taking the first 3 hex chars. Salt: `59cf53e54c78`.
+- `cc_version`: CLI version with a 3-char hex suffix. The **real derivation algorithm is under investigation** (as of v0.2.0, 2026-04-17). The current plugin implementation computes `SHA-256(salt + text[4] + text[7] + text[20] + version).slice(0, 3)` where `salt = "59cf53e54c78"` and `text` is the first user message content. This algorithm was DISPROVEN against 5 real CC 2.1.113 captures in `.sisyphus/evidence/phase-1-claim-validation/2026-04-17/proxyman-*/*-og-capture.json`: all 5 captures had identical first-user-message text (an OpenCode session-start hook) but produced 5 distinct suffixes (`9c8`, `23a`, `be8`, `e97`, `9e4`), so the text alone is not a sufficient input. Additional inputs tested and ruled out: `x-claude-code-session-id`, `x-client-request-id`, `sha256(bodyText)`, `sha256(messagesJson)`, literal substrings of the `cch` field. The real input is likely request-time state we haven't mapped yet. **Impact**: LOW — Anthropic accepts the request regardless of suffix match; the field is a billing/tracing hint, not an auth check. **Next step**: reserved for a Phase 3 follow-up; golden-pair tests are shipped under `tests/unit/headers/billing-suffix.test.ts` with `describe.skip` so future work can un-skip them once the algorithm is correct.
 - `cc_entrypoint`: `CLAUDE_CODE_ENTRYPOINT` or `cli`
 - `cch`: Emitted as literal `00000` and then replaced post-serialization with `xxHash64(serializedBody, seed=0x6E52736AC806831E) & 0xFFFFF`, formatted as 5-char zero-padded hex
 
@@ -485,11 +485,11 @@ The plugin now uses a name-only compatibility layer for tool exposure. This is i
 These are intentionally postponed because live experiments proved the current layer is accepted on the real wire:
 
 1. **Non-native naming policy hardening**
-   - decide whether to keep plain PascalCase aliases or move to a namespaced third-party style for non-native tools
-   - this is now an ergonomics/collision decision, not a quota-eligibility blocker
+    - decide whether to keep plain PascalCase aliases or move to a namespaced third-party style for non-native tools
+    - this is now an ergonomics/collision decision, not a quota-eligibility blocker
 
 2. **Alias collision handling**
-   - multiple internal tools may collapse to the same wire-visible PascalCase name
-   - future work should add deterministic conflict resolution and collision tests before expanding the compatibility layer further
+    - multiple internal tools may collapse to the same wire-visible PascalCase name
+    - future work should add deterministic conflict resolution and collision tests before expanding the compatibility layer further
 
 These are optimization tasks, not blocking parity work.
