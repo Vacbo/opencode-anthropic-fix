@@ -32,6 +32,7 @@
         "check:cch-drift": "bun scripts/drift-checker/check-cch-constants.ts --fail-on-drift",
         "check:cch-drift:npm": "bun scripts/drift-checker/check-cch-constants.ts --npm-version latest --fail-on-drift",
         "capabilities:snapshot": "bun scripts/capabilities/snapshot.ts",
+        "test:models": "bun scripts/smoke/test-models.ts",
         "test:watch": "vitest",
         "lint": "oxlint .",
         "lint:fix": "oxlint --fix .",
