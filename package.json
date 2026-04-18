@@ -41,6 +41,11 @@
         "install:link": "bun scripts/install.ts link",
         "install:copy": "bun run build && bun scripts/install.ts copy",
         "uninstall": "bun scripts/install.ts uninstall",
+        "sandbox:up": "bun scripts/sandbox.ts up",
+        "sandbox:down": "bun scripts/sandbox.ts down",
+        "sandbox:reinstall": "bun scripts/sandbox.ts reinstall",
+        "sandbox:run": "bun scripts/sandbox.ts run",
+        "sandbox:status": "bun scripts/sandbox.ts status",
         "prepare": "husky"
     },
     "dependencies": {
