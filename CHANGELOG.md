@@ -51,7 +51,7 @@ This release hardens wire-level parity with real Claude Code 2.1.113, introduces
 
 ### Notes
 
-- CHANGELOG entries for 0.1.5, 0.1.6, 0.1.7, 0.1.8, and 0.1.9 were skipped in the repo. The changes in those versions are consolidated under this 0.2.0 entry.
+- CHANGELOG entries for 0.1.5, 0.1.6, 0.1.7, 0.1.8, 0.1.9, and 0.1.10 were skipped in the repo. The changes in those versions are consolidated under this 0.2.0 entry. v0.1.10 was an automated version-bump-only release on 2026-04-15 (github-actions bot, commit `1ee4ae8`) that shipped no source changes beyond `package.json`.
 - Phase-1 evidence captures under `.sisyphus/evidence/phase-1-claim-validation/2026-04-17/` are intentionally gitignored; use them for local reference, not PRs.
 - Sandbox integration test (`tests/integration/scripts/sandbox.test.ts`) must remain green before shipping any wire-level change that touches the plugin's XDG plumbing.
 
