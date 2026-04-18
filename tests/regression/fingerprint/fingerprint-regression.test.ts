@@ -390,12 +390,12 @@ describe("fallback Claude Code fingerprint — Beta header composition (signatur
             requestPath: "/v1/messages",
         }).split(",");
         expect(betas).toEqual([
-            "claude-code-20250219",
             "oauth-2025-04-20",
             "context-1m-2025-08-07",
             "interleaved-thinking-2025-05-14",
             "context-management-2025-06-27",
             "prompt-caching-scope-2026-01-05",
+            "claude-code-20250219",
             "advisor-tool-2026-03-01",
             ADVANCED_TOOL_USE_BETA_FLAG,
             EFFORT_BETA_FLAG,
@@ -424,12 +424,12 @@ describe("fallback Claude Code fingerprint — Beta header composition (signatur
         expect(requestProfile.manifestSource).toBe("verified");
         expect(requestProfile.betas.optionalBetas.value).toEqual([]);
         expect(betas).toEqual([
-            "claude-code-20250219",
             "oauth-2025-04-20",
             "context-1m-2025-08-07",
             "interleaved-thinking-2025-05-14",
             "context-management-2025-06-27",
             "prompt-caching-scope-2026-01-05",
+            "claude-code-20250219",
             "advisor-tool-2026-03-01",
             ADVANCED_TOOL_USE_BETA_FLAG,
             EFFORT_BETA_FLAG,

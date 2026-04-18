@@ -58,7 +58,7 @@ describe("signature profiles", () => {
         );
 
         expect(betas).toBe(
-            "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advisor-tool-2026-03-01",
+            "oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05,claude-code-20250219,advisor-tool-2026-03-01",
         );
     });
 
@@ -80,12 +80,12 @@ describe("signature profiles", () => {
         ).split(",");
 
         expect(betas).toEqual([
-            "claude-code-20250219",
             "oauth-2025-04-20",
             "context-1m-2025-08-07",
             "interleaved-thinking-2025-05-14",
             "context-management-2025-06-27",
             "prompt-caching-scope-2026-01-05",
+            "claude-code-20250219",
             "advisor-tool-2026-03-01",
             "advanced-tool-use-2025-11-20",
             "effort-2025-11-24",

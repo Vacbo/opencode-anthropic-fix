@@ -157,9 +157,13 @@ export function buildAnthropicBetaHeader(
     const haiku = isHaikuModel(model);
     const isRoundRobin = strategy === "round-robin";
 
-    // Live CC 2.1.112 capture (2026-04-17, minimal-hi scenario) confirms claude-code-20250219
-    // is sent on Haiku 4.5 too. See .sisyphus/evidence/phase-1-claim-validation/2026-04-17/.
-    betas.push(CLAUDE_CODE_BETA_FLAG);
+    // CC 2.1.113 emission order (see .sisyphus/evidence/phase-1-claim-validation/2026-04-17/
+    // proxyman-minimal-hi-2.1.113/minimal-hi-og-capture.json:20):
+    //   oauth-2025-04-20, interleaved-thinking-..., context-management-...,
+    //   prompt-caching-scope-..., claude-code-20250219, advisor-tool-...
+    // We push requiredBaseBetas (oauth) first, then the runtime betas, then
+    // CLAUDE_CODE_BETA_FLAG late (see further down). This positioning MATTERS for
+    // fingerprint parity — do not revert to pushing claude-code-20250219 first.
 
     if (isFirstPartyProvider) {
         betas.push(...requiredBaseBetas);
@@ -213,6 +217,11 @@ export function buildAnthropicBetaHeader(
     if (!disableExperimentalBetas && !isRoundRobin) {
         betas.push("prompt-caching-scope-2026-01-05");
     }
+
+    // claude-code-20250219 is pushed AFTER prompt-caching-scope-... to match CC's
+    // live emission order (see .sisyphus/evidence/...minimal-hi-og-capture.json:20).
+    // Moved from the top of the signature branch on 2026-04-17 (v0.2.0 Phase A.1).
+    betas.push(CLAUDE_CODE_BETA_FLAG);
 
     // Live CC 2.1.112 capture (2026-04-17) confirms advisor-tool-2026-03-01 is sent on Haiku.
     // advanced-tool-use-2025-11-20 also observed on Sonnet/Opus; keep manifest-gated.
